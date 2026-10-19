@@ -1,0 +1,27 @@
+{
+  "name": "fechou",
+  "version": "1.0.0",
+  "description": "Fechou: prospecção, atendimento com IA no WhatsApp, agenda, CRM, follow-up, cobrança e dashboard num só sistema",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "seed": "node --disable-warning=ExperimentalWarning src/seed.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "build:demo": "node demo-web/build.mjs",
+    "seed:advocacia": "node --disable-warning=ExperimentalWarning src/seed.js advocacia",
+    "admin:create": "node --disable-warning=ExperimentalWarning src/admin-cli.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0"
+  },
+  "devDependencies": {
+    "buffer": "^6.0.3",
+    "esbuild": "^0.24.2",
+    "sql.js": "^1.12.0"
+  }
+}

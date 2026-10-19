@@ -1,0 +1,171 @@
+import crypto from 'node:crypto';
+import { get, run, now } from '../db.js';
+import { getCompany } from './company.js';
+import { findOrCreateByPhone, getContact, firstName, changeStage, PlanLimitError } from './crm.js';
+import { stopEnrollments } from './followup.js';
+import { scheduleAiReply } from './ai.js';
+
+// ---- Provedores de WhatsApp -------------------------------------------------
+
+async function sendViaMeta(wa, contact, body) {
+  if (!wa.meta_token || !wa.meta_phone_number_id) throw new Error('WhatsApp Cloud API (Meta) não configurado');
+  const insideWindow = contact.last_inbound_at && Date.now() - Date.parse(contact.last_inbound_at) < 24 * 3600 * 1000;
+  // Fora da janela de 24h a Meta só aceita mensagens de template aprovadas.
+  const payload = !insideWindow && wa.meta_template_name
+    ? {
+      messaging_product: 'whatsapp', to: contact.phone, type: 'template',
+      template: {
+        name: wa.meta_template_name,
+        language: { code: wa.meta_template_lang || 'pt_BR' },
+        components: [{ type: 'body', parameters: [{ type: 'text', text: firstName(contact.name) || 'tudo bem' }] }],
+      },
+    }
+    : { messaging_product: 'whatsapp', to: contact.phone, type: 'text', text: { body, preview_url: true } };
+  const res = await fetch(`https://graph.facebook.com/v21.0/${wa.meta_phone_number_id}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${wa.meta_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error?.message || `Meta HTTP ${res.status}`);
+  return data.messages?.[0]?.id || null;
+}
+
+async function sendViaEvolution(wa, contact, body) {
+  if (!wa.evolution_url || !wa.evolution_api_key || !wa.evolution_instance) throw new Error('Evolution API não configurada');
+  const res = await fetch(`${wa.evolution_url.replace(/\/$/, '')}/message/sendText/${encodeURIComponent(wa.evolution_instance)}`, {
+    method: 'POST',
+    headers: { apikey: wa.evolution_api_key, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ number: contact.phone, text: body }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.message || data.error || `Evolution HTTP ${res.status}`);
+  return data.key?.id || null;
+}
+
+async function deliver(wa, recipient, body) {
+  if (wa.provider === 'meta') return sendViaMeta(wa, recipient, body);
+  if (wa.provider === 'evolution') return sendViaEvolution(wa, recipient, body);
+  return null; // simulador: a mensagem fica só no histórico
+}
+
+// ---- Envio -------------------------------------------------------------------
+
+/** Envia um aviso para um número que não é cliente (ex.: celular da equipe). Não entra no CRM. */
+export async function sendToPhone(company, phone, body) {
+  const wa = company.settings.whatsapp;
+  const digits = String(phone).replace(/\D/g, '');
+  const normalized = digits.length === 10 || digits.length === 11 ? `55${digits}` : digits;
+  if (wa.provider === 'simulator') {
+    console.log(`[aviso para equipe ${normalized}] ${body}`);
+    return null;
+  }
+  // A equipe costuma não estar dentro da janela de 24h da Meta; tratamos como dentro para mandar texto livre.
+  return deliver(wa, { phone: normalized, name: '', last_inbound_at: new Date().toISOString() }, body);
+}
+
+/**
+ * Envia uma mensagem ao contato pelo canal configurado e registra no histórico.
+ * author: ai | human | followup | billing | system
+ */
+export async function sendMessage(companyId, contactId, body, author = 'human') {
+  const company = getCompany(companyId);
+  const contact = getContact(companyId, contactId);
+  if (!contact) throw new Error('Contato não encontrado');
+  const { id } = run(
+    'INSERT INTO messages (company_id, contact_id, direction, author, body, status) VALUES (?, ?, ?, ?, ?, ?)',
+    companyId, contactId, 'out', author, body, 'sending',
+  );
+  const wa = company.settings.whatsapp;
+  try {
+    if (!contact.phone && wa.provider !== 'simulator') throw new Error('Contato sem telefone');
+    const providerId = await deliver(wa, contact, body);
+    run('UPDATE messages SET status = ?, provider_id = ? WHERE id = ?', 'sent', providerId, id);
+    run('UPDATE contacts SET last_outbound_at = ?, updated_at = ? WHERE id = ?', now(), now(), contactId);
+    // Primeiro contato ativo move o lead de "novo" para "em contato".
+    if (contact.stage === 'novo' && author !== 'ai') changeStage(companyId, contactId, 'contato');
+  } catch (err) {
+    run('UPDATE messages SET status = ?, error = ? WHERE id = ?', 'failed', String(err.message || err), id);
+    console.error(`[whatsapp] falha ao enviar para contato ${contactId}:`, err.message);
+  }
+  return get('SELECT * FROM messages WHERE id = ?', id);
+}
+
+// ---- Recebimento -------------------------------------------------------------
+
+/**
+ * Processa uma mensagem recebida de um cliente (de qualquer provedor ou do simulador).
+ * Retorna null se for duplicada.
+ */
+export function handleInbound(companyId, { phone, name, text, providerId = null }, { autoReply = true } = {}) {
+  if (!text || !phone) return null;
+  let found;
+  try {
+    found = findOrCreateByPhone(companyId, phone, name, 'whatsapp');
+  } catch (err) {
+    // Plano no limite de leads: número novo não entra no CRM (fica só no log).
+    if (err instanceof PlanLimitError) {
+      console.warn(`[whatsapp] empresa ${companyId}: limite de leads do plano atingido, mensagem de número novo ignorada`);
+      return null;
+    }
+    throw err;
+  }
+  const { contact, created } = found;
+  const r = run(
+    `INSERT OR IGNORE INTO messages (company_id, contact_id, direction, author, body, status, provider_id)
+     VALUES (?, ?, 'in', 'contact', ?, 'received', ?)`,
+    companyId, contact.id, text, providerId,
+  );
+  if (!r.changes) return null;
+  run('UPDATE contacts SET last_inbound_at = ?, updated_at = ?, unread = unread + 1 WHERE id = ?', now(), now(), contact.id);
+  if (!created && contact.stage === 'novo') changeStage(companyId, contact.id, 'contato', 'cliente respondeu');
+  stopEnrollments(companyId, contact.id, 'cliente respondeu', { onlyStopOnReply: true });
+
+  const company = getCompany(companyId);
+  if (autoReply && company.settings.ai.enabled && contact.ai_enabled) scheduleAiReply(companyId, contact.id);
+  return { contact: getContact(companyId, contact.id), created, messageId: r.id };
+}
+
+// ---- Parsers de webhook ------------------------------------------------------
+
+export function parseMetaWebhook(body) {
+  const out = [];
+  for (const entry of body?.entry || []) {
+    for (const change of entry.changes || []) {
+      const value = change.value || {};
+      const names = Object.fromEntries((value.contacts || []).map((c) => [c.wa_id, c.profile?.name]));
+      for (const m of value.messages || []) {
+        let text = m.text?.body || m.button?.text || m.interactive?.button_reply?.title || m.interactive?.list_reply?.title;
+        if (!text && m.type !== 'text') text = `[${m.type} recebido]`;
+        out.push({ phone: m.from, name: names[m.from] || '', text, providerId: m.id });
+      }
+    }
+  }
+  return out;
+}
+
+export function verifyMetaSignature(appSecret, rawBody, header) {
+  if (!appSecret) return true;
+  if (!header) return false;
+  const expected = `sha256=${crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex')}`;
+  const a = Buffer.from(expected);
+  const b = Buffer.from(header);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+export function parseEvolutionWebhook(body) {
+  const event = String(body?.event || '').toLowerCase().replace('_', '.');
+  if (event !== 'messages.upsert') return [];
+  const items = Array.isArray(body.data) ? body.data : [body.data];
+  const out = [];
+  for (const d of items) {
+    if (!d?.key || d.key.fromMe) continue;
+    const jid = d.key.remoteJid || '';
+    if (jid.endsWith('@g.us')) continue; // ignora grupos
+    const msg = d.message || {};
+    const text = msg.conversation || msg.extendedTextMessage?.text || msg.imageMessage?.caption
+      || (Object.keys(msg)[0] ? `[${Object.keys(msg)[0]} recebido]` : null);
+    out.push({ phone: jid.split('@')[0], name: d.pushName || '', text, providerId: d.key.id });
+  }
+  return out;
+}
