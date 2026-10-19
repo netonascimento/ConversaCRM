@@ -13,7 +13,7 @@ const FIELD_MASK = [
 export async function searchPlaces(companyId, query, { maxResults = 60 } = {}) {
   const company = getCompany(companyId);
   const key = placesKeyFor(company);
-  if (!key) throw new Error('Configure a chave da Google Places API em Configurações → Integrações');
+  if (!key) throw new Error('Configure a chave da Google Places API em Configurações → Avançado');
   if (!query?.trim()) throw new Error('Informe o que buscar, ex.: "dentista em Campinas"');
 
   const places = [];

@@ -367,7 +367,7 @@ async function renderDashboard(el) {
       <span class="spacer"></span>
       <select id="days" style="width:auto">${[7, 30, 90, 365].map((n) => `<option value="${n}" ${n === days ? 'selected' : ''}>Últimos ${n} dias</option>`).join('')}</select>
     </div>
-    ${showOnboarding ? onboardingCard(ob) : aiLocked() ? lockCard('O atendimento com IA') : !state.meta.ai_configured ? '<div class="banner">A IA está em <strong>modo demonstração</strong> (respostas automáticas simples). Adicione sua chave da API Anthropic em <a href="#/config">Configurações → Integrações</a> para ativar o atendimento inteligente.</div>' : ''}
+    ${showOnboarding ? onboardingCard(ob) : aiLocked() ? lockCard('O atendimento com IA') : !state.meta.ai_configured ? '<div class="banner">A IA está em <strong>modo demonstração</strong> (respostas automáticas simples). Adicione sua chave da API Anthropic em <a href="#/config/avancado">Configurações → Avançado</a> para ativar o atendimento inteligente.</div>' : ''}
     <div class="grid kpis">
       ${fin ? `<div class="card kpi good"><div class="label">Faturamento</div><div class="value">${money(m.revenue_cents)}</div><div class="sub">recebido no período</div></div>
       <div class="card kpi"><div class="label">A receber</div><div class="value">${money(m.receivable_cents)}</div><div class="sub">cobranças pendentes</div></div>
@@ -1792,7 +1792,7 @@ async function renderProspecting(el, [searchId]) {
   const current = searchId ? await api(`/api/prospecting/searches/${searchId}`) : null;
   el.innerHTML = `
     <div class="page-head"><div><h1>Prospecção Google Maps</h1><p class="muted">Encontre empresas locais, importe para o CRM e inicie a abordagem automática</p></div></div>
-    ${!state.meta.places_configured ? '<div class="banner">Configure a chave da <strong>Google Places API</strong> em <a href="#/config">Configurações → Integrações</a> para buscar empresas.</div>' : ''}
+    ${!state.meta.places_configured ? '<div class="banner">Configure a chave da <strong>Google Places API</strong> em <a href="#/config/avancado">Configurações → Avançado</a> para buscar empresas.</div>' : ''}
     <div class="card">
       <form id="search-form" class="row wrap">
         <input name="query" placeholder='Ex.: "academias em Campinas", "pet shop zona sul São Paulo"' required style="flex:1;min-width:240px">
@@ -1890,10 +1890,11 @@ function productForm(p) {
 // Configurações
 // ---------------------------------------------------------------------------
 async function renderSettings(el, [tab = 'empresa']) {
+  if (tab === 'integracoes') tab = 'avancado'; // a antiga aba Integrações agora fica em Avançado
   const data = await api('/api/settings');
   const s = data.settings;
   const meta = state.meta = await api('/api/meta');
-  const tabs = [['empresa', 'Empresa & IA'], ['ia', 'Comportamento da IA'], ['profissionais', 'Profissionais'], ['usuarios', 'Usuários'], ['agenda', 'Horários & Agenda'], ['whatsapp', 'WhatsApp'], ['cobranca', 'Cobrança'], ['integracoes', 'Integrações']];
+  const tabs = [['empresa', 'Empresa'], ['ia', 'Comportamento da IA'], ['profissionais', 'Profissionais'], ['usuarios', 'Usuários'], ['agenda', 'Horários & Agenda'], ['whatsapp', 'WhatsApp'], ['cobranca', 'Cobrança'], ['avancado', 'Avançado']];
   const input = (group, key, label, { type = 'text', hint = '', placeholder = '' } = {}) => `<div class="field"><label>${label}</label>
     <input name="${group}.${key}" type="${type}" value="${esc(s[group][key])}" placeholder="${esc(placeholder)}">${hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
   const check = (group, key, label) => `<label class="check field"><input type="checkbox" name="${group}.${key}" ${s[group][key] ? 'checked' : ''}> ${label}</label>`;
@@ -1904,15 +1905,24 @@ async function renderSettings(el, [tab = 'empresa']) {
 
   const panels = {
     empresa: `
-      <div class="fields">
-        <div class="field"><label>Nome da empresa</label><input name="name" value="${esc(data.name)}"></div>
-        <div class="field"><label>Fuso horário</label><input name="timezone" value="${esc(data.timezone)}"></div>
-      </div>
-      <h2 style="margin:8px 0 12px">Atendente virtual (IA)</h2>
-      ${aiLocked() ? `${lockCard('A atendente virtual')}<p class="hint" style="margin-bottom:12px">Você já pode preencher estas informações: a IA passa a usar quando você assinar.</p>` : check('ai', 'enabled', 'IA responde automaticamente as mensagens do WhatsApp')}
-      <div class="fields">${input('ai', 'agent_name', 'Nome da atendente')}${input('ai', 'model', 'Modelo Claude (opcional)', { placeholder: 'claude-opus-5-5' })}</div>
-      <div class="field"><label>Sobre a empresa (endereço, formas de pagamento, diferenciais, políticas)</label><textarea name="ai.business_description" rows="5">${esc(s.ai.business_description)}</textarea></div>
-      <div class="field"><label>Instruções para a IA (tom de voz, regras de negócio, o que pode ou não prometer)</label><textarea name="ai.instructions" rows="4">${esc(s.ai.instructions)}</textarea></div>`,
+      <div class="field"><label>Nome da empresa</label><input name="name" value="${esc(data.name)}"></div>
+      <h2 style="margin:8px 0 4px">Sobre a sua empresa</h2>
+      <p class="hint" style="margin-bottom:10px">É com isso que a atendente responde os seus clientes no WhatsApp.${aiLocked() ? ' Pode preencher já: a IA passa a usar quando você assinar.' : ''}</p>
+      <div class="field"><label>O que você faz, endereço, formas de pagamento, diferenciais e políticas</label><textarea name="ai.business_description" rows="6" placeholder="Ex.: Barbearia no centro de Campinas (Rua das Flores, 123). Corte, barba e sobrancelha. Aceitamos Pix e cartão em até 3x. Atendemos com hora marcada; tolerância de 10 minutos.">${esc(s.ai.business_description)}</textarea></div>
+      <div class="field"><label>Como a atendente deve falar</label><textarea name="ai.instructions" rows="3" placeholder="Ex.: simpática e objetiva, mensagens curtas; nunca prometa desconto sem falar com a equipe.">${esc(s.ai.instructions)}</textarea></div>`,
+    avancado: `
+      <p class="muted" style="margin-bottom:14px">Ajustes que a maioria das empresas não precisa mexer.</p>
+      <h2 style="margin:0 0 12px">Atendente virtual (IA)</h2>
+      ${aiLocked() ? `<p class="hint" style="margin-bottom:12px">🔒 A IA faz parte dos planos pagos. <a href="#/assinar">Desbloquear</a></p>` : check('ai', 'enabled', 'IA responde automaticamente as mensagens do WhatsApp')}
+      <div class="fields">${input('ai', 'agent_name', 'Nome da atendente', { hint: 'Como ela se apresenta aos clientes.' })}${input('ai', 'model', 'Modelo Claude', { placeholder: 'claude-opus-5-5', hint: 'Deixe vazio para usar o padrão.' })}</div>
+      <div class="card" style="margin:6px 0 14px"><h3>Chave da IA (Anthropic) ${aiLocked() ? '<span class="badge">🔒 bloqueada no teste grátis</span>' : meta.ai_configured ? '<span class="badge green">conectada</span>' : '<span class="badge amber">sem chave</span>'}</h3>
+        ${aiLocked() ? `<p class="hint">A IA faz parte dos planos pagos.</p>${lockBtn()}` : meta.ai_key_source === 'platform'
+          ? '<p class="hint">A IA desta conta usa a chave do Falaki, configurada pela nossa equipe. Você não precisa fazer nada.</p>'
+          : `<p class="hint">Crie sua chave em console.anthropic.com. O consumo da IA é cobrado pela Anthropic direto na sua conta. Sem chave, a IA usa respostas automáticas simples.</p>${input('integrations', 'anthropic_api_key', 'API key', { placeholder: 'sk-ant-...' })}`}</div>
+      <div class="card" style="margin-bottom:14px"><h3>Google Maps (prospecção) ${meta.places_configured ? '<span class="badge green">conectada</span>' : ''}</h3>
+        <p class="hint">Só se você usar a Prospecção com uma chave própria. Ative a "Places API (New)" no Google Cloud e crie uma chave de API.</p>${input('integrations', 'google_places_key', 'API key')}</div>
+      <h2 style="margin:8px 0 12px">Região</h2>
+      <div class="fields"><div class="field"><label>Fuso horário</label><input name="timezone" value="${esc(data.timezone)}"><div class="hint">Padrão: America/Sao_Paulo (horário de Brasília).</div></div></div>`,
     agenda: `
       <h2 style="margin-bottom:12px">Horário de funcionamento</h2>
       <p class="hint" style="margin-bottom:10px">Usado pela agenda, pela IA e para só enviar follow-ups e cobranças em horário comercial. Formato: <span class="code">09:00-12:00, 13:00-18:00</span> — vazio = fechado.</p>
@@ -1983,13 +1993,6 @@ async function renderSettings(el, [tab = 'empresa']) {
       ${check('team', 'client_message_on_overdue', 'Se o prazo passar sem resposta, avisar o cliente que ainda estamos verificando')}
       ${check('team', 'auto_assign', 'Distribuir automaticamente entre os atendentes as conversas que precisam de humano (rodízio)')}
       <p class="hint">Vale para conversas sem IA e para as que a IA passa para a equipe. Sem atendentes cadastrados, vão para o dono. Cada um pode assumir ou passar a conversa no Atendimento.</p>`,
-    integracoes: `
-      <div class="card" style="margin-bottom:14px"><h3>Claude (Anthropic) — IA de atendimento ${aiLocked() ? '<span class="badge">🔒 bloqueada no teste grátis</span>' : meta.ai_configured ? '<span class="badge green">conectada</span>' : '<span class="badge amber">modo demonstração</span>'}</h3>
-        ${aiLocked() ? `<p class="hint">A IA faz parte dos planos pagos.</p>${lockBtn()}` : meta.ai_key_source === 'platform'
-          ? '<p class="hint">A IA desta conta usa a chave do Falaki, configurada pela nossa equipe. O consumo é cobrado à parte.</p>'
-          : `<p class="hint">Crie sua chave em console.anthropic.com. O consumo da IA é cobrado pela Anthropic direto na sua conta. Sem chave, a IA usa respostas automáticas simples.</p>${input('integrations', 'anthropic_api_key', 'API key', { placeholder: 'sk-ant-...' })}`}</div>
-      <div class="card"><h3>Google Places API — prospecção ${meta.places_configured ? '<span class="badge green">conectada</span>' : ''}</h3>
-        <p class="hint">Ative a "Places API (New)" no Google Cloud e crie uma chave de API.</p>${input('integrations', 'google_places_key', 'API key')}</div>`,
   };
 
   if (tab === 'profissionais') return renderProfessionals(el, tabs);
