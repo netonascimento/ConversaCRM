@@ -768,3 +768,51 @@ test('Stripe: quem assina no cartão muda de plano na mesma assinatura, com dife
     config.stripeSecretKey = '';
   }
 });
+
+test('cortesia: admin libera plano pago de graça, com motivo e prazo; vence sozinha e sai da receita', async () => {
+  const { processCourtesies, today } = await import('../src/services/subscriptions.js');
+  const { addDays } = await import('../src/services/time.js');
+  const u = browser();
+  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Pi', name: 'Pia', email: 'pia@pi.com', password: 'senhaforte1' } });
+  const id = (await u('/api/auth/me')).data.company.id;
+  const a = await adminSession();
+  const before = (await a('/api/admin/finance')).data;
+
+  // Sem motivo, não libera.
+  assert.equal((await a(`/api/admin/companies/${id}/courtesy`, { method: 'POST', body: { plan: 'profissional' } })).status, 400);
+  assert.equal((await a(`/api/admin/companies/${id}/courtesy`, { method: 'POST', body: { plan: 'gratis', reason: 'x' } })).status, 400);
+  const until = addDays(today(), 30);
+  const c = (await a(`/api/admin/companies/${id}/courtesy`, { method: 'POST', body: { plan: 'profissional', until, reason: 'Parceiro' } })).data;
+  assert.deepEqual([c.plan, c.max_users, c.max_leads, c.subscription.state, c.subscription.courtesy_until, c.subscription.courtesy_reason], ['profissional', 10, null, 'cortesia', until, 'Parceiro']);
+
+  // A empresa vê a cortesia, com IA liberada.
+  const meta = (await u('/api/meta')).data;
+  assert.deepEqual([meta.ai_locked, meta.subscription.state, meta.subscription.courtesy_until], [false, 'cortesia', until]);
+
+  // Financeiro: conta como cortesia, não como receita.
+  const f = (await a('/api/admin/finance')).data;
+  assert.equal(f.plans.find((p) => p.id === 'profissional').courtesy - before.plans.find((p) => p.id === 'profissional').courtesy, 1);
+  assert.equal(f.mrr_cents, before.mrr_cents);
+  assert.ok((await a('/api/admin/audit')).data.some((r) => r.action === 'cortesia liberada' && r.company_id === id && /Parceiro/.test(r.details)));
+
+  // Prazo vencido: o agendador devolve para o grátis.
+  processCourtesies(addDays(today(), 31));
+  const after = (await u('/api/meta')).data;
+  assert.deepEqual([after.plan.id, after.ai_locked, after.subscription.state], ['gratis', true, 'gratis']);
+  assert.ok((await a('/api/admin/audit')).data.some((r) => r.action === 'cortesia encerrada' && r.company_id === id));
+
+  // Sem prazo + pagamento: pagar encerra a cortesia.
+  await a(`/api/admin/companies/${id}/courtesy`, { method: 'POST', body: { plan: 'essencial', until: '', reason: 'Teste estendido' } });
+  assert.equal((await u('/api/meta')).data.subscription.courtesy_until, null);
+  const paid = (await a(`/api/admin/companies/${id}/activate-plan`, { method: 'POST', body: { plan: 'essencial' } })).data;
+  assert.equal(paid.subscription.state, 'em_dia');
+
+  // Encerrar à mão.
+  await a(`/api/admin/companies/${id}/courtesy`, { method: 'POST', body: { plan: 'profissional', reason: 'Influenciador' } });
+  const ended = (await a(`/api/admin/companies/${id}/courtesy`, { method: 'DELETE' })).data;
+  assert.equal(ended.plan, 'gratis');
+
+  // Plano pago colocado à mão, sem motivo: "sem cobrança" (interna), não cortesia.
+  const internal = (await a(`/api/admin/companies/${id}`, { method: 'PUT', body: { plan: 'profissional', max_users: 10, max_leads: '' } })).data;
+  assert.equal(internal.subscription.state, 'em_dia', 'continua com o Pix pago registrado');
+});

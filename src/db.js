@@ -326,6 +326,8 @@ const COLUMNS = [
   ['companies', 'upgrade_plan', 'TEXT'],
   ['companies', 'upgrade_requested_at', 'TEXT'],
   ['companies', 'billing_method', 'TEXT'],
+  ['companies', 'courtesy_until', 'TEXT'],
+  ['companies', 'courtesy_reason', 'TEXT'],
   ['companies', 'paid_until', 'TEXT'],
   ['companies', 'subscription_status', 'TEXT'],
   ['companies', 'cancel_at_period_end', 'INTEGER NOT NULL DEFAULT 0'],

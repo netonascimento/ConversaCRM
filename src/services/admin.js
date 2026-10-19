@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { main, mainDb, tenantDb, tenantDbFile, closeTenantDb, withCompanyDb, all } from '../db.js';
 import { getCompany, maskSettings, aiKeySource } from './company.js';
 import { PLANS, upgradeTxid } from './plans.js';
-import { confirmPixPayment, subscriptionState, financeOverview } from './subscriptions.js';
+import { confirmPixPayment, subscriptionState, financeOverview, grantCourtesy, endCourtesy } from './subscriptions.js';
 import { usageByMonth, platformUsageIn } from './ai-usage.js';
 import { zonedParts } from './time.js';
 
@@ -45,7 +45,7 @@ const currentMonth = () => zonedParts(new Date(), 'America/Sao_Paulo').date.slic
 export function listCompanies() {
   const platformTokens = Object.fromEntries(platformUsageIn(currentMonth()).map((u) => [u.company_id, u]));
   return main.all(`SELECT id, name, status, plan, max_users, max_leads, segment, storage, public_id, notes, ai_platform_key, upgrade_plan, upgrade_requested_at,
-      billing_method, paid_until, subscription_status, cancel_at_period_end, created_at
+      billing_method, paid_until, subscription_status, cancel_at_period_end, courtesy_until, courtesy_reason, created_at
     FROM companies ORDER BY upgrade_requested_at IS NULL, upgrade_requested_at DESC, created_at DESC`)
     .map((c) => ({ ...c, ai_platform_key: Boolean(c.ai_platform_key), subscription: subscriptionState(c), usage: companyUsage(c.id), ai_platform_month: platformTokens[c.id] || null }));
 }
@@ -93,6 +93,14 @@ export function activatePlan(companyId, planId) {
 }
 
 export { financeOverview };
+
+export function setCourtesy(companyId, data) {
+  const out = grantCourtesy(companyId, data.plan, { until: data.until || null, reason: data.reason });
+  return out && companyDetail(companyId);
+}
+export function removeCourtesy(companyId) {
+  return endCourtesy(companyId) && companyDetail(companyId);
+}
 
 export function setStatus(companyId, status) {
   main.run('UPDATE companies SET status = ? WHERE id = ?', status, companyId);

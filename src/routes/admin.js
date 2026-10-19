@@ -11,7 +11,7 @@ import { releaseAssignments } from '../services/assignment.js';
 import { stripeMode } from '../services/stripe.js';
 import {
   audit, listAudit, listCompanies, companyDetail, updateCompany, setStatus, exportCompany,
-  moveToDedicated, deleteCompany, platformOverview, activatePlan, financeOverview,
+  moveToDedicated, deleteCompany, platformOverview, activatePlan, financeOverview, setCourtesy, removeCourtesy,
 } from '../services/admin.js';
 
 const need = (row, what) => {
@@ -88,6 +88,21 @@ export function registerAdmin(router) {
       audit(actor(req), 'assinatura ativada', out.id, `plano ${out.plan}: Pix confirmado, pago até ${out.subscription.paid_until}`);
       return out;
     } catch (e) { throw new HttpError(400, e.message); }
+  });
+  // Cortesia: plano pago liberado sem cobrança, com motivo e prazo opcional.
+  router.post('/api/admin/companies/:id/courtesy', admin, (req, res, { params, body }) => {
+    need(companyName(Number(params.id)), 'Empresa');
+    try {
+      const out = setCourtesy(Number(params.id), body);
+      audit(actor(req), 'cortesia liberada', out.id, `plano ${out.plan}${body.until ? ` até ${body.until.split('-').reverse().join('/')}` : ' sem prazo'} · motivo: ${out.subscription.courtesy_reason}`);
+      return out;
+    } catch (e) { throw new HttpError(400, e.message); }
+  });
+  router.delete('/api/admin/companies/:id/courtesy', admin, (req, res, { params }) => {
+    need(companyName(Number(params.id)), 'Empresa');
+    const out = removeCourtesy(Number(params.id));
+    audit(actor(req), 'cortesia encerrada', out.id, 'encerrada pelo administrador; voltou para o teste grátis');
+    return out;
   });
   router.post('/api/admin/companies/:id/suspend', admin, (req, res, { params }) => {
     need(companyName(Number(params.id)), 'Empresa');

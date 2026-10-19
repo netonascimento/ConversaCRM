@@ -7,6 +7,7 @@ import { processBilling } from './billing.js';
 import { processOverdueTasks } from './tasks.js';
 import { processGoogle } from './google.js';
 import { processContracts } from './contracts.js';
+import { processCourtesies } from './subscriptions.js';
 import { formatLocal } from './time.js';
 
 /** Envia lembretes de agendamento (ex.: 24h antes). */
@@ -41,6 +42,9 @@ export async function tick() {
   busy = true;
   try {
     let followups = 0; let billing = 0; let reminders = 0; let overdue = 0; let contracts = 0;
+    // Cortesias ficam no banco principal (empresas): uma vez por rodada, fora do laço por banco.
+    const courtesies = processCourtesies();
+    if (courtesies) console.log(`[agendador] cortesias encerradas: ${courtesies}`);
     await forEachDatabase(async () => {
       followups += await processDueFollowups();
       billing += await processBilling();

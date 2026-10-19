@@ -238,6 +238,10 @@ function planBanner() {
     if (days < 0) return `<div class="banner">O mês pago do plano ${esc(plan.label)} terminou em ${fmtDay(sub.paid_until)}. <a href="#/assinar">Pagar com Pix</a></div>`;
     if (days <= 5) return `<div class="banner">Seu plano ${esc(plan.label)} está pago até ${fmtDay(sub.paid_until)} (${days === 0 ? 'vence hoje' : `${days} dia(s)`}). <a href="#/assinar">Pagar o próximo mês</a></div>`;
   }
+  if (sub?.state === 'cortesia' && sub.courtesy_until) {
+    const days = Math.round((Date.parse(`${sub.courtesy_until}T12:00:00Z`) - Date.parse(`${todayStr()}T12:00:00Z`)) / 86400000);
+    if (days <= 5) return `<div class="banner">🎁 Seu acesso de cortesia ao plano ${esc(plan.label)} termina ${days <= 0 ? 'hoje' : `em ${fmtDay(sub.courtesy_until)}`}. <a href="#/assinar">Assine para continuar com a IA</a></div>`;
+  }
   if (sub?.state === 'atrasada') return `<div class="banner">O cartão da assinatura foi recusado. <a href="#/assinar">Atualizar o cartão</a> para não perder o plano.</div>`;
   if (plan.max_leads === null || plan.max_leads === undefined) return '';
   const left = plan.leads_remaining;
@@ -1128,6 +1132,14 @@ async function renderPaywall(el, [planId] = []) {
 
 function subscriptionCard(info) {
   const sub = info.subscription;
+  if (sub.state === 'cortesia') {
+    const current = info.plans.find((p) => p.id === info.current_plan);
+    return `<div class="card" style="margin-bottom:14px">
+      <div class="card-head"><h3>Sua assinatura</h3><span class="spacer"></span><span class="badge purple">🎁 cortesia</span></div>
+      <p style="margin:6px 0">Plano <strong>${esc(current?.label || info.current_plan)}</strong> liberado como cortesia${sub.courtesy_until ? ` até <strong>${sub.courtesy_until.split('-').reverse().join('/')}</strong>` : ''}, sem cobrança.</p>
+      ${sub.courtesy_until ? '<p class="small muted">Depois dessa data a conta volta para o teste grátis. Para continuar com a IA, assine abaixo quando quiser.</p>' : ''}
+    </div>`;
+  }
   if (!sub.method) return '';
   const current = info.plans.find((p) => p.id === info.current_plan);
   const label = { em_dia: ['green', 'em dia'], vencida: ['red', 'Pix vencido'], atrasada: ['red', 'pagamento recusado'], cancelada: ['', 'cancelada'] }[sub.state] || ['', sub.state];

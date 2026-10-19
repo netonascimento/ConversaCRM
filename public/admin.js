@@ -140,9 +140,42 @@ window.addEventListener('hashchange', () => { $('#modal-root').innerHTML = ''; r
 const METHOD_LABEL = { cartao: '💳 cartão', pix: '◆ Pix' };
 const SUB_BADGE = {
   em_dia: ['green', 'em dia'], vencida: ['red', 'Pix vencido'], atrasada: ['red', 'cartão recusado'], cancelada: ['', 'cancelada'],
-  cortesia: ['outline', 'sem cobrança'], gratis: ['', 'teste grátis'], personalizado: ['outline', 'personalizado'],
+  cortesia: ['purple', 'cortesia'], interna: ['outline', 'sem cobrança'], gratis: ['', 'teste grátis'], personalizado: ['outline', 'personalizado'],
 };
-const subBadge = (s) => { const [c, l] = SUB_BADGE[s?.state] || ['', s?.state || '-']; return `<span class="badge ${c}">${l}</span>`; };
+const subBadge = (s) => {
+  const [c, l] = SUB_BADGE[s?.state] || ['', s?.state || '-'];
+  return `<span class="badge ${c}" ${s?.courtesy_reason ? `title="${esc(s.courtesy_reason)}"` : ''}>${l}${s?.state === 'cortesia' && s.courtesy_until ? ` até ${fmtDate(s.courtesy_until)}` : ''}</span>`;
+};
+const COURTESY_REASONS = ['Parceiro', 'Influenciador', 'Teste estendido', 'Cliente piloto', 'Permuta'];
+const addDaysIso = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+
+function courtesyBlock(c) {
+  const s = c.subscription;
+  if (s.state === 'cortesia') {
+    return `<div class="banner" style="margin-bottom:10px">🎁 <strong>Cortesia do plano ${esc(planLabel(c.plan))}</strong> ${s.courtesy_until ? `até <strong>${fmtDate(s.courtesy_until)}</strong> (depois volta para o teste grátis)` : 'sem prazo'} · motivo: ${esc(s.courtesy_reason || '-')}
+      <div class="row wrap" style="margin-top:8px"><button class="sm" id="edit-courtesy">Mudar prazo ou plano</button><button class="sm danger" id="end-courtesy">Encerrar cortesia</button></div></div>
+      <div id="courtesy-form-slot"></div>`;
+  }
+  if (s.method === 'cartao' && s.state !== 'cancelada') return '';
+  return '<div class="row wrap" style="margin-bottom:10px"><button class="sm" id="new-courtesy">🎁 Liberar de graça (cortesia)</button></div><div id="courtesy-form-slot"></div>';
+}
+
+function courtesyForm(c) {
+  const s = c.subscription;
+  const paid = state.me.plans.filter((p) => p.price_cents > 0);
+  const current = s.state === 'cortesia' ? c.plan : paid[0].id;
+  return `<form id="courtesy-form" class="card" style="margin-bottom:10px;background:var(--paper-2)">
+    <div class="fields">
+      <div class="field"><label for="ct-plan">Plano liberado</label><select id="ct-plan" name="plan">${paid.map((p) => `<option value="${p.id}" ${p.id === current ? 'selected' : ''}>${esc(p.label)} (${money(p.price_cents)}/mês)</option>`).join('')}</select></div>
+      <div class="field"><label for="ct-until">Liberado até</label><input id="ct-until" name="until" type="date" min="${addDaysIso(0)}" value="${s.courtesy_until || addDaysIso(30)}">
+        <div class="row wrap" style="margin-top:6px"><button type="button" class="sm" data-days="30">30 dias</button><button type="button" class="sm" data-days="90">90 dias</button><button type="button" class="sm" data-days="0">Sem prazo</button></div></div>
+      <div class="field"><label for="ct-reason">Motivo</label><input id="ct-reason" name="reason" list="ct-reasons" required maxlength="120" value="${esc(s.courtesy_reason || '')}" placeholder="Ex.: parceiro, influenciador, teste estendido">
+        <datalist id="ct-reasons">${COURTESY_REASONS.map((r) => `<option value="${r}">`).join('')}</datalist></div>
+    </div>
+    <p class="hint">Sem cobrança e fora da receita. No fim do prazo a empresa volta sozinha para o teste grátis; se ela assinar antes, a cortesia termina.</p>
+    <div class="row"><button type="button" class="sm" id="ct-cancel">Cancelar</button><button class="sm primary">Liberar cortesia</button></div>
+  </form>`;
+}
 const fmtDate = (d) => (d ? d.split('-').reverse().join('/') : '—');
 const monthName = (m) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
 
@@ -186,10 +219,10 @@ async function renderFinance(el) {
         <div class="table-wrap"><table class="small" style="margin-top:6px">
           <tr><th>Plano</th><th>Empresas</th><th>Pagantes</th><th>Cartão / Pix</th><th class="right">Recorrente</th></tr>
           ${f.plans.map((p) => `<tr><td><strong>${esc(p.label)}</strong><div class="muted">${p.price_cents ? `${money(p.price_cents)}/mês` : 'grátis'}</div></td>
-            <td>${num(p.companies)}</td><td>${p.price_cents ? num(p.paying) : '—'}${p.courtesy ? `<div class="muted">${p.courtesy} sem cobrança</div>` : ''}</td>
+            <td>${num(p.companies)}</td><td>${p.price_cents ? num(p.paying) : '—'}${p.courtesy ? `<div class="muted">${p.courtesy} cortesia</div>` : ''}${p.internal ? `<div class="muted">${p.internal} sem cobrança</div>` : ''}</td>
             <td>${p.price_cents ? `${p.card} / ${p.pix}` : '—'}</td><td class="right nowrap">${p.price_cents ? money(p.mrr_cents) : '—'}</td></tr>`).join('')}
         </table></div>
-        <p class="hint">"Sem cobrança": plano pago colocado manualmente, sem nenhum pagamento registrado (ex.: contas internas e de demonstração). Não entra na receita.</p></div>
+        <p class="hint">"Cortesia": liberada por você, com motivo e prazo. "Sem cobrança": plano pago colocado à mão, sem pagamento (ex.: contas internas e de demonstração). Nenhuma das duas entra na receita.</p></div>
     </div>
     <div class="grid halves" style="margin-top:14px">
       <div class="card"><h3>A receber nos próximos 30 dias</h3>
@@ -403,6 +436,7 @@ async function openCompany(id) {
     <div class="card" style="margin-top:14px">
       <div class="card-head"><h3>Assinatura</h3><span class="spacer"></span>${subBadge(c.subscription)}</div>
       <p class="small muted" style="margin:6px 0 10px">${c.subscription.method ? `${METHOD_LABEL[c.subscription.method]} · pago até ${fmtDate(c.subscription.paid_until)}${c.subscription.cancel_at_period_end ? ' · <strong>cancelamento agendado</strong> para o fim do período' : ''}` : 'Nenhum pagamento registrado.'}</p>
+      ${courtesyBlock(c)}
       ${c.subscription.method !== 'cartao' ? `<div class="row wrap" style="margin-bottom:10px">${state.me.plans.filter((p) => p.price_cents > 0).map((p) => `<button class="sm" data-pix-plan="${p.id}">Registrar Pix do ${esc(p.label)} (${money(p.price_cents)})</button>`).join('')}</div>
         <p class="hint" style="margin-bottom:10px">Cada Pix confirmado ativa o plano e soma um mês ao período pago.</p>` : '<p class="hint" style="margin-bottom:10px">Pagamento no cartão: o Stripe renova sozinho todo mês.</p>'}
       ${c.payments.length ? `<div class="table-wrap"><table class="small"><tr><th>Data</th><th>Plano</th><th>Forma</th><th>Período</th><th>Situação</th><th class="right">Valor</th></tr>
@@ -441,6 +475,28 @@ async function openCompany(id) {
     e.preventDefault();
     try { await api(`/api/admin/companies/${id}`, { method: 'PUT', body: formData(e.target) }); toast('Empresa atualizada'); reopen(); } catch (err) { fail(err); }
   };
+  const openCourtesyForm = () => {
+    const slot = $('#courtesy-form-slot', box);
+    slot.innerHTML = courtesyForm(c);
+    const f = $('#courtesy-form', slot);
+    $$('[data-days]', f).forEach((b) => { b.onclick = () => { f.until.value = b.dataset.days === '0' ? '' : addDaysIso(Number(b.dataset.days)); }; });
+    $('#ct-cancel', f).onclick = () => { slot.innerHTML = ''; };
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await api(`/api/admin/companies/${id}/courtesy`, { method: 'POST', body: formData(f) });
+        toast(`Cortesia liberada: plano ${planLabel(f.plan.value)}${f.until.value ? ` até ${fmtDate(f.until.value)}` : ' sem prazo'}`);
+        reopen();
+      } catch (err) { fail(err); }
+    };
+    f.reason.focus();
+  };
+  $('#new-courtesy', box)?.addEventListener('click', openCourtesyForm);
+  $('#edit-courtesy', box)?.addEventListener('click', openCourtesyForm);
+  $('#end-courtesy', box)?.addEventListener('click', async () => {
+    if (!confirm(`Encerrar a cortesia de ${c.name}? A empresa volta para o teste grátis agora.`)) return;
+    try { await api(`/api/admin/companies/${id}/courtesy`, { method: 'DELETE' }); toast('Cortesia encerrada'); reopen(); } catch (err) { fail(err); }
+  });
   $$('[data-pix-plan]', box).forEach((b) => { b.onclick = async () => {
     const label = planLabel(b.dataset.pixPlan);
     if (!confirm(`Registrar um Pix do plano ${label} para ${c.name}? Ativa o plano e soma um mês.`)) return;
