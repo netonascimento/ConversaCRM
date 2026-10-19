@@ -29,16 +29,16 @@ export function onboarding(companyId) {
       done: Boolean(flags.hours),
     },
     {
-      id: 'teste', title: 'Teste o atendimento',
+      id: 'teste', title: 'Simule um cliente',
       text: aiAllowed(company)
-        ? 'Mande uma mensagem como se fosse um cliente e veja a IA responder, agendar e cobrar.'
-        : 'Mande uma mensagem como se fosse um cliente e responda você mesmo, aqui. É assim que a sua equipe vai atender.',
-      action: 'Fazer um teste', href: '#/comecar/4',
+        ? 'Ainda não precisa do WhatsApp: aqui você faz de conta que é um cliente e vê a IA responder, agendar e cobrar. É um teste dentro do Falaki; nenhuma mensagem é enviada.'
+        : 'Ainda não precisa do WhatsApp: aqui você faz de conta que é um cliente e responde como a sua equipe. É um teste dentro do Falaki; nenhuma mensagem é enviada.',
+      action: 'Simular um cliente', href: '#/comecar/4',
       done: one("SELECT COUNT(*) AS n FROM messages WHERE company_id = ? AND direction = 'in'"),
     },
     {
       id: 'whatsapp', title: 'Conecte o seu WhatsApp',
-      text: 'Use o número que você já tem, lendo um QR Code. A partir daí os clientes de verdade são atendidos.',
+      text: 'Agora sim, o número de verdade. Use o que você já tem, lendo um QR Code: a partir daí as mensagens dos seus clientes chegam aqui, como no teste.',
       action: 'Conectar WhatsApp', href: '#/comecar/5',
       done: s.whatsapp.provider !== 'simulator',
     },

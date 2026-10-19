@@ -1413,7 +1413,7 @@ function wzTest(body) {
   let contactId = null;
   let lastId = 0;
   body.innerHTML = `
-    <div class="wizard-chat" id="wz-chat"><div class="small muted" style="text-align:center;padding:24px 0">Escreva como se fosse um cliente chegando pelo WhatsApp.</div></div>
+    <div class="wizard-chat" id="wz-chat"><div class="small muted" style="text-align:center;padding:24px 0">🧪 Simulação: escreva como se fosse um cliente chegando pelo WhatsApp.<br>Nenhuma mensagem é enviada a ninguém.</div></div>
     <div class="row wrap" style="margin:10px 0" id="wz-suggest">
       ${['Oi! Quanto custa?', 'Tem horário amanhã?', 'Vocês aceitam Pix?'].map((t) => `<button type="button" class="sm" data-say="${esc(t)}">${esc(t)}</button>`).join('')}</div>
     <form class="row" id="wz-say"><input name="text" placeholder="Mensagem do cliente…" aria-label="Mensagem do cliente" autocomplete="off"><button class="primary">Enviar como cliente</button></form>
@@ -1503,6 +1503,7 @@ async function wizardDone(el) {
       <div class="card wizard-card" style="text-align:center">
         <div style="font-size:42px">${pending.length ? '👏' : '🎉'}</div>
         <h1>${pending.length ? 'Quase lá!' : 'Tudo pronto!'}</h1>
+        ${!ob.steps.find((x) => x.id === 'whatsapp')?.done ? '' : '<p class="small" style="margin:0 0 8px">📱 <strong>Teste de verdade:</strong> mande um "oi" de outro celular para o número da empresa e veja a conversa chegar no Atendimento.</p>'}
         <p class="muted">${pending.length ? `Seu Falaki está ${ob.percent}% pronto. Falta${pending.length > 1 ? 'm' : ''}: ${pending.map((x) => esc(x.title.charAt(0).toLowerCase() + x.title.slice(1))).join(', ')}.` : 'O Falaki já pode atender os seus clientes.'}</p>
         <div class="row wrap" style="justify-content:center;margin-top:18px;gap:10px">
           ${pending.length ? `<a class="btn" href="#/comecar/${ob.steps.indexOf(pending[0]) + 1}">Terminar agora</a>` : ''}
