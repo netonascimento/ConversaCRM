@@ -241,6 +241,70 @@ CREATE TABLE IF NOT EXISTS prospects (
   maps_url TEXT,
   contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL
 );
+CREATE TABLE IF NOT EXISTS contracts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  value_cents INTEGER NOT NULL DEFAULT 0,
+  period TEXT NOT NULL DEFAULT 'mensal',
+  start_date TEXT NOT NULL,
+  end_date TEXT,
+  notice_days INTEGER NOT NULL DEFAULT 30,
+  auto_renew INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'ativo',
+  notes TEXT NOT NULL DEFAULT '',
+  renewed_from_id INTEGER,
+  alert_sent_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_contracts_company_end ON contracts(company_id, status, end_date);
+CREATE TABLE IF NOT EXISTS documents (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  contact_id INTEGER REFERENCES contacts(id) ON DELETE CASCADE,
+  contract_id INTEGER REFERENCES contracts(id) ON DELETE SET NULL,
+  name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  category TEXT NOT NULL DEFAULT '',
+  uploaded_by TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_documents_company ON documents(company_id, contact_id);
+-- Conteúdo dos arquivos fica separado, para listar documentos sem carregar os arquivos.
+CREATE TABLE IF NOT EXISTS document_files (
+  document_id INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
+  data BLOB NOT NULL
+);
+-- Mensalidades que as empresas pagam à plataforma (Pix confirmado pelo admin ou cartão no Stripe).
+CREATE TABLE IF NOT EXISTS subscription_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  plan TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL,
+  method TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pago',
+  period_start TEXT,
+  period_end TEXT,
+  provider_ref TEXT UNIQUE,
+  paid_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_subscription_payments_company ON subscription_payments(company_id, paid_at);
+CREATE TABLE IF NOT EXISTS ai_usage (
+  company_id INTEGER NOT NULL,
+  month TEXT NOT NULL,
+  model TEXT NOT NULL,
+  key_source TEXT NOT NULL,
+  requests INTEGER NOT NULL DEFAULT 0,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (company_id, month, model, key_source)
+);
 `;
 
 // Colunas adicionadas depois da primeira versão (bancos antigos recebem via ALTER TABLE).
@@ -258,6 +322,19 @@ const COLUMNS = [
   ['companies', 'public_id', 'TEXT'],
   ['companies', 'webhook_token', 'TEXT'],
   ['companies', 'storage', "TEXT NOT NULL DEFAULT 'shared'"],
+  ['companies', 'ai_platform_key', 'INTEGER NOT NULL DEFAULT 0'],
+  ['companies', 'upgrade_plan', 'TEXT'],
+  ['companies', 'upgrade_requested_at', 'TEXT'],
+  ['companies', 'billing_method', 'TEXT'],
+  ['companies', 'paid_until', 'TEXT'],
+  ['companies', 'subscription_status', 'TEXT'],
+  ['companies', 'cancel_at_period_end', 'INTEGER NOT NULL DEFAULT 0'],
+  ['companies', 'stripe_customer_id', 'TEXT'],
+  ['companies', 'stripe_subscription_id', 'TEXT'],
+  ['contacts', 'assigned_user_id', 'INTEGER'],
+  ['contacts', 'assigned_at', 'TEXT'],
+  ['messages', 'user_id', 'INTEGER'],
+  ['messages', 'user_name', 'TEXT'],
   ['users', 'active', 'INTEGER NOT NULL DEFAULT 1'],
   ['users', 'professional_id', 'INTEGER'],
   ['users', 'last_login_at', 'TEXT'],

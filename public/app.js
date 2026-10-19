@@ -1,4 +1,4 @@
-// Fechou — painel web (SPA sem dependências)
+// Falaki — painel web (SPA sem dependências)
 import { parseDelimited, parseVCard, guessMapping, toContacts, FIELDS } from './import.js';
 
 // ---------------------------------------------------------------------------
@@ -103,6 +103,7 @@ const ICONS = {
   tarefas: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
   cobranca: '<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
   prospeccao: '<path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
+  clientes: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2M2 13h20"/>',
   produtos: '<path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7zM3.3 7L12 12l8.7-5M12 22V12"/>',
   config: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>',
 };
@@ -113,22 +114,38 @@ const stageLabel = (id) => state.meta?.stages.find((s) => s.id === id)?.label ||
 const stageBadge = (id) => `<span class="badge ${STAGE_COLORS[id] || ''}">${esc(stageLabel(id))}</span>`;
 const SOURCE_LABEL = { whatsapp: 'WhatsApp', manual: 'Manual', google_maps: 'Google Maps', site: 'Site', indicacao: 'Indicação', importacao: 'Importação' };
 const CHARGE_BADGE = { pendente: 'amber', pago: 'green', vencido: 'red', cancelado: '' };
+const sessionGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
+const sessionSet = (k, v) => { try { sessionStorage.setItem(k, v); } catch { /* sem armazenamento */ } };
+// Teste grátis: tudo que usa IA aparece com cadeado e leva para a tela de assinatura.
+const aiLocked = () => Boolean(state.meta?.ai_locked);
+const lockBtn = (label = 'Desbloquear IA') => `<a class="btn sm" href="#/assinar" title="A IA faz parte dos planos pagos">🔒 ${esc(label)}</a>`;
+const lockCard = (what) => `<div class="banner">🔒 <strong>${esc(what)}</strong> faz parte dos planos pagos. No teste grátis você usa o atendimento manual, o CRM, a agenda e o resto do sistema. <a href="#/assinar">Desbloquear a IA</a></div>`;
 const AUTHOR_LABEL = { ai: '🤖 IA', human: '👤 Equipe', followup: '🔁 Follow-up', billing: '💰 Cobrança', system: '⏰ Lembrete', contact: '' };
 
 // ---------------------------------------------------------------------------
 // Autenticação
 // ---------------------------------------------------------------------------
+// Plano escolhido na página inicial (/app#/assinar/essencial): depois do cadastro ou login, vai direto para o Pix.
+const buyingPlanId = () => (location.hash.match(/^#\/assinar\/([a-z]+)/) || [])[1] || null;
+
 async function renderAuth(mode = 'login') {
   clearTimers();
   closeAllModals();
   const cfg = await fetch('/api/auth/config').then((r) => r.json()).catch(() => ({ allow_signup: false, segments: [] }));
   if (!cfg.allow_signup) mode = 'login';
+  const buying = buyingPlanId()
+    ? (await fetch('/api/public/info').then((r) => r.json()).catch(() => ({ plans: [] }))).plans.find((p) => p.id === buyingPlanId() && p.price_cents > 0)
+    : null;
+  const title = buying ? `Assinar o ${buying.label}` : mode === 'login' ? 'Entrar' : 'Teste grátis';
+  const intro = buying
+    ? `${money(buying.price_cents)}/mês, com IA. ${mode === 'login' ? 'Entre na sua conta' : 'Crie a conta da sua empresa'} e pague por Pix na próxima tela.`
+    : mode === 'login' ? 'Fala aqui. Fecha aqui.' : 'Crie a conta da sua empresa: 1 usuário e até 30 clientes, sem cartão. A IA fica disponível nos planos pagos.';
   $('#app').innerHTML = `
     <div class="auth"><div>
       <div class="card">
-        <div class="brand" style="color:var(--green-dark);padding:0 0 12px"><div class="brand-logo">${icon('agenda').replace('currentColor', '#fff')}</div>Fechou</div>
-        <h1>${mode === 'login' ? 'Entrar' : 'Teste grátis'}</h1>
-        <p class="muted">${mode === 'login' ? 'Prospecte, atenda, venda e cobre num só lugar.' : 'Crie a conta da sua empresa: 1 usuário e até 10 leads, sem cartão.'}</p>
+        <div class="brand" style="color:var(--green-dark);padding:0 0 12px"><div class="brand-logo">${icon('agenda').replace('currentColor', '#fff')}</div>Falaki</div>
+        <h1>${esc(title)}</h1>
+        <p class="muted">${esc(intro)}</p>
         <form id="auth-form" class="stack" style="margin-top:16px">
           ${mode === 'register' ? `
             <div><label for="r-company">Nome da empresa</label><input id="r-company" name="companyName" required></div>
@@ -136,12 +153,12 @@ async function renderAuth(mode = 'login') {
             <div><label for="r-name">Seu nome</label><input id="r-name" name="name" required></div>` : ''}
           <div><label for="r-email">E-mail</label><input id="r-email" name="email" type="email" required autocomplete="username"></div>
           <div><label for="r-pass">Senha</label><input id="r-pass" name="password" type="password" required minlength="${mode === 'login' ? 1 : 8}" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}">${mode === 'register' ? '<div class="hint">Mínimo de 8 caracteres.</div>' : ''}</div>
-          <button class="primary" style="width:100%;justify-content:center">${mode === 'login' ? 'Entrar' : 'Criar conta grátis'}</button>
+          <button class="primary" style="width:100%;justify-content:center">${mode === 'login' ? (buying ? 'Entrar e continuar' : 'Entrar') : buying ? 'Criar conta e continuar para o Pix' : 'Criar conta grátis'}</button>
         </form>
         <p class="small muted" style="margin-top:14px;text-align:center">
-          ${mode === 'login' ? (cfg.allow_signup ? 'Ainda não usa? <a href="#cadastro" data-mode="register">Teste grátis</a>' : '') : 'Já tem conta? <a href="#" data-mode="login">Entrar</a>'}
+          ${mode === 'login' ? (cfg.allow_signup ? `Ainda não usa? <a href="#cadastro" data-mode="register">${buying ? 'Criar conta' : 'Teste grátis'}</a>` : '') : 'Já tem conta? <a href="#" data-mode="login">Entrar</a>'}
         </p>
-        <p class="small muted" style="text-align:center"><a href="/">Conheça o Fechou</a></p>
+        <p class="small muted" style="text-align:center"><a href="/">Conheça o Falaki</a></p>
       </div>
       <p class="features">✓ IA no WhatsApp 24h &nbsp; ✓ Agenda &nbsp; ✓ CRM &nbsp; ✓ Follow-up &nbsp; ✓ Cobrança Pix &nbsp; ✓ Google Maps &nbsp; ✓ Dashboard</p>
     </div></div>`;
@@ -163,6 +180,7 @@ const PAGES = [
   ['inbox', 'Atendimento', renderInbox],
   ['tarefas', 'Tarefas da equipe', renderTasks],
   ['crm', 'CRM / Funil', renderCrm],
+  ['clientes', 'Clientes', renderClients],
   ['agenda', 'Agenda', renderAgenda],
   ['followup', 'Follow-up', renderFollowup],
   ['cobranca', 'Cobrança', renderBilling],
@@ -174,8 +192,8 @@ const PAGES = [
 // O que cada perfil vê no menu (o servidor também bloqueia o acesso).
 const ROLE_PAGES = {
   owner: null,
-  agent: ['dashboard', 'inbox', 'tarefas', 'crm', 'agenda', 'followup', 'prospeccao', 'produtos'],
-  professional: ['dashboard', 'inbox', 'tarefas', 'crm', 'agenda'],
+  agent: ['dashboard', 'inbox', 'tarefas', 'crm', 'clientes', 'agenda', 'followup', 'prospeccao', 'produtos'],
+  professional: ['dashboard', 'inbox', 'tarefas', 'crm', 'clientes', 'agenda'],
 };
 const allowedPages = () => {
   const list = ROLE_PAGES[state.me?.user.role];
@@ -188,13 +206,14 @@ function every(ms, fn) { state.timers.push(setInterval(fn, ms)); }
 
 function renderLayout() {
   $('#app').innerHTML = `
-    <div class="mobile-top"><button id="menu-btn" aria-label="Abrir menu">☰</button><strong>Fechou</strong></div>
+    <div class="mobile-top"><button id="menu-btn" aria-label="Abrir menu">☰</button><strong>Falaki</strong></div>
     <div class="layout">
       <aside class="sidebar" id="sidebar">
-        <div class="brand"><div class="brand-logo">${icon('agenda')}</div>Fechou</div>
+        <div class="brand"><div class="brand-logo">${icon('agenda')}</div>Falaki</div>
         <nav class="nav">${allowedPages().map(([id, label]) => `<a href="#/${id}" data-page="${id}">${icon(id)}<span>${label}</span>${id === 'inbox' ? '<span class="badge count hidden" id="unread-badge"></span>' : id === 'tarefas' ? '<span class="badge count hidden" id="tasks-badge"></span>' : ''}</a>`).join('')}</nav>
         <div class="sidebar-foot">
           <div><strong style="color:#fff">${esc(state.me.company.name)}</strong></div>
+          ${isOwner() && state.meta?.plan ? `<div><a href="#/assinar" style="color:inherit">${state.meta.ai_locked ? '🔒 ' : ''}Plano ${esc(state.meta.plan.label)} · assinatura</a></div>` : ''}
           <div>${esc(state.me.user.email)}</div>
           <button class="sm" id="logout">Sair</button>
         </div>
@@ -211,10 +230,20 @@ function renderLayout() {
 
 function planBanner() {
   const plan = state.meta?.plan;
-  if (!plan || plan.max_leads === null || plan.max_leads === undefined || !isOwner()) return '';
+  if (!plan || !isOwner()) return '';
+  // Pix: lembrete de renovação (vale para qualquer plano pago, inclusive sem limite de leads).
+  const sub = state.meta.subscription;
+  if (sub?.method === 'pix' && sub.paid_until && ['em_dia', 'vencida'].includes(sub.state)) {
+    const days = Math.round((Date.parse(`${sub.paid_until}T12:00:00Z`) - Date.parse(`${todayStr()}T12:00:00Z`)) / 86400000);
+    if (days < 0) return `<div class="banner">O mês pago do plano ${esc(plan.label)} terminou em ${fmtDay(sub.paid_until)}. <a href="#/assinar">Pagar com Pix</a></div>`;
+    if (days <= 5) return `<div class="banner">Seu plano ${esc(plan.label)} está pago até ${fmtDay(sub.paid_until)} (${days === 0 ? 'vence hoje' : `${days} dia(s)`}). <a href="#/assinar">Pagar o próximo mês</a></div>`;
+  }
+  if (sub?.state === 'atrasada') return `<div class="banner">O cartão da assinatura foi recusado. <a href="#/assinar">Atualizar o cartão</a> para não perder o plano.</div>`;
+  if (plan.max_leads === null || plan.max_leads === undefined) return '';
   const left = plan.leads_remaining;
-  const contact = state.meta.sales_whatsapp ? ` <a href="https://wa.me/${esc(state.meta.sales_whatsapp)}?text=${encodeURIComponent(`Olá! Quero mudar de plano no Fechou (${state.me.company.name}).`)}" target="_blank" rel="noopener">Mudar de plano</a>` : '';
-  if (left === 0) return `<div class="banner">Você usou os ${plan.max_leads} leads do plano ${esc(plan.label)}. Novos contatos não entram no CRM até você mudar de plano.${contact}</div>`;
+  const contact = state.meta.sales_whatsapp ? ` <a href="https://wa.me/${esc(state.meta.sales_whatsapp)}?text=${encodeURIComponent(`Olá! Quero mudar de plano no Falaki (${state.me.company.name}).`)}" target="_blank" rel="noopener">Mudar de plano</a>` : ' <a href="#/assinar">Mudar de plano</a>';
+  if (left === 0) return `<div class="banner">Você usou os ${plan.max_leads} leads do plano ${esc(plan.label)}. Novos contatos não entram no CRM até você mudar de plano. ${aiLocked() ? '<a href="#/assinar">Assinar</a>' : contact}</div>`;
+  if (aiLocked()) return `<div class="banner">Teste grátis: ${plan.leads_used} de ${plan.max_leads} leads usados, sem IA. <a href="#/assinar">🔒 Desbloquear a IA</a></div>`;
   return `<div class="banner">Plano ${esc(plan.label)}: ${plan.leads_used} de ${plan.max_leads} leads usados.${contact}</div>`;
 }
 
@@ -245,7 +274,7 @@ async function route() {
     history.replaceState(null, '', `#${path}`);
   }
   const pages = allowedPages();
-  const def = pages.find((p) => p[0] === page) || pages[0];
+  const def = page === 'assinar' ? ['assinar', 'Assinatura', renderPaywall] : pages.find((p) => p[0] === page) || pages[0];
   $$('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === def[0]));
   $('#sidebar')?.classList.remove('open');
   const el = $('#page');
@@ -259,8 +288,8 @@ async function boot() {
   try {
     state.me = await api('/api/auth/me');
   } catch {
-    // O botão "Teste grátis" da página inicial chega em /app#cadastro.
-    return renderAuth(location.hash === '#cadastro' ? 'register' : 'login');
+    // O botão "Teste grátis" da página inicial chega em /app#cadastro; o de um plano pago, em /app#/assinar/<plano>.
+    return renderAuth(location.hash === '#cadastro' || buyingPlanId() ? 'register' : 'login');
   }
   state.meta = await api('/api/meta');
   renderLayout();
@@ -299,7 +328,7 @@ async function renderDashboard(el) {
       <span class="spacer"></span>
       <select id="days" style="width:auto">${[7, 30, 90, 365].map((n) => `<option value="${n}" ${n === days ? 'selected' : ''}>Últimos ${n} dias</option>`).join('')}</select>
     </div>
-    ${!state.meta.ai_configured ? '<div class="banner">A IA está em <strong>modo demonstração</strong> (respostas automáticas simples). Adicione sua chave da API Anthropic em <a href="#/config">Configurações → Integrações</a> para ativar o atendimento inteligente.</div>' : ''}
+    ${aiLocked() ? lockCard('O atendimento com IA') : !state.meta.ai_configured ? '<div class="banner">A IA está em <strong>modo demonstração</strong> (respostas automáticas simples). Adicione sua chave da API Anthropic em <a href="#/config">Configurações → Integrações</a> para ativar o atendimento inteligente.</div>' : ''}
     <div class="grid kpis">
       ${fin ? `<div class="card kpi good"><div class="label">Faturamento</div><div class="value">${money(m.revenue_cents)}</div><div class="sub">recebido no período</div></div>
       <div class="card kpi"><div class="label">A receber</div><div class="value">${money(m.receivable_cents)}</div><div class="sub">cobranças pendentes</div></div>
@@ -325,7 +354,7 @@ async function renderDashboard(el) {
       </div>
     </div>
     <div class="card ${fin ? '' : 'hidden'}" style="margin-top:14px">
-      <div class="card-head"><h2>Insights</h2><span class="spacer"></span><button class="sm" id="insights">Gerar recomendações ${state.meta.ai_configured ? 'com IA' : ''}</button></div>
+      <div class="card-head"><h2>Insights</h2><span class="spacer"></span>${aiLocked() ? lockBtn('Recomendações com IA') : `<button class="sm" id="insights">Gerar recomendações ${state.meta.ai_configured ? 'com IA' : ''}</button>`}</div>
       <div id="insights-box" class="muted small">Clique para receber recomendações baseadas nos seus números.</div>
     </div>
     <div class="grid halves" style="margin-top:14px">
@@ -340,7 +369,7 @@ async function renderDashboard(el) {
       <ul class="feed">${d.activities.map((a) => `<li><span class="muted small">${ago(a.created_at)}</span> · <strong>${esc(a.contact_name || '')}</strong> ${esc(a.description)}</li>`).join('') || '<li class="muted">Nada ainda.</li>'}</ul>
     </div>`;
   $('#days').onchange = (e) => { sessionStorage.setItem('dash-days', e.target.value); route(); };
-  $('#insights').onclick = async (e) => {
+  if ($('#insights')) $('#insights').onclick = async (e) => {
     e.target.disabled = true;
     $('#insights-box').innerHTML = 'Analisando seus números…';
     try {
@@ -357,15 +386,20 @@ async function renderDashboard(el) {
 // ---------------------------------------------------------------------------
 async function renderInbox(el, [selected]) {
   const provider = state.meta.whatsapp_provider;
+  // Profissional só vê os próprios clientes; dono e atendentes dividem as conversas por responsável.
+  const canAssign = state.me.user.role !== 'professional';
+  let scope = canAssign ? (sessionGet('inbox-scope') ?? '') : '';
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>Atendimento</h1><p class="muted">Conversas do WhatsApp com resposta automática da IA</p></div>
+      <div><h1>Atendimento</h1><p class="muted">${aiLocked() ? 'Conversas do WhatsApp, atendidas pela sua equipe' : 'Conversas do WhatsApp com resposta automática da IA'}</p></div>
       <span class="spacer"></span>
       <span class="badge ${provider === 'simulator' ? 'amber' : 'green'}">WhatsApp: ${provider === 'simulator' ? 'simulador' : provider === 'meta' ? 'Cloud API (Meta)' : 'Evolution API'}</span>
       <button id="simulate">Simular cliente</button>
     </div>
     <div class="card inbox ${selected ? 'has-chat' : ''}" id="inbox">
-      <div class="conv-list"><div class="conv-search"><input id="conv-q" placeholder="Buscar conversa…"></div><div id="convs"></div></div>
+      <div class="conv-list"><div class="conv-search"><input id="conv-q" placeholder="Buscar conversa…">
+        ${canAssign ? `<div class="segmented" id="conv-scope" style="margin-top:8px;width:100%">${[['', 'Todas'], ['mine', 'Minhas'], ['unassigned', 'Sem responsável']].map(([v, l]) => `<button type="button" data-scope="${v}" class="${scope === v ? 'active' : ''}" style="flex:1">${l}</button>`).join('')}</div>` : ''}
+      </div><div id="convs"></div></div>
       <div class="chat" id="chat"><div class="empty">Selecione uma conversa</div></div>
     </div>`;
   let lastId = 0;
@@ -373,7 +407,10 @@ async function renderInbox(el, [selected]) {
 
   async function loadConvs() {
     const q = $('#conv-q')?.value || '';
-    const convs = await api(`/api/conversations${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (scope) params.set('scope', scope);
+    const convs = await api(`/api/conversations${params.size ? `?${params}` : ''}`);
     const box = $('#convs');
     if (!box) return;
     box.innerHTML = convs.map((c) => `
@@ -383,14 +420,15 @@ async function renderInbox(el, [selected]) {
           <div class="row"><strong>${esc(c.name || phoneFmt(c.phone))}</strong><span class="spacer"></span><span class="small muted">${ago(c.last_at)}</span></div>
           <div class="row"><span class="preview">${c.last_direction === 'out' ? (c.last_author === 'ai' ? '🤖 ' : '✓ ') : ''}${esc(c.last_body)}</span>
             ${c.unread && c.id !== current ? '<span class="badge count">•</span>' : ''}${!c.ai_enabled ? '<span class="badge amber">humano</span>' : ''}</div>
+          ${canAssign ? `<div class="small muted">${c.assigned_name ? `👤 ${esc(c.assigned_user_id === state.me.user.id ? 'Você' : c.assigned_name)}` : 'Sem responsável'}</div>` : ''}
         </div>
-      </div>`).join('') || '<div class="empty">Nenhuma conversa ainda.<br>Use "Simular cliente" para testar.</div>';
+      </div>`).join('') || `<div class="empty">${scope === 'mine' ? 'Nenhuma conversa com você.' : scope === 'unassigned' ? 'Todas as conversas têm responsável.' : 'Nenhuma conversa ainda.<br>Use "Simular cliente" para testar.'}</div>`;
     $$('.conv', box).forEach((c) => { c.onclick = () => { location.hash = `#/inbox/${c.dataset.id}`; }; });
   }
 
   function bubble(m) {
     return `<div class="bubble ${m.direction} ${m.status === 'failed' ? 'failed' : ''}">${esc(m.body)}
-      <div class="meta">${m.direction === 'out' ? `${AUTHOR_LABEL[m.author] || ''} · ` : ''}${fmt(m.created_at, { hour: '2-digit', minute: '2-digit' })}${m.status === 'failed' ? ` · ❌ ${esc(m.error || 'falhou')}` : ''}</div></div>`;
+      <div class="meta">${m.direction === 'out' ? `${m.author === 'human' && m.user_name ? `👤 ${esc(m.user_name)}` : AUTHOR_LABEL[m.author] || ''} · ` : ''}${fmt(m.created_at, { hour: '2-digit', minute: '2-digit' })}${m.status === 'failed' ? ` · ❌ ${esc(m.error || 'falhou')}` : ''}</div></div>`;
   }
 
   async function openChat(id) {
@@ -402,8 +440,14 @@ async function renderInbox(el, [selected]) {
         <div class="avatar">${esc(initials(contact.name || contact.phone))}</div>
         <div><strong>${esc(contact.name || phoneFmt(contact.phone))}</strong><div class="small muted">${phoneFmt(contact.phone)} · ${stageBadge(contact.stage)}</div></div>
         <span class="spacer"></span>
-        <label class="check" title="Quando ligada, a IA responde automaticamente"><input type="checkbox" id="ai-toggle" ${contact.ai_enabled ? 'checked' : ''}> IA respondendo</label>
-        <button class="sm" id="ai-now">🤖 Responder com IA</button>
+        ${canAssign ? `<select id="assignee" class="sm" style="width:auto" aria-label="Responsável pela conversa" title="Responsável pela conversa">
+          <option value="">Sem responsável</option>
+          ${state.meta.team.map((u) => `<option value="${u.id}" ${u.id === contact.assigned_user_id ? 'selected' : ''}>${esc(u.id === state.me.user.id ? `${u.name} (você)` : u.name)}</option>`).join('')}
+          ${contact.assigned_user_id && !state.meta.team.some((u) => u.id === contact.assigned_user_id) ? `<option value="${contact.assigned_user_id}" selected>${esc(contact.assigned_name || 'Usuário desativado')}</option>` : ''}
+        </select>
+        ${contact.assigned_user_id !== state.me.user.id ? '<button class="sm" id="take">Assumir</button>' : ''}` : ''}
+        ${aiLocked() ? lockBtn('IA no atendimento') : `<label class="check" title="Quando ligada, a IA responde automaticamente"><input type="checkbox" id="ai-toggle" ${contact.ai_enabled ? 'checked' : ''}> IA respondendo</label>
+        <button class="sm" id="ai-now">🤖 Responder com IA</button>`}
         <button class="sm" id="open-contact">Ficha</button>
       </div>
       <div class="chat-body" id="msgs">${messages.map(bubble).join('')}</div>
@@ -415,11 +459,25 @@ async function renderInbox(el, [selected]) {
     msgs.scrollTop = msgs.scrollHeight;
     $('#back').onclick = () => { location.hash = '#/inbox'; };
     $('#open-contact').onclick = () => openContact(contact.id);
-    $('#ai-toggle').onchange = async (e) => {
+    const assign = async (userId) => {
+      try {
+        const c = await api(`/api/conversations/${id}/assign`, { method: 'POST', body: { user_id: userId || null } });
+        toast(!c.assigned_user_id ? 'Conversa sem responsável' : c.assigned_user_id === state.me.user.id ? 'A conversa é sua' : `Conversa passada para ${c.assigned_name}`);
+        await openChat(id);
+        await loadConvs();
+      } catch (err) { fail(err); }
+    };
+    $('#assignee')?.addEventListener('change', (e) => assign(e.target.value));
+    $('#take')?.addEventListener('click', () => {
+      // Avisa antes de tirar a conversa de outro atendente.
+      if (contact.assigned_user_id && !window.confirm(`Esta conversa está com ${contact.assigned_name}. Assumir mesmo assim?`)) return;
+      assign(state.me.user.id);
+    });
+    if ($('#ai-toggle')) $('#ai-toggle').onchange = async (e) => {
       await api(`/api/conversations/${id}/ai`, { method: 'POST', body: { enabled: e.target.checked } }).catch(fail);
       toast(e.target.checked ? 'IA ativada nesta conversa' : 'Você assumiu a conversa');
     };
-    $('#ai-now').onclick = async (e) => {
+    if ($('#ai-now')) $('#ai-now').onclick = async (e) => {
       e.target.disabled = true;
       try {
         const r = await api(`/api/conversations/${id}/ai-reply`, { method: 'POST' });
@@ -437,7 +495,9 @@ async function renderInbox(el, [selected]) {
       ta.value = '';
       try {
         await api(`/api/conversations/${id}/messages`, { method: 'POST', body: { body } });
-        $('#ai-toggle').checked = false;
+        if ($('#ai-toggle')) $('#ai-toggle').checked = false;
+        // Quem responde uma conversa sem responsável fica com ela.
+        if (canAssign && !contact.assigned_user_id) { await openChat(id); await loadConvs(); return; }
         await poll();
       } catch (err) { fail(err); }
     };
@@ -454,6 +514,14 @@ async function renderInbox(el, [selected]) {
   }
 
   $('#conv-q').oninput = () => loadConvs().catch(() => {});
+  $$('#conv-scope button').forEach((b) => {
+    b.onclick = () => {
+      scope = b.dataset.scope;
+      sessionSet('inbox-scope', scope);
+      $$('#conv-scope button').forEach((x) => x.classList.toggle('active', x === b));
+      loadConvs().catch(() => {});
+    };
+  });
   $('#simulate').onclick = () => openSimulator();
   await loadConvs();
   if (current) await openChat(current);
@@ -479,7 +547,7 @@ function openSimulator() {
     try {
       const r = await api('/api/simulator/inbound', { method: 'POST', body: data });
       e.target.text.value = '';
-      toast('Mensagem recebida! A IA vai responder em instantes.');
+      toast(aiLocked() ? 'Mensagem recebida! Responda pela conversa.' : 'Mensagem recebida! A IA vai responder em instantes.');
       if (r.contact) { box.close(); location.hash = `#/inbox/${r.contact.id}`; }
     } catch (err) { fail(err); }
   };
@@ -616,6 +684,7 @@ async function openContact(id, onChange) {
           ${c.rating ? `<tr><td class="muted">Google</td><td>⭐ ${c.rating}</td></tr>` : ''}
           <tr><td class="muted">Tags</td><td>${esc(c.tags || '-')}</td></tr>
           <tr><td class="muted">IA</td><td>${c.ai_enabled ? 'respondendo' : 'pausada (humano)'}</td></tr>
+          <tr><td class="muted">Responsável</td><td>${c.assigned_user_id ? esc(state.meta.team.find((u) => u.id === c.assigned_user_id)?.name || 'usuário desativado') : 'ninguém'}</td></tr>
         </table>
         ${c.notes ? `<p class="small" style="white-space:pre-wrap">${esc(c.notes)}</p>` : ''}
         ${Object.keys(triagem).length ? `<h3 style="margin-top:12px">Triagem</h3><table class="small">${Object.entries(triagem).map(([k, v]) => `<tr><td class="muted">${esc(intakeLabel(k))}</td><td>${esc(v)}</td></tr>`).join('')}</table>` : ''}
@@ -624,6 +693,11 @@ async function openContact(id, onChange) {
         ${c.appointments.map((a) => `<div class="small" style="padding:4px 0">${fmt(a.start_at)} — ${esc(a.title)}${a.professional_name ? ` · ${esc(a.professional_name)}` : ''} <span class="badge">${a.status}</span></div>`).join('') || '<p class="small muted">Nenhum.</p>'}
         <h3 style="margin-top:12px">Cobranças</h3>
         ${c.charges.map((ch) => `<div class="small" style="padding:4px 0">${esc(ch.description)} — ${money(ch.amount_cents)} <span class="badge ${CHARGE_BADGE[ch.status]}">${ch.status}</span></div>`).join('') || '<p class="small muted">Nenhuma.</p>'}
+        ${canContracts() ? `<div class="card-head" style="margin-top:12px"><h3>Contratos</h3><span class="spacer"></span><button class="sm" id="c-contract">+ Contrato</button></div>
+        ${c.contracts.map((k) => `<div class="small" style="padding:6px 0;border-bottom:1px solid var(--line)"><strong>${esc(k.title)}</strong>${k.value_cents ? ` — ${money(k.value_cents)} ${esc(periodLabel(k.period).toLowerCase())}` : ''} ${situationBadge(k)}
+          <div class="muted">${fmtDay(k.start_date)} a ${k.end_date ? fmtDay(k.end_date) : 'indeterminado'}</div><div style="margin-top:4px">${contractActions(k)}</div></div>`).join('') || '<p class="small muted">Nenhum.</p>'}` : ''}
+        <div class="card-head" style="margin-top:12px"><h3>Documentos</h3><span class="spacer"></span><button class="sm" id="c-doc">Anexar</button></div>
+        ${c.documents.map((d) => `<div class="small row" style="padding:4px 0"><span>📄 ${esc(d.name)}${d.category ? ` <span class="badge outline">${esc(d.category)}</span>` : ''}</span><span class="spacer"></span><button class="sm" data-open="${d.id}">${PREVIEWABLE[d.mime] ? 'Abrir' : 'Baixar'}</button></div>`).join('') || '<p class="small muted">Nenhum.</p>'}
         <h3 style="margin-top:12px">Tarefas</h3>
         ${c.tasks.map((t) => `<div class="small" style="padding:4px 0">${esc(t.title)} <span class="badge ${t.status === 'aberta' ? (Date.parse(t.due_at) < Date.now() ? 'red' : 'amber') : ''}">${t.status}</span></div>`).join('') || '<p class="small muted">Nenhuma.</p>'}
         <h3 style="margin-top:12px">Follow-ups</h3>
@@ -643,6 +717,10 @@ async function openContact(id, onChange) {
   $('#c-appt', box).onclick = () => appointmentForm({ contact_id: c.id }, refresh);
   $('#c-charge', box).onclick = () => chargeForm({ contact_id: c.id }, refresh);
   $('#c-seq', box).onclick = () => enrollForm([c.id], refresh);
+  $('#c-contract', box)?.addEventListener('click', () => contractForm({ contact_id: c.id }, refresh));
+  $('#c-doc', box).onclick = () => uploadForm({ contact_id: c.id }, refresh);
+  bindContractActions(box, c.contracts, refresh);
+  bindDocuments(box, c.documents, refresh);
   $('#c-del', box).onclick = async () => {
     if (!confirm(`Excluir ${c.name || 'este contato'} e todo o histórico?`)) return;
     await api(`/api/contacts/${id}`, { method: 'DELETE' }).catch(fail);
@@ -652,6 +730,452 @@ async function openContact(id, onChange) {
     e.preventDefault();
     try { await api(`/api/contacts/${id}/notes`, { method: 'POST', body: formData(e.target) }); refresh(); } catch (err) { fail(err); }
   };
+}
+
+// ---------------------------------------------------------------------------
+// Clientes, contratos e documentos
+// ---------------------------------------------------------------------------
+const SITUATION = {
+  vigente: ['green', 'vigente'], vencendo: ['amber', 'vencendo'], vencido: ['red', 'vencido'], sem_vencimento: ['outline', 'sem vencimento'],
+  renovado: ['blue', 'renovado'], encerrado: ['', 'encerrado'], cancelado: ['', 'cancelado'],
+};
+const situationBadge = (k) => {
+  const [color, label] = SITUATION[k.situation] || ['', k.situation];
+  const extra = k.situation === 'vencendo' ? ` · ${k.days_left === 0 ? 'hoje' : `${k.days_left}d`}` : k.situation === 'vencido' ? ` · há ${-k.days_left}d` : '';
+  return `<span class="badge ${color}">${label}${extra}</span>`;
+};
+const periodLabel = (id) => state.meta.contract_periods.find((p) => p.id === id)?.label || id;
+const fileSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+const canContracts = () => state.me.user.role !== 'professional';
+
+/** Próximo vencimento do cliente, com cor pela proximidade. */
+function nextEndBadge(date) {
+  if (!date) return '<span class="muted">-</span>';
+  const days = Math.round((Date.parse(`${date}T12:00:00Z`) - Date.parse(`${todayStr()}T12:00:00Z`)) / 86400000);
+  const color = days < 0 ? 'red' : days <= 30 ? 'amber' : '';
+  return `<span class="badge ${color}">${fmtDay(date)}</span>`;
+}
+
+async function renderClients(el, [tab = 'lista']) {
+  const tabs = [['lista', 'Clientes'], ...(canContracts() ? [['contratos', 'Contratos']] : []), ['documentos', 'Documentos']];
+  if (!tabs.some((t) => t[0] === tab)) tab = 'lista';
+  const summary = canContracts() ? await api('/api/clients/summary') : null;
+  el.innerHTML = `
+    <div class="page-head">
+      <div><h1>Clientes</h1><p class="muted">Quem já fechou com você, os contratos e os documentos de cada um</p></div>
+      <span class="spacer"></span>
+      ${canContracts() ? '<button id="new-contract">+ Novo contrato</button>' : ''}
+      <button class="primary" id="new-doc">Anexar documento</button>
+    </div>
+    ${summary ? `<div class="grid kpis" style="margin-bottom:14px">
+      <div class="card kpi"><div class="label">Clientes</div><div class="value">${summary.clients}</div></div>
+      <div class="card kpi"><div class="label">Contratos ativos</div><div class="value">${summary.active}</div></div>
+      <div class="card kpi"><div class="label">Vencendo</div><div class="value">${summary.expiring}</div><div class="sub">dentro do prazo de aviso</div></div>
+      <div class="card kpi bad"><div class="label">Vencidos</div><div class="value">${summary.expired}</div></div>
+      ${summary.monthly_recurring_cents !== null ? `<div class="card kpi good"><div class="label">Recorrente / mês</div><div class="value">${money(summary.monthly_recurring_cents)}</div></div>` : ''}
+    </div>` : ''}
+    <div class="card">
+      <div class="tabs">${tabs.map(([id, label]) => `<a href="#/clientes/${id}" class="${id === tab ? 'active' : ''}">${label}</a>`).join('')}</div>
+      <div id="clients-body"></div>
+    </div>`;
+  $('#new-contract')?.addEventListener('click', () => contractForm({}, route));
+  $('#new-doc').onclick = () => uploadForm({}, route);
+  const body = $('#clients-body');
+  if (tab === 'contratos') return renderContractsTab(body);
+  if (tab === 'documentos') return renderDocumentsTab(body);
+  return renderClientsTab(body);
+}
+
+async function renderClientsTab(body) {
+  body.innerHTML = `<div class="row" style="margin-bottom:12px"><input id="cl-q" placeholder="Buscar por nome, telefone, e-mail, CPF/CNPJ…" style="max-width:360px"></div><div id="cl-list"></div>`;
+  const draw = async () => {
+    const q = $('#cl-q')?.value || '';
+    const list = await api(`/api/clients${q ? `?q=${encodeURIComponent(q)}` : ''}`);
+    const box = $('#cl-list');
+    if (!box) return;
+    box.innerHTML = list.length ? `<div class="table-wrap"><table>
+      <tr><th>Cliente</th><th>Contato</th>${canContracts() ? '<th>Contratos ativos</th><th>Próximo vencimento</th>' : ''}<th>Documentos</th><th>Responsável</th><th>Cliente desde</th></tr>
+      ${list.map((c) => `<tr class="clickable" data-id="${c.id}">
+        <td><strong>${esc(c.name || phoneFmt(c.phone))}</strong>${c.business_name || c.document ? `<div class="small muted">${esc([c.business_name, c.document].filter(Boolean).join(' · '))}</div>` : ''}</td>
+        <td class="nowrap small">${phoneFmt(c.phone)}${c.email ? `<div class="muted">${esc(c.email)}</div>` : ''}</td>
+        ${canContracts() ? `<td>${c.active_contracts || '<span class="muted">0</span>'}</td><td>${nextEndBadge(c.next_end_date)}</td>` : ''}
+        <td>${c.documents || '<span class="muted">0</span>'}</td>
+        <td class="small">${esc(c.assigned_name || '-')}</td>
+        <td class="small nowrap">${c.won_at ? fmt(c.won_at, { dateStyle: 'short' }) : '-'}</td></tr>`).join('')}
+    </table></div>` : `<div class="empty">${q ? 'Nenhum cliente encontrado.' : 'Nenhum cliente ainda. Marque um lead como "Ganho" no CRM ou cadastre um contrato.'}</div>`;
+    $$('tr[data-id]', box).forEach((tr) => { tr.onclick = () => openContact(Number(tr.dataset.id), draw); });
+  };
+  $('#cl-q').oninput = () => draw().catch(() => {});
+  await draw();
+}
+
+async function renderContractsTab(body) {
+  const filter = sessionGet('contract-filter') || 'ativos';
+  const list = await api(`/api/contracts?filter=${filter}`);
+  const owner = isOwner();
+  body.innerHTML = `
+    <div class="segmented" style="margin-bottom:12px">${[['ativos', 'Ativos'], ['vencendo', 'Vencendo'], ['vencido', 'Vencidos'], ['encerrados', 'Encerrados'], ['todos', 'Todos']].map(([k, v]) => `<button type="button" data-f="${k}" class="${k === filter ? 'active' : ''}">${v}</button>`).join('')}</div>
+    ${list.length ? `<div class="table-wrap"><table>
+      <tr><th>Cliente</th><th>Contrato</th>${owner ? '<th class="right">Valor</th>' : ''}<th>Início</th><th>Vencimento</th><th>Situação</th><th></th></tr>
+      ${list.map((k) => `<tr>
+        <td><a href="#" data-contact="${k.contact_id}">${esc(k.contact_name || phoneFmt(k.contact_phone))}</a></td>
+        <td><strong>${esc(k.title)}</strong><div class="small muted">${esc(periodLabel(k.period))}${k.auto_renew ? ' · renova sozinho' : ''}</div></td>
+        ${owner ? `<td class="right nowrap">${k.value_cents ? money(k.value_cents) : '-'}</td>` : ''}
+        <td class="nowrap">${fmtDay(k.start_date)}</td>
+        <td class="nowrap">${k.end_date ? fmtDay(k.end_date) : '<span class="muted">indeterminado</span>'}<div class="small muted">aviso ${k.notice_days}d antes</div></td>
+        <td>${situationBadge(k)}</td>
+        <td class="nowrap">${contractActions(k)}</td></tr>`).join('')}
+    </table></div>` : `<div class="empty">${filter === 'vencendo' ? 'Nenhum contrato vencendo. 🎉' : filter === 'vencido' ? 'Nenhum contrato vencido.' : 'Nenhum contrato aqui.'}</div>`}`;
+  $$('[data-f]', body).forEach((b) => { b.onclick = () => { sessionSet('contract-filter', b.dataset.f); route(); }; });
+  $$('[data-contact]', body).forEach((a) => { a.onclick = (e) => { e.preventDefault(); openContact(Number(a.dataset.contact), route); }; });
+  bindContractActions(body, list, route);
+}
+
+function contractActions(k) {
+  const active = k.status === 'ativo';
+  return `${active && k.end_date ? `<button class="sm primary" data-renew="${k.id}">Renovar</button>` : ''}
+    <button class="sm" data-kdocs="${k.id}">Docs</button>
+    ${active ? `<button class="sm" data-kedit="${k.id}">Editar</button><button class="sm ghost" data-kclose="${k.id}">Encerrar</button>` : ''}
+    ${isOwner() ? `<button class="sm ghost danger" data-kdel="${k.id}" aria-label="Excluir contrato">✕</button>` : ''}`;
+}
+
+function bindContractActions(root, list, onChange) {
+  const find = (id) => list.find((k) => String(k.id) === String(id));
+  $$('[data-renew]', root).forEach((b) => { b.onclick = () => renewForm(find(b.dataset.renew), onChange); });
+  $$('[data-kedit]', root).forEach((b) => { b.onclick = () => contractForm(find(b.dataset.kedit), onChange); });
+  $$('[data-kdocs]', root).forEach((b) => { b.onclick = () => contractDocs(find(b.dataset.kdocs), onChange); });
+  $$('[data-kclose]', root).forEach((b) => { b.onclick = () => closeContractForm(find(b.dataset.kclose), onChange); });
+  $$('[data-kdel]', root).forEach((b) => { b.onclick = async () => {
+    const k = find(b.dataset.kdel);
+    if (!confirm(`Excluir o contrato "${k.title}"? Para manter o histórico, prefira "Encerrar".`)) return;
+    try { await api(`/api/contracts/${k.id}`, { method: 'DELETE' }); toast('Contrato excluído'); onChange?.(); } catch (err) { fail(err); }
+  }; });
+}
+
+async function contractForm(k, onSaved) {
+  const editing = Boolean(k.id);
+  const contactsHtml = editing ? '' : await contactOptions(k.contact_id);
+  const box = openModal(`${modalHead(editing ? 'Editar contrato' : 'Novo contrato')}
+    <form id="contract-form">
+      ${editing ? `<p class="muted">Cliente: <strong>${esc(k.contact_name)}</strong></p>` : `<div class="field"><label for="k-contact">Cliente</label><select id="k-contact" name="contact_id" required>${contactsHtml}</select><div class="hint">Ao cadastrar o contrato, o contato passa para "Ganho" e aparece em Clientes.</div></div>`}
+      <div class="field"><label for="k-title">Contrato</label><input id="k-title" name="title" required value="${esc(k.title || '')}" placeholder="Ex.: Plano de manutenção, Honorários mensais, Locação"></div>
+      <div class="fields">
+        ${isOwner() ? `<div class="field"><label for="k-value">Valor (R$)</label><input id="k-value" name="value" inputmode="decimal" placeholder="0,00" value="${k.value_cents ? reais(k.value_cents) : ''}"></div>` : ''}
+        <div class="field"><label for="k-period">Periodicidade do valor</label><select id="k-period" name="period">${state.meta.contract_periods.map((p) => `<option value="${p.id}" ${p.id === (k.period || 'mensal') ? 'selected' : ''}>${p.label}</option>`).join('')}</select></div>
+        <div class="field"><label for="k-start">Início</label><input id="k-start" type="date" name="start_date" required value="${k.start_date || todayStr()}"></div>
+        <div class="field"><label for="k-end">Vencimento</label><input id="k-end" type="date" name="end_date" value="${k.end_date || (editing ? '' : addDays(todayStr(), 364))}"><div class="hint">Vazio = prazo indeterminado.</div></div>
+        <div class="field"><label for="k-notice">Avisar a equipe quantos dias antes</label><input id="k-notice" type="number" min="0" max="365" name="notice_days" value="${k.notice_days ?? 30}"></div>
+      </div>
+      <label class="check field"><input type="checkbox" name="auto_renew" ${k.auto_renew ? 'checked' : ''}> Renovar automaticamente no vencimento (pelo mesmo prazo)</label>
+      <div class="field"><label for="k-notes">Observações</label><textarea id="k-notes" name="notes" placeholder="Cláusulas importantes, reajuste, multa…">${esc(k.notes || '')}</textarea></div>
+      ${editing ? '' : '<div class="field"><label for="k-file">Anexar o contrato assinado (opcional)</label><input id="k-file" type="file" name="file"></div>'}
+      <div class="modal-foot"><button type="button" data-close>Cancelar</button><button class="primary">${editing ? 'Salvar' : 'Cadastrar contrato'}</button></div>
+    </form>`, { wide: true });
+  const form = $('#contract-form', box);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const data = formData(form);
+    delete data.file;
+    try {
+      const saved = await api(editing ? `/api/contracts/${k.id}` : '/api/contracts', { method: editing ? 'PUT' : 'POST', body: data });
+      const file = form.file?.files[0];
+      if (file) await uploadFile(file, { contact_id: saved.contact_id, contract_id: saved.id, category: 'Contrato' });
+      box.close();
+      toast(editing ? 'Contrato atualizado' : 'Contrato cadastrado');
+      onSaved?.();
+    } catch (err) { fail(err); }
+  };
+}
+
+function renewForm(k, onSaved) {
+  const box = openModal(`${modalHead('Renovar contrato')}
+    <form id="renew-form">
+      <p><strong>${esc(k.title)}</strong> — ${esc(k.contact_name)}<br><span class="muted small">Período atual: ${fmtDay(k.start_date)} a ${fmtDay(k.end_date)}</span></p>
+      <div class="fields">
+        <div class="field"><label for="r-end">Novo vencimento</label><input id="r-end" type="date" name="end_date"><div class="hint">Vazio = mesmo prazo do período atual, começando em ${fmtDay(addDays(k.end_date, 1))}.</div></div>
+        ${isOwner() ? `<div class="field"><label for="r-value">Novo valor (R$)</label><input id="r-value" name="value" inputmode="decimal" placeholder="${k.value_cents ? reais(k.value_cents) : '0,00'}"><div class="hint">Vazio = mantém o valor (use para reajuste).</div></div>` : ''}
+      </div>
+      <p class="hint">O contrato atual fica no histórico como "renovado" e a tarefa de renovação é concluída.</p>
+      <div class="modal-foot"><button type="button" data-close>Cancelar</button><button class="primary">Renovar</button></div>
+    </form>`);
+  $('#renew-form', box).onsubmit = async (e) => {
+    e.preventDefault();
+    try { await api(`/api/contracts/${k.id}/renew`, { method: 'POST', body: formData(e.target) }); box.close(); toast('Contrato renovado'); onSaved?.(); } catch (err) { fail(err); }
+  };
+}
+
+function closeContractForm(k, onSaved) {
+  const box = openModal(`${modalHead('Encerrar contrato')}
+    <p><strong>${esc(k.title)}</strong> — ${esc(k.contact_name)}</p>
+    <div class="field"><label for="x-status">Motivo</label><select id="x-status"><option value="encerrado">Encerrado (chegou ao fim, sem renovar)</option><option value="cancelado">Cancelado (rescisão antes do fim)</option></select></div>
+    <p class="hint">O contrato fica no histórico do cliente e para de gerar avisos.</p>
+    <div class="modal-foot"><button type="button" data-close>Voltar</button><button class="danger" id="x-ok">Encerrar contrato</button></div>`);
+  $('#x-ok', box).onclick = async () => {
+    try { await api(`/api/contracts/${k.id}/close`, { method: 'POST', body: { status: $('#x-status', box).value } }); box.close(); toast('Contrato encerrado'); onSaved?.(); } catch (err) { fail(err); }
+  };
+}
+
+async function contractDocs(k, onChange) {
+  const docs = await api(`/api/documents?contract_id=${k.id}`);
+  const box = openModal(`${modalHead(`Documentos — ${k.title}`)}
+    ${documentsTable(docs, { showClient: false })}
+    <div class="modal-foot"><button type="button" data-close>Fechar</button><button class="primary" id="kd-add">Anexar documento</button></div>`, { wide: true });
+  bindDocuments(box, docs, () => { box.close(); contractDocs(k, onChange); });
+  $('#kd-add', box).onclick = () => uploadForm({ contact_id: k.contact_id, contract_id: k.id, category: 'Contrato' }, () => { box.close(); contractDocs(k, onChange); });
+}
+
+async function renderDocumentsTab(body) {
+  const scope = canContracts() ? sessionGet('doc-scope') || '' : '';
+  body.innerHTML = `
+    <div class="row wrap" style="margin-bottom:12px">
+      ${canContracts() ? `<div class="segmented">${[['', 'Todos'], ['company', 'Gerais da empresa']].map(([k, v]) => `<button type="button" data-scope="${k}" class="${k === scope ? 'active' : ''}">${v}</button>`).join('')}</div>` : ''}
+      <input id="doc-q" placeholder="Buscar por nome, categoria ou cliente…" style="max-width:320px">
+    </div>
+    <div id="doc-list"></div>`;
+  const draw = async () => {
+    const params = new URLSearchParams();
+    if (scope) params.set('scope', scope);
+    const q = $('#doc-q')?.value;
+    if (q) params.set('q', q);
+    const docs = await api(`/api/documents${params.size ? `?${params}` : ''}`);
+    const box = $('#doc-list');
+    if (!box) return;
+    box.innerHTML = documentsTable(docs, { showClient: true });
+    bindDocuments(box, docs, draw);
+  };
+  $$('[data-scope]', body).forEach((b) => { b.onclick = () => { sessionSet('doc-scope', b.dataset.scope); route(); }; });
+  $('#doc-q').oninput = () => draw().catch(() => {});
+  await draw();
+}
+
+function documentsTable(docs, { showClient }) {
+  if (!docs.length) return '<div class="empty">Nenhum documento.</div>';
+  return `<div class="table-wrap"><table>
+    <tr><th>Documento</th><th>Categoria</th>${showClient ? '<th>Cliente</th>' : ''}<th>Contrato</th><th>Enviado</th><th></th></tr>
+    ${docs.map((d) => `<tr>
+      <td><strong>${esc(d.name)}</strong><div class="small muted">${fileSize(d.size)}</div></td>
+      <td>${d.category ? `<span class="badge outline">${esc(d.category)}</span>` : '<span class="muted">-</span>'}</td>
+      ${showClient ? `<td>${d.contact_id ? `<a href="#" data-contact="${d.contact_id}">${esc(d.contact_name || 'cliente')}</a>` : '<span class="muted">geral da empresa</span>'}</td>` : ''}
+      <td class="small">${esc(d.contract_title || '-')}</td>
+      <td class="small nowrap">${fmt(d.created_at, { dateStyle: 'short' })}<div class="muted">${esc(d.uploaded_by)}</div></td>
+      <td class="nowrap"><button class="sm" data-open="${d.id}">${PREVIEWABLE[d.mime] ? 'Abrir' : 'Baixar'}</button>${state.me.user.role !== 'professional' ? `<button class="sm ghost danger" data-ddel="${d.id}" aria-label="Excluir documento">✕</button>` : ''}</td></tr>`).join('')}
+  </table></div>`;
+}
+
+// Só PDF e imagens abrem no navegador; o resto é sempre baixado.
+const PREVIEWABLE = { 'application/pdf': true, 'image/png': true, 'image/jpeg': true, 'image/webp': true, 'image/gif': true };
+
+function bindDocuments(root, docs, onChange) {
+  $$('[data-contact]', root).forEach((a) => { a.onclick = (e) => { e.preventDefault(); openContact(Number(a.dataset.contact), onChange); }; });
+  $$('[data-open]', root).forEach((b) => { b.onclick = () => openDocument(docs.find((d) => String(d.id) === b.dataset.open)); });
+  $$('[data-ddel]', root).forEach((b) => { b.onclick = async () => {
+    const d = docs.find((x) => String(x.id) === b.dataset.ddel);
+    if (!confirm(`Excluir "${d.name}"? Não tem volta.`)) return;
+    try { await api(`/api/documents/${d.id}`, { method: 'DELETE' }); toast('Documento excluído'); onChange?.(); } catch (err) { fail(err); }
+  }; });
+}
+
+async function openDocument(d) {
+  const preview = PREVIEWABLE[d.mime];
+  // A janela abre já no clique, para o navegador não bloquear como pop-up.
+  const win = preview ? window.open('', '_blank') : null;
+  try {
+    const { data } = await api(`/api/documents/${d.id}/content`);
+    const bytes = Uint8Array.from(atob(data), (ch) => ch.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: preview ? d.mime : 'application/octet-stream' }));
+    if (win) win.location = url;
+    else {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = d.name;
+      a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  } catch (err) { win?.close(); fail(err); }
+}
+
+const readBase64 = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(',')[1] || '');
+  r.onerror = () => reject(new Error(`Não foi possível ler ${file.name}`));
+  r.readAsDataURL(file);
+});
+
+async function uploadFile(file, { contact_id, contract_id, category }) {
+  if (file.size > state.meta.document_max_bytes) throw new Error(`${file.name} passa de ${fileSize(state.meta.document_max_bytes)}`);
+  return api('/api/documents', { method: 'POST', body: { name: file.name, data: await readBase64(file), contact_id: contact_id || null, contract_id: contract_id || null, category } });
+}
+
+async function uploadForm(defaults, onSaved) {
+  const pro = state.me.user.role === 'professional';
+  const contactsHtml = defaults.contact_id ? '' : await contactOptions('');
+  const box = openModal(`${modalHead('Anexar documento')}
+    <form id="upload-form">
+      <div class="field"><label for="u-file">Arquivos</label><input id="u-file" type="file" name="files" multiple required accept="${state.meta.document_types.map((t) => `.${t}`).join(',')}">
+        <div class="hint">Até ${fileSize(state.meta.document_max_bytes)} por arquivo. PDF, imagens, Word, Excel, PowerPoint, texto, CSV e ZIP.</div></div>
+      ${defaults.contact_id ? '' : `<div class="field"><label for="u-contact">Cliente</label><select id="u-contact" name="contact_id" ${pro ? 'required' : ''}>${contactsHtml.replace('— selecione —', pro ? '— selecione —' : '— nenhum (documento geral da empresa) —')}</select></div>`}
+      <div class="field"><label for="u-cat">Categoria</label><select id="u-cat" name="category"><option value="">—</option>${state.meta.document_categories.map((c) => `<option ${c === defaults.category ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></div>
+      <div class="modal-foot"><button type="button" data-close>Cancelar</button><button class="primary" id="u-send">Enviar</button></div>
+    </form>`);
+  const form = $('#upload-form', box);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const files = [...form.files.files];
+    const target = { contact_id: defaults.contact_id || form.contact_id?.value || null, contract_id: defaults.contract_id || null, category: form.category.value };
+    $('#u-send', box).disabled = true;
+    let sent = 0;
+    try {
+      for (const f of files) { await uploadFile(f, target); sent++; }
+      box.close();
+      toast(sent === 1 ? 'Documento enviado' : `${sent} documentos enviados`);
+      onSaved?.();
+    } catch (err) {
+      fail(err);
+      $('#u-send', box).disabled = false;
+      if (sent) onSaved?.();
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Assinatura (paywall): Pix na chave da plataforma + comprovante por e-mail
+// ---------------------------------------------------------------------------
+const PLAN_PERKS = [
+  'IA responde no WhatsApp 24h, com o seu catálogo',
+  'Agenda, remarca e cancela sozinha',
+  'Faz a triagem e gera a cobrança',
+  'Follow-up personalizado pela IA',
+  'Recomendações com IA no dashboard',
+];
+
+async function renderPaywall(el, [planId] = []) {
+  const info = await api('/api/upgrade');
+  const usersText = (n) => (n === 1 ? '1 usuário' : `até ${n} usuários`);
+  const leadsText = (n) => (n === null || n === undefined ? 'leads ilimitados' : `até ${n} leads`);
+  el.innerHTML = `
+    <div class="page-head">
+      <div><h1>${info.ai_locked ? '🔒 Desbloqueie a IA do Falaki' : 'Assinatura'}</h1>
+        <p class="muted">${info.ai_locked ? 'No teste grátis tudo que usa IA fica bloqueado. Escolha um plano para a atendente virtual começar a trabalhar.' : 'Mude de plano quando precisar de mais usuários ou leads.'}</p></div>
+    </div>
+    ${subscriptionCard(info)}
+    <div class="grid halves">
+      ${info.plans.map((p) => `<div class="card" style="${p.recommended ? 'border-color:var(--green-700)' : ''}">
+        <div class="card-head"><h2>${esc(p.label)}</h2>${p.recommended ? '<span class="badge green">mais escolhido</span>' : ''}${p.id === info.current_plan ? '<span class="badge outline">seu plano</span>' : ''}</div>
+        <div class="kpi" style="padding:6px 0 0"><div class="value">${money(p.price_cents)}<span class="small muted"> /mês</span></div></div>
+        <p class="muted">${esc(p.description || '')}</p>
+        <ul class="small" style="padding-left:18px;margin:10px 0">
+          <li><strong>${usersText(p.max_users)} · ${leadsText(p.max_leads)}</strong></li>
+          ${PLAN_PERKS.map((x) => `<li>${esc(x)}</li>`).join('')}
+        </ul>
+        ${p.id === info.current_plan && info.subscription.paying ? ''
+          : info.subscription.method === 'cartao' && info.subscription.paying && info.card_enabled
+            ? `<button class="${p.price_cents > (info.plans.find((x) => x.id === info.current_plan)?.price_cents || 0) ? 'primary' : ''}" data-change="${p.id}" style="width:100%">Mudar para o ${esc(p.label)}</button>
+               <div class="hint" style="text-align:center;margin-top:6px">No mesmo cartão. A diferença do mês é proporcional.</div>`
+          : info.card_enabled && !(info.subscription.method === 'cartao' && info.subscription.state !== 'cancelada')
+          ? `<div class="stack"><button class="primary" data-card="${p.id}" style="width:100%">💳 Assinar com cartão</button>
+             <button data-pix="${p.id}" style="width:100%">Pagar com Pix (1 mês)</button><div class="hint" style="text-align:center">Cartão: cobrança mensal automática, cancele quando quiser. Pix: você paga a cada mês.</div></div>`
+          : `<button class="${p.recommended ? 'primary' : ''}" data-buy="${p.id}" style="width:100%">Comprar o ${esc(p.label)}</button>`}
+      </div>`).join('')}
+    </div>
+    <div id="checkout" style="margin-top:14px"></div>`;
+  $$('[data-buy]', el).forEach((b) => { b.onclick = () => checkout(info, info.plans.find((p) => p.id === b.dataset.buy)); });
+  $$('[data-card]', el).forEach((b) => { b.onclick = async () => {
+    b.disabled = true;
+    try { location.href = (await api('/api/upgrade/card', { method: 'POST', body: { plan: b.dataset.card } })).url; } catch (err) { fail(err); b.disabled = false; }
+  }; });
+  $$('[data-change]', el).forEach((b) => { b.onclick = async () => {
+    const target = info.plans.find((p) => p.id === b.dataset.change);
+    const current = info.plans.find((p) => p.id === info.current_plan);
+    const down = target.price_cents < (current?.price_cents || 0);
+    const msg = `Mudar para o plano ${target.label} (${money(target.price_cents)}/mês)? A diferença proporcional deste mês ${down ? 'vira crédito nas próximas faturas' : 'é cobrada agora no cartão'}.${down ? `\n\nO ${target.label} permite ${target.max_users} usuário(s) e ${target.max_leads ?? 'leads ilimitados'} leads.` : ''}`;
+    if (!confirm(msg)) return;
+    b.disabled = true;
+    try { await api('/api/upgrade/change', { method: 'POST', body: { plan: target.id } }); state.meta = await api('/api/meta'); toast(`Plano ${target.label} ativo`); renderLayout(); route(); } catch (err) { fail(err); b.disabled = false; }
+  }; });
+  // Pix pelo Stripe: página com QR Code e copia e cola; a confirmação chega sozinha.
+  $$('[data-pix]', el).forEach((b) => { b.onclick = async () => {
+    b.disabled = true;
+    try { location.href = (await api('/api/upgrade/pix', { method: 'POST', body: { plan: b.dataset.pix } })).url; } catch (err) { fail(err); b.disabled = false; }
+  }; });
+  $('#portal')?.addEventListener('click', async (e) => {
+    e.target.disabled = true;
+    try { location.href = (await api('/api/upgrade/portal', { method: 'POST' })).url; } catch (err) { fail(err); e.target.disabled = false; }
+  });
+  // Volta do Stripe: espera o aviso de pagamento (webhook) liberar o plano.
+  const qs = new URLSearchParams(location.hash.split('?')[1] || '');
+  const back = qs.get('cartao') || qs.get('pix');
+  if (back) history.replaceState(null, '', '#/assinar');
+  if (back === 'cancelado') toast('Pagamento não concluído. Você pode tentar de novo quando quiser.');
+  if (back === 'ok') {
+    toast('Pagamento recebido! Liberando o seu plano…');
+    const before = info.subscription.paid_until;
+    for (let i = 0; i < 15; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const m = await api('/api/meta').catch(() => null);
+      if (m && (m.plan.id !== info.current_plan || m.subscription.paid_until !== before)) {
+        state.meta = m;
+        toast(`Plano ${m.plan.label} ativo${m.subscription.paid_until ? ` até ${m.subscription.paid_until.split('-').reverse().join('/')}` : ''}.`);
+        renderLayout();
+        return route();
+      }
+    }
+    toast('O pagamento está sendo confirmado pelo cartão. O plano aparece aqui em instantes.');
+  }
+  // Veio da página inicial com um plano escolhido: já abre o pagamento dele.
+  const chosen = info.plans.find((p) => p.id === planId && p.id !== info.current_plan);
+  if (chosen) checkout(info, chosen);
+}
+
+function subscriptionCard(info) {
+  const sub = info.subscription;
+  if (!sub.method) return '';
+  const current = info.plans.find((p) => p.id === info.current_plan);
+  const label = { em_dia: ['green', 'em dia'], vencida: ['red', 'Pix vencido'], atrasada: ['red', 'pagamento recusado'], cancelada: ['', 'cancelada'] }[sub.state] || ['', sub.state];
+  return `<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h3>Sua assinatura</h3><span class="spacer"></span><span class="badge ${label[0]}">${label[1]}</span></div>
+    <p style="margin:6px 0">${current ? `Plano <strong>${esc(current.label)}</strong> · ${money(current.price_cents)}/mês · ` : ''}${sub.method === 'cartao' ? '💳 cartão (renova sozinho)' : 'Pix'}${sub.paid_until ? ` · pago até ${sub.paid_until.split('-').reverse().join('/')}` : ''}</p>
+    ${sub.cancel_at_period_end ? '<p class="small">Cancelamento agendado: o plano vale até o fim do período pago e depois volta para o teste grátis.</p>' : ''}
+    ${sub.state === 'atrasada' ? '<p class="small">O cartão foi recusado. Atualize o cartão para não perder o plano.</p>' : ''}
+    ${sub.state === 'vencida' ? '<p class="small">O mês pago por Pix terminou. Pague o Pix do plano abaixo para continuar.</p>' : ''}
+    ${sub.method === 'pix' && info.card_enabled && current && sub.state !== 'cancelada' ? `<button class="sm primary" data-pix="${current.id}">Pagar o próximo mês com Pix</button> <button class="sm" data-card="${current.id}">Passar para o cartão (automático)</button>` : ''}
+    ${sub.method === 'cartao' && sub.has_card ? '<button class="sm" id="portal">Gerenciar assinatura (cartão, faturas, cancelar)</button>' : ''}
+  </div>`;
+}
+
+function checkout(info, plan) {
+  const box = $('#checkout');
+  if (!plan.pix_code) {
+    box.innerHTML = `<div class="card"><h3>Pagamento por Pix indisponível no momento</h3>
+      <p class="muted">Fale com a gente${info.sales_whatsapp ? ` pelo <a href="https://wa.me/${esc(info.sales_whatsapp)}" target="_blank" rel="noopener">WhatsApp</a> ou` : ''} pelo e-mail <a href="mailto:${esc(info.email)}">${esc(info.email)}</a> para assinar.</p></div>`;
+    box.scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+  const company = state.me.company.name;
+  const subject = `Comprovante Falaki — ${company} — plano ${plan.label}`;
+  const bodyText = `Olá! Segue o comprovante do Pix de ${money(plan.price_cents)} do plano ${plan.label}.\n\nEmpresa: ${company}\nE-mail de acesso: ${state.me.user.email}\nIdentificador do Pix: ${info.txid}\n`;
+  const mailto = `mailto:${info.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
+  box.innerHTML = `<div class="card">
+    <div class="card-head"><h2>Pagar o plano ${esc(plan.label)} — ${money(plan.price_cents)}</h2></div>
+    <ol style="padding-left:18px;margin:10px 0" class="stack">
+      <li><strong>Pague pelo Pix copia e cola.</strong> Abra o app do seu banco, escolha Pix → Copia e cola e cole o código:
+        <div class="pix" style="margin:8px 0">${esc(plan.pix_code)}</div>
+        <button class="primary sm" id="copy-pix">Copiar código Pix</button>
+        <div class="small muted" style="margin-top:8px">Recebedor: ${esc(info.pix_name)} · chave aleatória ${esc(info.pix_key)} · identificador ${esc(info.txid)}</div></li>
+      <li><strong>Envie o comprovante para <a href="${esc(mailto)}">${esc(info.email)}</a></strong>, com o nome da sua empresa. <a class="btn sm" href="${esc(mailto)}">Abrir e-mail pronto</a></li>
+      <li><strong>Pronto:</strong> assim que confirmarmos o pagamento, o plano ${esc(plan.label)} é liberado na sua conta e a IA começa a responder.</li>
+    </ol>
+    <button id="sent">Já enviei o comprovante</button>
+  </div>`;
+  $('#copy-pix').onclick = () => navigator.clipboard.writeText(plan.pix_code).then(() => toast('Código Pix copiado'), () => toast('Selecione o código e copie', 'error'));
+  $('#sent').onclick = async (e) => {
+    e.target.disabled = true;
+    try {
+      await api('/api/upgrade/notify', { method: 'POST', body: { plan: plan.id } });
+      toast('Obrigado! Avisamos a equipe. A liberação acontece assim que o pagamento for confirmado.');
+      e.target.textContent = 'Aviso enviado ✓';
+    } catch (err) { fail(err); e.target.disabled = false; }
+  };
+  box.scrollIntoView({ behavior: 'smooth' });
 }
 
 // ---------------------------------------------------------------------------
@@ -951,7 +1475,7 @@ async function googleCalendarModal(pros) {
     : role === 'owner' ? [{ id: null, name: 'Agenda da empresa' }] : [];
   const conn = (id) => st.connections.find((c) => (c.professional_id ?? null) === id);
   const box = openModal(`${modalHead('Google Agenda')}
-    <p class="muted" style="margin-top:0">Conecte uma vez e pronto: cada agendamento feito no Fechou (pela equipe ou pela IA) aparece sozinho no Google Agenda, e o que for marcado direto no Google bloqueia o horário aqui. Ninguém precisa cadastrar nada duas vezes.</p>
+    <p class="muted" style="margin-top:0">Conecte uma vez e pronto: cada agendamento feito no Falaki (pela equipe ou pela IA) aparece sozinho no Google Agenda, e o que for marcado direto no Google bloqueia o horário aqui. Ninguém precisa cadastrar nada duas vezes.</p>
     ${!st.configured ? '<div class="banner">A conexão com o Google ainda não foi ativada nesta plataforma. Peça ao administrador para configurar as credenciais do Google Cloud.</div>' : ''}
     ${targets.length ? `<div class="table-wrap"><table>
       <tr><th>Agenda</th><th>Conta Google</th><th></th></tr>
@@ -983,7 +1507,7 @@ function appointmentDetail(a) {
     <p><strong>${fmt(a.start_at, { dateStyle: 'full', timeStyle: 'short' })}</strong> até ${fmt(a.end_at, { timeStyle: 'short' })}</p>
     <p class="muted">${a.contact_name ? `Cliente: ${esc(a.contact_name)} · ${phoneFmt(a.contact_phone)}` : 'Sem cliente vinculado'}${a.created_by === 'ai' ? ' · agendado pela IA 🤖' : ''}</p>
     ${a.professional_name ? `<p>Profissional: <strong>${esc(a.professional_name)}</strong></p>` : ''}
-    ${a.google_event_id ? '<p class="small muted">✓ Sincronizado com o Google Agenda</p>' : a.google_sync === 'erro' ? '<p class="small" style="color:var(--danger)">Não foi possível enviar ao Google Agenda; o Fechou tenta de novo automaticamente.</p>' : ''}
+    ${a.google_event_id ? '<p class="small muted">✓ Sincronizado com o Google Agenda</p>' : a.google_sync === 'erro' ? '<p class="small" style="color:var(--danger)">Não foi possível enviar ao Google Agenda; o Falaki tenta de novo automaticamente.</p>' : ''}
     ${a.notes ? `<p>${esc(a.notes)}</p>` : ''}
     <label>Status</label>
     ${a.status === 'solicitado' ? `<div class="banner">Horário reservado pela IA e <strong>aguardando sua confirmação</strong>. Ao confirmar ou recusar, o cliente é avisado pelo WhatsApp.</div>
@@ -1094,7 +1618,7 @@ function sequenceForm(seq) {
       <div class="step-head"><span class="step-num">${i + 1}</span><span class="small">Enviar após</span>
         <input type="number" min="0" step="0.5" value="${st.delay_hours}" data-i="${i}" data-k="delay_hours" style="width:80px">
         <span class="small">horas ${i === 0 ? 'da entrada na sequência' : 'do passo anterior'}</span><span class="spacer"></span>
-        <label class="check small"><input type="checkbox" data-i="${i}" data-k="use_ai" ${st.use_ai ? 'checked' : ''}> Personalizar com IA</label>
+        ${aiLocked() ? '<a class="small" href="#/assinar" title="A IA faz parte dos planos pagos">🔒 Personalizar com IA</a>' : `<label class="check small"><input type="checkbox" data-i="${i}" data-k="use_ai" ${st.use_ai ? 'checked' : ''}> Personalizar com IA</label>`}
         <button type="button" class="sm ghost danger" data-rm="${i}">✕</button></div>
       <textarea data-i="${i}" data-k="message" rows="3">${esc(st.message)}</textarea></div>`).join('');
     $$('[data-k]', box).forEach((inp) => { inp.oninput = inp.onchange = () => {
@@ -1318,7 +1842,7 @@ async function renderSettings(el, [tab = 'empresa']) {
         <div class="field"><label>Fuso horário</label><input name="timezone" value="${esc(data.timezone)}"></div>
       </div>
       <h2 style="margin:8px 0 12px">Atendente virtual (IA)</h2>
-      ${check('ai', 'enabled', 'IA responde automaticamente as mensagens do WhatsApp')}
+      ${aiLocked() ? `${lockCard('A atendente virtual')}<p class="hint" style="margin-bottom:12px">Você já pode preencher estas informações: a IA passa a usar quando você assinar.</p>` : check('ai', 'enabled', 'IA responde automaticamente as mensagens do WhatsApp')}
       <div class="fields">${input('ai', 'agent_name', 'Nome da atendente')}${input('ai', 'model', 'Modelo Claude (opcional)', { placeholder: 'claude-opus-5-5' })}</div>
       <div class="field"><label>Sobre a empresa (endereço, formas de pagamento, diferenciais, políticas)</label><textarea name="ai.business_description" rows="5">${esc(s.ai.business_description)}</textarea></div>
       <div class="field"><label>Instruções para a IA (tom de voz, regras de negócio, o que pode ou não prometer)</label><textarea name="ai.instructions" rows="4">${esc(s.ai.instructions)}</textarea></div>`,
@@ -1366,6 +1890,7 @@ async function renderSettings(el, [tab = 'empresa']) {
       </div>
       ${check('billing', 'auto_win_on_payment', 'Mover lead para "Ganho" quando o pagamento for confirmado')}`,
     ia: `
+      ${aiLocked() ? lockCard('O comportamento da IA') : ''}
       <p class="muted" style="margin-bottom:14px">Defina o que a IA deve conseguir em cada conversa e o que ela pode fazer sozinha. O que ela não puder concluir vira uma <a href="#/tarefas">tarefa para a equipe</a>, com prazo.</p>
       <div class="fields">
         ${select('ai', 'objective', 'Objetivo principal da conversa', bo.objectives)}
@@ -1388,10 +1913,14 @@ async function renderSettings(el, [tab = 'empresa']) {
         ${input('team', 'task_sla_hours', 'Prazo para a equipe responder (horas úteis)', { type: 'number' })}
       </div>
       ${check('team', 'notify_on_new_task', 'Avisar a equipe a cada tarefa nova (urgências são sempre avisadas)')}
-      ${check('team', 'client_message_on_overdue', 'Se o prazo passar sem resposta, avisar o cliente que ainda estamos verificando')}`,
+      ${check('team', 'client_message_on_overdue', 'Se o prazo passar sem resposta, avisar o cliente que ainda estamos verificando')}
+      ${check('team', 'auto_assign', 'Distribuir automaticamente entre os atendentes as conversas que precisam de humano (rodízio)')}
+      <p class="hint">Vale para conversas sem IA e para as que a IA passa para a equipe. Sem atendentes cadastrados, vão para o dono. Cada um pode assumir ou passar a conversa no Atendimento.</p>`,
     integracoes: `
-      <div class="card" style="margin-bottom:14px"><h3>Claude (Anthropic) — IA de atendimento ${meta.ai_configured ? '<span class="badge green">conectada</span>' : '<span class="badge amber">modo demonstração</span>'}</h3>
-        <p class="hint">Crie sua chave em console.anthropic.com. Sem chave, a IA usa respostas automáticas simples.</p>${input('integrations', 'anthropic_api_key', 'API key', { placeholder: 'sk-ant-...' })}</div>
+      <div class="card" style="margin-bottom:14px"><h3>Claude (Anthropic) — IA de atendimento ${aiLocked() ? '<span class="badge">🔒 bloqueada no teste grátis</span>' : meta.ai_configured ? '<span class="badge green">conectada</span>' : '<span class="badge amber">modo demonstração</span>'}</h3>
+        ${aiLocked() ? `<p class="hint">A IA faz parte dos planos pagos.</p>${lockBtn()}` : meta.ai_key_source === 'platform'
+          ? '<p class="hint">A IA desta conta usa a chave do Falaki, configurada pela nossa equipe. O consumo é cobrado à parte.</p>'
+          : `<p class="hint">Crie sua chave em console.anthropic.com. O consumo da IA é cobrado pela Anthropic direto na sua conta. Sem chave, a IA usa respostas automáticas simples.</p>${input('integrations', 'anthropic_api_key', 'API key', { placeholder: 'sk-ant-...' })}`}</div>
       <div class="card"><h3>Google Places API — prospecção ${meta.places_configured ? '<span class="badge green">conectada</span>' : ''}</h3>
         <p class="hint">Ative a "Places API (New)" no Google Cloud e crie uma chave de API.</p>${input('integrations', 'google_places_key', 'API key')}</div>`,
   };
@@ -1572,5 +2101,5 @@ async function renderProfessionals(el, tabs) {
   $$('tr[data-id]').forEach((tr) => { tr.onclick = () => open(pros.find((p) => String(p.id) === tr.dataset.id)); });
 }
 
-window.fechou = { boot }; // usado pela demonstração para trocar de empresa
+window.falaki = { boot }; // usado pela demonstração para trocar de empresa
 boot();

@@ -134,20 +134,20 @@ test('perfis: limite de usuários do plano, atendente sem financeiro, profission
   assert.equal((await owner(`/api/users/${me.user.id}`, { method: 'PUT', body: { role: 'agent' } })).status, 400);
 });
 
-test('teste grátis: cadastro pela página inicial com limite de 10 leads', async () => {
+test('teste grátis: cadastro pela página inicial com limite de 30 leads', async () => {
   resetLoginAttempts();
   const u = browser();
   assert.equal((await u('/api/auth/register', { method: 'POST', body: { companyName: 'Loja Free', name: 'Fê', email: 'fe@free.com', password: 'senhaforte1', segment: 'loja' } })).status, 200);
   const meta = (await u('/api/meta')).data;
   assert.equal(meta.plan.id, 'gratis');
-  assert.equal(meta.plan.max_leads, 10);
-  for (let i = 0; i < 10; i++) assert.equal((await u('/api/contacts', { method: 'POST', body: { name: `L${i}`, phone: `1190000000${i}` } })).status, 200);
+  assert.equal(meta.plan.max_leads, 30);
+  for (let i = 0; i < 30; i++) assert.equal((await u('/api/contacts', { method: 'POST', body: { name: `L${i}`, phone: `119000000${String(i).padStart(2, '0')}` } })).status, 200);
   const blocked = await u('/api/contacts', { method: 'POST', body: { name: 'L11', phone: '11900000099' } });
   assert.equal(blocked.status, 403);
   assert.match(blocked.data.error, /Limite de leads/);
   // Número novo pelo WhatsApp também não entra.
   await u('/api/simulator/inbound', { method: 'POST', body: { phone: '11977770000', text: 'oi' } });
-  assert.equal((await u('/api/contacts')).data.length, 10);
+  assert.equal((await u('/api/contacts')).data.length, 30);
   const info = (await browser()('/api/public/info')).data;
   assert.deepEqual(info.plans.map((p) => p.price_cents), [0, 10000, 24900]);
 });
@@ -227,4 +227,544 @@ test('webhooks: identificador aleatório e token obrigatório na Evolution; empr
   await a(`/api/admin/companies/${c.id}/reactivate`, { method: 'POST' });
   const { u: u2 } = await userSession('ze@zap.com', 'senhaforte1');
   assert.equal((await u2('/api/conversations')).data.length, 1, 'mensagem recebida durante a suspensão não foi processada');
+});
+
+test('chave da IA: a empresa usa a própria; só o admin libera a da plataforma, e o consumo fica registrado', async () => {
+  const { config } = await import('../src/config.js');
+  const { getCompany } = await import('../src/services/company.js');
+  const { generateInsights, setClientFactory } = await import('../src/services/ai.js');
+  config.anthropicKey = 'sk-plataforma';
+  const keys = [];
+  setClientFactory((key) => ({ beta: { messages: { create: async () => {
+    keys.push(key);
+    return { model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }], usage: { input_tokens: 100, output_tokens: 20, cache_read_input_tokens: 50, cache_creation_input_tokens: 0 } };
+  } } } }));
+  try {
+    const a = await adminSession();
+    const c = (await a('/api/admin/companies', { method: 'POST', body: {
+      name: 'Delta', plan: 'essencial', owner_name: 'Dani', owner_email: 'dani@delta.com', owner_password: 'senhaforte1',
+    } })).data;
+    const { u } = await userSession('dani@delta.com', 'senhaforte1');
+
+    // Sem chave própria e sem liberação: a chave da plataforma não é usada.
+    assert.equal((await u('/api/meta')).data.ai_configured, false);
+    assert.equal(c.ai_platform_key, false);
+
+    // A empresa cadastra a própria chave.
+    await u('/api/settings', { method: 'PUT', body: { settings: { integrations: { anthropic_api_key: 'sk-da-empresa' } } } });
+    assert.equal((await u('/api/meta')).data.ai_key_source, 'company');
+    await generateInsights(getCompany(c.id), { period_days: 30 });
+    assert.equal(keys.at(-1), 'sk-da-empresa');
+
+    // A empresa não consegue se liberar para a chave da plataforma.
+    await u('/api/settings', { method: 'PUT', body: { ai_platform_key: true, settings: { ai_platform_key: true } } });
+    assert.equal(getCompany(c.id).ai_platform_key, 0);
+
+    // O admin libera: passa a usar a chave da plataforma e o consumo é separado por origem.
+    const out = (await a(`/api/admin/companies/${c.id}`, { method: 'PUT', body: { ai_platform_key: true } })).data;
+    assert.equal(out.ai_platform_key, true);
+    assert.equal((await u('/api/meta')).data.ai_key_source, 'platform');
+    await generateInsights(getCompany(c.id), { period_days: 30 });
+    await generateInsights(getCompany(c.id), { period_days: 30 });
+    assert.equal(keys.at(-1), 'sk-plataforma');
+
+    const detail = (await a(`/api/admin/companies/${c.id}`)).data;
+    const platform = detail.ai_usage.find((r) => r.key_source === 'platform');
+    assert.deepEqual([platform.requests, platform.input_tokens, platform.output_tokens, platform.cache_read_tokens], [2, 200, 40, 100]);
+    assert.equal(detail.ai_usage.find((r) => r.key_source === 'company').requests, 1);
+    const listed = (await a('/api/admin/companies')).data.find((x) => x.id === c.id);
+    assert.equal(listed.ai_platform_month.output_tokens, 40);
+    assert.ok((await a('/api/admin/audit')).data.some((r) => r.action === 'IA com chave da plataforma' && r.company_id === c.id));
+    // A chave da plataforma nunca aparece para a empresa.
+    assert.ok(!JSON.stringify((await u('/api/settings')).data).includes('sk-plataforma'));
+
+    // O admin desliga: volta para a chave da empresa.
+    await a(`/api/admin/companies/${c.id}`, { method: 'PUT', body: { ai_platform_key: false } });
+    await generateInsights(getCompany(c.id), { period_days: 30 });
+    assert.equal(keys.at(-1), 'sk-da-empresa');
+  } finally {
+    config.anthropicKey = '';
+    setClientFactory(() => null);
+  }
+});
+
+test('atendimento manual com vários atendentes: rodízio, filtros, assumir e passar a conversa', async () => {
+  const a = await adminSession();
+  const c = (await a('/api/admin/companies', { method: 'POST', body: {
+    name: 'Épsilon', plan: 'profissional', owner_name: 'Eva', owner_email: 'eva@epsilon.com', owner_password: 'senhaforte1',
+  } })).data;
+  const { u: owner } = await userSession('eva@epsilon.com', 'senhaforte1');
+  // Sem IA e com rodízio ligado.
+  await owner('/api/settings', { method: 'PUT', body: { settings: { ai: { enabled: false }, team: { auto_assign: true } } } });
+  const at1 = (await owner('/api/users', { method: 'POST', body: { name: 'Atendente Um', email: 'um@epsilon.com', password: 'senhaforte1', role: 'agent' } })).data;
+  const at2 = (await owner('/api/users', { method: 'POST', body: { name: 'Atendente Dois', email: 'dois@epsilon.com', password: 'senhaforte1', role: 'agent' } })).data;
+  const { u: one } = await userSession('um@epsilon.com', 'senhaforte1');
+  const { u: two } = await userSession('dois@epsilon.com', 'senhaforte1');
+
+  // Três clientes escrevem no mesmo número: as conversas são divididas em rodízio.
+  const ids = [];
+  for (const [i, phone] of ['11900000001', '11900000002', '11900000003'].entries()) {
+    ids.push((await owner('/api/simulator/inbound', { method: 'POST', body: { phone, name: `Cliente ${i + 1}`, text: 'Oi, quero atendimento' } })).data.contact.id);
+  }
+  const all = (await owner('/api/conversations')).data;
+  const owners = ids.map((id) => all.find((x) => x.id === id).assigned_user_id);
+  assert.deepEqual(owners, [at1.id, at2.id, at1.id]);
+  assert.equal(all.find((x) => x.id === ids[1]).assigned_name, 'Atendente Dois');
+
+  // Cada atendente filtra as próprias conversas.
+  assert.deepEqual((await one('/api/conversations?scope=mine')).data.map((x) => x.id).sort(), [ids[0], ids[2]].sort());
+  assert.deepEqual((await two('/api/conversations?scope=mine')).data.map((x) => x.id), [ids[1]]);
+  assert.equal((await two('/api/conversations?scope=unassigned')).data.length, 0);
+
+  // Passar a conversa para outro atendente e tirar o responsável.
+  const moved = (await one(`/api/conversations/${ids[2]}/assign`, { method: 'POST', body: { user_id: at2.id } })).data;
+  assert.equal(moved.assigned_user_id, at2.id);
+  await two(`/api/conversations/${ids[2]}/assign`, { method: 'POST', body: { user_id: null } });
+  assert.deepEqual((await two('/api/conversations?scope=unassigned')).data.map((x) => x.id), [ids[2]]);
+
+  // Quem responde uma conversa sem responsável fica com ela, e a mensagem leva o nome de quem enviou.
+  const sent = (await one(`/api/conversations/${ids[2]}/messages`, { method: 'POST', body: { body: 'Olá! Sou o Um.' } })).data;
+  assert.equal(sent.user_name, 'Atendente Um');
+  assert.equal(sent.user_id, at1.id);
+  const detail = (await owner(`/api/contacts/${ids[2]}`)).data;
+  assert.equal(detail.contact?.assigned_user_id ?? detail.assigned_user_id, at1.id);
+  const acts = (detail.activities || []).map((x) => x.description);
+  assert.ok(acts.includes('Atendente Um passou a conversa para Atendente Dois'));
+  assert.ok(acts.includes('Atendente Um assumiu a conversa'));
+
+  // Não dá para atribuir a alguém de outra empresa.
+  const other = mainDb.prepare("SELECT id FROM users WHERE email = 'dani@delta.com' OR company_id != ? LIMIT 1").get(c.id);
+  assert.equal((await one(`/api/conversations/${ids[0]}/assign`, { method: 'POST', body: { user_id: other.id } })).status, 400);
+});
+
+test('usuário desativado: as conversas dele voltam para "sem responsável"', async () => {
+  const a = await adminSession();
+  const c = (await a('/api/admin/companies', { method: 'POST', body: {
+    name: 'Zeta', plan: 'profissional', owner_name: 'Zé', owner_email: 'ze@zeta.com', owner_password: 'senhaforte1',
+  } })).data;
+  const { u: owner } = await userSession('ze@zeta.com', 'senhaforte1');
+  const at = (await owner('/api/users', { method: 'POST', body: { name: 'Tina', email: 'tina@zeta.com', password: 'senhaforte1', role: 'agent' } })).data;
+  const id = (await owner('/api/simulator/inbound', { method: 'POST', body: { phone: '11900000099', text: 'Oi' } })).data.contact.id;
+  await owner(`/api/conversations/${id}/assign`, { method: 'POST', body: { user_id: at.id } });
+  assert.equal((await owner('/api/conversations?scope=unassigned')).data.length, 0);
+
+  await owner(`/api/users/${at.id}`, { method: 'PUT', body: { active: false } });
+  assert.deepEqual((await owner('/api/conversations?scope=unassigned')).data.map((x) => x.id), [id]);
+  const acts = (await owner(`/api/contacts/${id}`)).data.activities.map((x) => x.description);
+  assert.ok(acts.includes('Tina saiu do atendimento: conversa sem responsável'));
+  assert.ok(c.id);
+});
+
+test('clientes e contratos: cadastro vira cliente, aviso antes do vencimento, renovação e valores só para o dono', async () => {
+  const { processContracts } = await import('../src/services/contracts.js');
+  const { todayIn, addDays } = await import('../src/services/time.js');
+  const today = todayIn('America/Sao_Paulo');
+  const a = await adminSession();
+  await a('/api/admin/companies', { method: 'POST', body: {
+    name: 'Eta', plan: 'profissional', owner_name: 'Edu', owner_email: 'edu@eta.com', owner_password: 'senhaforte1',
+  } });
+  const { u: owner } = await userSession('edu@eta.com', 'senhaforte1');
+  await owner('/api/users', { method: 'POST', body: { name: 'Ari', email: 'ari@eta.com', password: 'senhaforte1', role: 'agent' } });
+  const { u: agent } = await userSession('ari@eta.com', 'senhaforte1');
+  const contact = (await owner('/api/contacts', { method: 'POST', body: { name: 'Loja Bela', phone: '11955550001' } })).data;
+  assert.equal((await owner('/api/clients')).data.length, 0, 'lead ainda não é cliente');
+
+  // Contrato anual vencendo em 10 dias, aviso 30 dias antes.
+  const k = (await owner('/api/contracts', { method: 'POST', body: {
+    contact_id: contact.id, title: 'Manutenção anual', value: '1.200,00', period: 'anual',
+    start_date: addDays(today, -355), end_date: addDays(today, 10), notice_days: 30,
+  } })).data;
+  assert.equal(k.value_cents, 120000);
+  assert.equal(k.situation, 'vencendo');
+  assert.equal(k.days_left, 10);
+  const clients = (await owner('/api/clients')).data;
+  assert.deepEqual(clients.map((c) => [c.name, c.active_contracts, c.next_end_date]), [['Loja Bela', 1, addDays(today, 10)]]);
+  assert.equal((await owner(`/api/contacts/${contact.id}`)).data.stage, 'ganho');
+  const summary = (await owner('/api/clients/summary')).data;
+  assert.deepEqual([summary.clients, summary.active, summary.expiring, summary.monthly_recurring_cents], [1, 1, 1, 10000]);
+
+  // Atendente gerencia, mas não vê nem altera valores.
+  const seen = (await agent('/api/contracts')).data[0];
+  assert.equal(seen.value_cents, null);
+  assert.equal((await agent('/api/clients/summary')).data.monthly_recurring_cents, null);
+  await agent(`/api/contracts/${k.id}`, { method: 'PUT', body: { value: '1,00', notes: 'cliente pediu desconto' } });
+  assert.equal((await owner('/api/contracts')).data[0].value_cents, 120000);
+
+  // O agendador cria uma única tarefa de renovação.
+  await processContracts();
+  await processContracts();
+  const tasks = (await owner('/api/tasks?status=aberta')).data.filter((t) => t.type === 'renovar_contrato');
+  assert.equal(tasks.length, 1);
+  assert.match(tasks[0].details, /vence em 10 dia/);
+
+  // Renovar: o atual vira "renovado", nasce o próximo período e a tarefa fecha.
+  const renewed = (await owner(`/api/contracts/${k.id}/renew`, { method: 'POST', body: { value: '1.320,00' } })).data;
+  assert.equal(renewed.start_date, addDays(today, 11));
+  assert.equal(renewed.value_cents, 132000);
+  assert.equal(renewed.renewed_from_id, k.id);
+  assert.equal(renewed.situation, 'vigente');
+  assert.equal((await owner('/api/tasks?status=aberta')).data.filter((t) => t.type === 'renovar_contrato').length, 0);
+  assert.equal((await owner('/api/contracts?filter=encerrados')).data[0].status, 'renovado');
+
+  // Renovação automática de contrato vencido.
+  const auto = (await owner('/api/contracts', { method: 'POST', body: {
+    contact_id: contact.id, title: 'Locação', period: 'mensal', start_date: addDays(today, -31), end_date: addDays(today, -1), auto_renew: true, notice_days: 5,
+  } })).data;
+  assert.equal(auto.situation, 'vencido');
+  await processContracts();
+  const after = (await owner('/api/contracts')).data.find((x) => x.renewed_from_id === auto.id);
+  assert.equal(after.start_date, today);
+  assert.equal(after.situation, 'vigente');
+
+  // Encerrar tira dos ativos; atendente não exclui.
+  await owner(`/api/contracts/${after.id}/close`, { method: 'POST', body: { status: 'cancelado' } });
+  assert.ok(!(await owner('/api/contracts')).data.some((x) => x.id === after.id));
+  assert.equal((await agent(`/api/contracts/${renewed.id}`, { method: 'DELETE' })).status, 403);
+
+  // Validação.
+  const bad = await owner('/api/contracts', { method: 'POST', body: { contact_id: contact.id, title: 'X', start_date: today, end_date: addDays(today, -5) } });
+  assert.equal(bad.status, 400);
+  assert.match(bad.data.error, /antes do início/);
+});
+
+test('documentos: anexar, abrir, formatos aceitos, acesso por perfil e exclusão junto com o cliente', async () => {
+  const a = await adminSession();
+  const company = (await a('/api/admin/companies', { method: 'POST', body: {
+    name: 'Teta', plan: 'profissional', owner_name: 'Téo', owner_email: 'teo@teta.com', owner_password: 'senhaforte1',
+  } })).data;
+  const { u: owner } = await userSession('teo@teta.com', 'senhaforte1');
+  const pro = (await owner('/api/professionals', { method: 'POST', body: { name: 'Dra. Paz' } })).data;
+  await owner('/api/users', { method: 'POST', body: { name: 'Paz', email: 'paz@teta.com', password: 'senhaforte1', role: 'professional', professional_id: pro.id } });
+  const { u: prof } = await userSession('paz@teta.com', 'senhaforte1');
+  const mine = (await owner('/api/contacts', { method: 'POST', body: { name: 'Cliente da Paz', phone: '11944440001' } })).data;
+  const other = (await owner('/api/contacts', { method: 'POST', body: { name: 'Outro', phone: '11944440002' } })).data;
+  await owner('/api/appointments', { method: 'POST', body: { contact_id: mine.id, professional_id: pro.id, date: '2031-05-10', time: '10:00' } });
+
+  const pdf = Buffer.from('%PDF-1.4 conteúdo de teste').toString('base64');
+  const doc = (await owner('/api/documents', { method: 'POST', body: { name: 'contrato.pdf', data: pdf, contact_id: other.id, category: 'Contrato' } })).data;
+  assert.equal(doc.mime, 'application/pdf');
+  assert.equal(doc.uploaded_by, 'Téo');
+  const content = (await owner(`/api/documents/${doc.id}/content`)).data;
+  assert.equal(Buffer.from(content.data, 'base64').toString(), '%PDF-1.4 conteúdo de teste');
+  const general = (await owner('/api/documents', { method: 'POST', body: { name: 'alvara.png', data: pdf } })).data;
+  assert.equal(general.contact_id, null);
+  assert.deepEqual((await owner('/api/documents?scope=company')).data.map((d) => d.id), [general.id]);
+
+  // Formatos perigosos e arquivos grandes ficam de fora.
+  assert.equal((await owner('/api/documents', { method: 'POST', body: { name: 'pagina.html', data: pdf } })).status, 400);
+  assert.equal((await owner('/api/documents', { method: 'POST', body: { name: 'x.svg', data: pdf } })).status, 400);
+  const big = Buffer.alloc(10 * 1024 * 1024 + 1).toString('base64');
+  const tooBig = await owner('/api/documents', { method: 'POST', body: { name: 'grande.pdf', data: big } });
+  assert.equal(tooBig.status, 400);
+  assert.match(tooBig.data.error, /10 MB/);
+
+  // Profissional: só documentos dos próprios clientes, sem os gerais nem contratos.
+  const mineDoc = (await prof('/api/documents', { method: 'POST', body: { name: 'laudo.pdf', data: pdf, contact_id: mine.id } })).data;
+  assert.equal(mineDoc.contact_id, mine.id);
+  assert.deepEqual((await prof('/api/documents')).data.map((d) => d.id), [mineDoc.id]);
+  assert.equal((await prof(`/api/documents/${doc.id}/content`)).status, 404);
+  assert.equal((await prof(`/api/documents/${general.id}/content`)).status, 404);
+  assert.equal((await prof('/api/documents', { method: 'POST', body: { name: 'a.pdf', data: pdf } })).status, 403);
+  assert.equal((await prof('/api/contracts')).status, 403);
+  assert.equal((await prof(`/api/documents/${mineDoc.id}`, { method: 'DELETE' })).status, 403);
+
+  // Exportação leva os arquivos; excluir o cliente apaga os documentos dele.
+  const exported = (await a(`/api/admin/companies/${company.id}/export`)).data;
+  assert.equal(exported.data.documents.length, 3);
+  assert.equal(Buffer.from(exported.data.document_files.find((f) => f.document_id === doc.id).data_base64, 'base64').toString(), '%PDF-1.4 conteúdo de teste');
+  await owner(`/api/contacts/${other.id}`, { method: 'DELETE' });
+  assert.equal((await owner(`/api/documents/${doc.id}/content`)).status, 404);
+  assert.equal(mainDb.prepare('SELECT COUNT(*) AS n FROM document_files WHERE document_id = ?').get(doc.id).n, 0);
+});
+
+test('teste grátis: IA bloqueada no servidor e assinatura por Pix com identificador da empresa', async () => {
+  const { config } = await import('../src/config.js');
+  const { setClientFactory } = await import('../src/services/ai.js');
+  const { all } = await import('../src/db.js');
+  const calls = [];
+  setClientFactory(() => ({ beta: { messages: { create: async () => { calls.push(1); return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'oi' }] }; } } } }));
+  config.platformPixKey = '123e4567-e89b-42d3-a456-426614174000';
+  config.platformPixName = 'Fulano de Tal';
+  config.platformPixCity = 'SAO PAULO';
+  try {
+    // Cadastro pela página inicial = teste grátis.
+    const u = browser();
+    assert.equal((await u('/api/auth/register', { method: 'POST', body: { companyName: 'Iota', name: 'Ivo', email: 'ivo@iota.com', password: 'senhaforte1' } })).status, 200);
+    await u('/api/settings', { method: 'PUT', body: { settings: { integrations: { anthropic_api_key: 'sk-propria' } } } });
+    const meta = (await u('/api/meta')).data;
+    assert.equal(meta.ai_locked, true);
+
+    // Mensagem chega: ninguém responde automaticamente (nem a resposta simples).
+    const r = (await u('/api/simulator/inbound', { method: 'POST', body: { phone: '11933330001', text: 'Quanto custa?' } })).data;
+    await new Promise((ok) => setTimeout(ok, 60));
+    assert.equal(all("SELECT COUNT(*) AS n FROM messages WHERE contact_id = ? AND direction = 'out'", r.contact.id)[0].n, 0);
+    assert.equal(calls.length, 0);
+    assert.equal((await u(`/api/conversations/${r.contact.id}/ai-reply`, { method: 'POST' })).status, 402);
+    assert.equal((await u(`/api/conversations/${r.contact.id}/ai`, { method: 'POST', body: { enabled: true } })).status, 402);
+    assert.equal((await u('/api/dashboard/insights', { method: 'POST', body: {} })).status, 402);
+    // Atendimento manual continua funcionando.
+    assert.equal((await u(`/api/conversations/${r.contact.id}/messages`, { method: 'POST', body: { body: 'Olá! Custa R$ 100.' } })).status, 200);
+
+    // Paywall: Pix de cada plano pago, com a chave da plataforma e o identificador da empresa.
+    const up = (await u('/api/upgrade')).data;
+    assert.deepEqual(up.plans.map((p) => [p.id, p.price_cents]), [['essencial', 10000], ['profissional', 24900]]);
+    assert.match(up.txid, /^FALAKI[A-Za-z0-9]+$/);
+    const essencial = up.plans.find((p) => p.id === 'essencial').pix_code;
+    assert.ok(essencial.includes('123e4567-e89b-42d3-a456-426614174000'));
+    assert.ok(essencial.includes('5406100.00'));
+    assert.ok(up.plans.find((p) => p.id === 'profissional').pix_code.includes('5406249.00'));
+    assert.ok(essencial.includes(up.txid));
+    assert.equal(up.email, 'contato@falaki.me');
+
+    // "Já enviei o comprovante" aparece no histórico do admin.
+    await u('/api/upgrade/notify', { method: 'POST', body: { plan: 'profissional' } });
+    const a = await adminSession();
+    const log = (await a('/api/admin/audit')).data.find((x) => x.action === 'pedido de assinatura');
+    assert.match(log.details, /Profissional/);
+    assert.ok(log.details.includes(up.txid));
+
+    // Admin muda o plano: a IA destrava.
+    const id = (await a('/api/admin/companies')).data.find((x) => x.name === 'Iota').id;
+    await a(`/api/admin/companies/${id}`, { method: 'PUT', body: { plan: 'essencial' } });
+    assert.equal((await u('/api/meta')).data.ai_locked, false);
+    assert.equal((await u(`/api/conversations/${r.contact.id}/ai`, { method: 'POST', body: { enabled: true } })).status, 200);
+  } finally {
+    config.platformPixKey = '';
+    setClientFactory(() => null);
+  }
+});
+
+test('pedido de assinatura: aparece como "aguardando Pix" e o admin ativa o plano com os limites dele', async () => {
+  const u = browser();
+  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Kappa', name: 'Kai', email: 'kai@kappa.com', password: 'senhaforte1' } });
+  await u('/api/upgrade/notify', { method: 'POST', body: { plan: 'profissional' } });
+  assert.equal((await u('/api/upgrade')).data.requested_plan, 'profissional');
+  const a = await adminSession();
+  const overview = (await a('/api/admin/overview')).data;
+  assert.ok(overview.upgrade_requests >= 1);
+  const listed = overview.list.find((x) => x.name === 'Kappa');
+  assert.equal(listed.plan, 'gratis');
+  assert.equal(listed.upgrade_plan, 'profissional');
+  assert.equal(overview.list[0].upgrade_plan !== null, true, 'pedidos em aberto aparecem primeiro');
+
+  const out = (await a(`/api/admin/companies/${listed.id}/activate-plan`, { method: 'POST', body: { plan: 'profissional' } })).data;
+  assert.deepEqual([out.plan, out.max_users, out.max_leads, out.upgrade_plan], ['profissional', 10, null, null]);
+  assert.equal((await u('/api/meta')).data.ai_locked, false);
+  assert.ok((await a('/api/admin/audit')).data.some((r) => r.action === 'assinatura ativada' && r.company_id === listed.id));
+  assert.equal((await a(`/api/admin/companies/${listed.id}/activate-plan`, { method: 'POST', body: { plan: 'gratis' } })).status, 400);
+});
+
+test('Stripe: assinatura no cartão ativa, renova, recusa e encerra pelo webhook assinado; painel financeiro soma tudo', async () => {
+  const crypto = await import('node:crypto');
+  const { config } = await import('../src/config.js');
+  const { setStripeFetch, stripeMode } = await import('../src/services/stripe.js');
+  const sent = [];
+  setStripeFetch(async (url, init) => {
+    sent.push({ url, body: new URLSearchParams(init.body), auth: init.headers.Authorization });
+    const data = url.endsWith('checkout/sessions') ? { id: 'cs_1', url: 'https://checkout.stripe.com/c/pay/cs_1' } : { url: 'https://billing.stripe.com/p/session/1' };
+    return { ok: true, status: 200, json: async () => data };
+  });
+  config.stripeSecretKey = 'sk_test_123';
+  config.stripeWebhookSecret = 'whsec_teste';
+  const hook = async (type, object, { secret = 'whsec_teste' } = {}) => {
+    const body = JSON.stringify({ id: `evt_${Math.random()}`, type, created: Math.floor(Date.now() / 1000), data: { object } });
+    const t = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHmac('sha256', secret).update(`${t}.${body}`).digest('hex');
+    const res = await fetch(`${base}/webhooks/stripe`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': `t=${t},v1=${sig}` }, body });
+    return { status: res.status, data: await res.json() };
+  };
+  try {
+    const u = browser();
+    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Lambda', name: 'Lia', email: 'lia@lambda.com', password: 'senhaforte1' } });
+    const up = (await u('/api/upgrade')).data;
+    assert.equal(up.card_enabled, true);
+    const companyId = (await u('/api/auth/me')).data.company.id;
+
+    // Checkout: assinatura mensal em reais, com a empresa nos metadados.
+    const co = (await u('/api/upgrade/card', { method: 'POST', body: { plan: 'essencial' } })).data;
+    assert.equal(co.url, 'https://checkout.stripe.com/c/pay/cs_1');
+    const b = sent[0].body;
+    assert.equal(sent[0].auth, 'Bearer sk_test_123');
+    assert.equal(b.get('mode'), 'subscription');
+    assert.equal(b.get('line_items[0][price_data][unit_amount]'), '10000');
+    assert.equal(b.get('line_items[0][price_data][currency]'), 'brl');
+    assert.equal(b.get('line_items[0][price_data][recurring][interval]'), 'month');
+    assert.equal(b.get('subscription_data[metadata][company_id]'), String(companyId));
+    assert.equal(b.get('customer_email'), 'lia@lambda.com');
+
+    // Webhook sem assinatura válida é recusado e não muda nada.
+    assert.equal((await hook('checkout.session.completed', { metadata: { company_id: companyId, plan: 'essencial' } }, { secret: 'outro' })).status, 400);
+    assert.equal((await u('/api/meta')).data.plan.id, 'gratis');
+
+    // Pagamento aprovado: plano ativo e mensalidade registrada (eventos repetidos não duplicam).
+    await hook('checkout.session.completed', { object: 'checkout.session', customer: 'cus_1', subscription: 'sub_1', client_reference_id: String(companyId), metadata: { company_id: String(companyId), plan: 'essencial' } });
+    const now = Math.floor(Date.now() / 1000);
+    const invoice = { object: 'invoice', id: 'in_1', customer: 'cus_1', subscription: 'sub_1', amount_paid: 10000, status_transitions: { paid_at: now },
+      lines: { data: [{ period: { start: now, end: now + 30 * 86400 }, metadata: { company_id: String(companyId), plan: 'essencial' } }] } };
+    await hook('invoice.paid', invoice);
+    await hook('invoice.paid', invoice);
+    const meta = (await u('/api/meta')).data;
+    assert.equal(meta.plan.id, 'essencial');
+    assert.equal(meta.ai_locked, false);
+    const sub = (await u('/api/upgrade')).data.subscription;
+    assert.deepEqual([sub.method, sub.state, sub.has_card], ['cartao', 'em_dia', true]);
+    // Já assinante no cartão: não abre outro checkout; usa a área do cliente.
+    assert.equal((await u('/api/upgrade/card', { method: 'POST', body: { plan: 'profissional' } })).status, 400);
+    assert.equal((await u('/api/upgrade/portal', { method: 'POST' })).data.url, 'https://billing.stripe.com/p/session/1');
+    assert.equal(sent.at(-1).body.get('customer'), 'cus_1');
+
+    const a = await adminSession();
+    let f = (await a('/api/admin/finance')).data;
+    assert.equal(f.stripe_mode, 'test');
+    assert.equal(f.payments.filter((p) => p.company_id === companyId && p.status === 'pago').length, 1);
+    assert.ok(f.received.this_month_cents >= 10000);
+    assert.ok(f.received.by_method.cartao >= 10000);
+    const ess = f.plans.find((p) => p.id === 'essencial');
+    assert.ok(ess.card >= 1 && ess.mrr_cents >= 10000);
+    assert.ok(f.receivable.renewing.some((r) => r.id === companyId && r.method === 'cartao'), 'renova em 30 dias');
+
+    // Cartão recusado: aparece em atraso; cancelamento: volta para o grátis.
+    await hook('invoice.payment_failed', { object: 'invoice', id: 'in_2', customer: 'cus_1', subscription: 'sub_1', amount_due: 10000, attempt_count: 1 });
+    f = (await a('/api/admin/finance')).data;
+    assert.ok(f.receivable.overdue.some((r) => r.id === companyId && r.state === 'atrasada'));
+    await hook('customer.subscription.deleted', { object: 'subscription', id: 'sub_1', customer: 'cus_1', status: 'canceled', metadata: { company_id: String(companyId) } });
+    const after = (await u('/api/meta')).data;
+    assert.deepEqual([after.plan.id, after.ai_locked, after.plan.max_leads], ['gratis', true, 30]);
+    assert.ok((await a('/api/admin/audit')).data.some((r) => r.action === 'assinatura encerrada' && r.company_id === companyId));
+
+    // Chave de produção fica bloqueada em localhost.
+    config.stripeSecretKey = 'rk_live_abc';
+    assert.equal(stripeMode(), 'live_blocked');
+    assert.equal((await u('/api/upgrade')).data.card_enabled, false);
+  } finally {
+    config.stripeSecretKey = '';
+    config.stripeWebhookSecret = '';
+  }
+});
+
+test('Pix confirmado pelo admin soma um mês por pagamento e entra no financeiro', async () => {
+  const { today, addMonths } = await import('../src/services/subscriptions.js');
+  const { addDays } = await import('../src/services/time.js');
+  const u = browser();
+  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Mu', name: 'Mel', email: 'mel@mu.com', password: 'senhaforte1' } });
+  const id = (await u('/api/auth/me')).data.company.id;
+  const a = await adminSession();
+  const before = (await a('/api/admin/finance')).data;
+  let c = (await a(`/api/admin/companies/${id}/activate-plan`, { method: 'POST', body: { plan: 'profissional' } })).data;
+  const firstEnd = addDays(addMonths(today(), 1), -1);
+  assert.equal(c.subscription.paid_until, firstEnd);
+  assert.equal(c.subscription.state, 'em_dia');
+  c = (await a(`/api/admin/companies/${id}/activate-plan`, { method: 'POST', body: { plan: 'profissional' } })).data;
+  assert.equal(c.subscription.paid_until, addDays(addMonths(addDays(firstEnd, 1), 1), -1), 'segundo Pix começa depois do primeiro mês');
+  assert.equal(c.payments.length, 2);
+  const after = (await a('/api/admin/finance')).data;
+  assert.equal(after.received.by_method.pix - before.received.by_method.pix, 49800);
+  assert.equal(after.plans.find((p) => p.id === 'profissional').pix - before.plans.find((p) => p.id === 'profissional').pix, 1);
+});
+
+test('Stripe Pix: cada pagamento soma um mês, confirmado pelo webhook, sem duplicar', async () => {
+  const crypto = await import('node:crypto');
+  const { config } = await import('../src/config.js');
+  const { setStripeFetch } = await import('../src/services/stripe.js');
+  const { today, addMonths } = await import('../src/services/subscriptions.js');
+  const { addDays } = await import('../src/services/time.js');
+  const sent = [];
+  setStripeFetch(async (url, init) => { sent.push(new URLSearchParams(init.body)); return { ok: true, status: 200, json: async () => ({ id: 'cs_pix', url: 'https://checkout.stripe.com/c/pay/cs_pix' }) }; });
+  config.stripeSecretKey = 'sk_test_123';
+  config.stripeWebhookSecret = 'whsec_teste';
+  const hook = async (type, object) => {
+    const body = JSON.stringify({ id: `evt_${Math.random()}`, type, data: { object } });
+    const t = Math.floor(Date.now() / 1000);
+    const sig = crypto.createHmac('sha256', 'whsec_teste').update(`${t}.${body}`).digest('hex');
+    return (await fetch(`${base}/webhooks/stripe`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'stripe-signature': `t=${t},v1=${sig}` }, body })).json();
+  };
+  try {
+    const u = browser();
+    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Nu', name: 'Nina', email: 'nina@nu.com', password: 'senhaforte1' } });
+    const id = (await u('/api/auth/me')).data.company.id;
+    const r = (await u('/api/upgrade/pix', { method: 'POST', body: { plan: 'profissional' } })).data;
+    assert.equal(r.url, 'https://checkout.stripe.com/c/pay/cs_pix');
+    const b = sent[0];
+    assert.equal(b.get('mode'), 'payment');
+    assert.equal(b.get('payment_method_types[0]'), 'pix');
+    assert.equal(b.get('line_items[0][price_data][unit_amount]'), '24900');
+    assert.equal(b.get('metadata[kind]'), 'pix_month');
+
+    const session = (sid, status = 'paid') => ({ object: 'checkout.session', id: sid, mode: 'payment', payment_status: status, amount_total: 24900, customer: 'cus_pix', metadata: { company_id: String(id), plan: 'profissional', kind: 'pix_month' } });
+    // Ainda não pago: nada muda.
+    assert.equal((await hook('checkout.session.completed', session('cs_a', 'unpaid'))).pending, true);
+    assert.equal((await u('/api/meta')).data.plan.id, 'gratis');
+    // Pago: plano ativo por um mês; aviso repetido não soma de novo.
+    await hook('checkout.session.async_payment_succeeded', session('cs_a'));
+    await hook('checkout.session.async_payment_succeeded', session('cs_a'));
+    const firstEnd = addDays(addMonths(today(), 1), -1);
+    let meta = (await u('/api/meta')).data;
+    assert.deepEqual([meta.plan.id, meta.subscription.method, meta.subscription.paid_until, meta.ai_locked], ['profissional', 'pix', firstEnd, false]);
+    // Segundo mês pago antes do vencimento: começa depois do primeiro.
+    await hook('checkout.session.completed', session('cs_b'));
+    meta = (await u('/api/meta')).data;
+    assert.equal(meta.subscription.paid_until, addDays(addMonths(addDays(firstEnd, 1), 1), -1));
+    const a = await adminSession();
+    const pays = (await a(`/api/admin/companies/${id}`)).data.payments;
+    assert.deepEqual(pays.map((p) => [p.method, p.amount_cents, p.provider_ref]).sort(), [['pix', 24900, 'cs_a'], ['pix', 24900, 'cs_b']]);
+  } finally {
+    config.stripeSecretKey = '';
+    config.stripeWebhookSecret = '';
+  }
+});
+
+test('Stripe: fatura no formato atual da API (parent.subscription_details) também ativa e registra', async () => {
+  const { handleStripeEvent } = await import('../src/services/stripe.js');
+  const u = browser();
+  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Xi', name: 'Xa', email: 'xa@xi.com', password: 'senhaforte1' } });
+  const id = (await u('/api/auth/me')).data.company.id;
+  const now = Math.floor(Date.now() / 1000);
+  // Renovação chega sem o checkout (ex.: assinatura criada antes): só a fatura identifica a empresa.
+  const r = handleStripeEvent({ type: 'invoice.paid', created: now, data: { object: {
+    object: 'invoice', id: 'in_novo', customer: 'cus_novo', amount_paid: 24900, billing_reason: 'subscription_cycle',
+    status_transitions: { paid_at: now },
+    parent: { type: 'subscription_details', subscription_details: { subscription: 'sub_novo', metadata: { company_id: String(id), plan: 'profissional' } } },
+    lines: { data: [{ period: { start: now, end: now + 30 * 86400 }, metadata: {} }] },
+  } } });
+  assert.deepEqual(r, { ok: true });
+  const meta = (await u('/api/meta')).data;
+  assert.deepEqual([meta.plan.id, meta.subscription.method, meta.subscription.state], ['profissional', 'cartao', 'em_dia']);
+  // Eventos seguintes acham a empresa pela assinatura gravada.
+  handleStripeEvent({ type: 'customer.subscription.updated', data: { object: { object: 'subscription', id: 'sub_novo', customer: 'cus_novo', status: 'active', cancel_at_period_end: true } } });
+  assert.equal((await u('/api/upgrade')).data.subscription.cancel_at_period_end, true);
+});
+
+test('Stripe: quem assina no cartão muda de plano na mesma assinatura, com diferença proporcional', async () => {
+  const { config } = await import('../src/config.js');
+  const { setStripeFetch, handleStripeEvent } = await import('../src/services/stripe.js');
+  const calls = [];
+  setStripeFetch(async (url, init) => {
+    calls.push({ url, method: init.method, body: init.body ? new URLSearchParams(init.body) : null });
+    const data = url.includes('/subscriptions/') && init.method === 'GET'
+      ? { id: 'sub_m', items: { data: [{ id: 'si_m', price: { product: 'prod_m' } }] } } : url.endsWith('/products') ? { id: 'prod_pro' } : { id: 'ok' };
+    return { ok: true, status: 200, json: async () => data };
+  });
+  config.stripeSecretKey = 'sk_test_123';
+  try {
+    const u = browser();
+    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Omicron', name: 'Oto', email: 'oto@omicron.com', password: 'senhaforte1' } });
+    const id = (await u('/api/auth/me')).data.company.id;
+    handleStripeEvent({ type: 'checkout.session.completed', data: { object: { object: 'checkout.session', customer: 'cus_m', subscription: 'sub_m', metadata: { company_id: String(id), plan: 'essencial' } } } });
+    assert.equal((await u('/api/meta')).data.plan.id, 'essencial');
+
+    const r = await u('/api/upgrade/change', { method: 'POST', body: { plan: 'profissional' } });
+    assert.equal(r.status, 200);
+    const update = calls.find((c) => c.method === 'POST' && c.url.endsWith('/subscriptions/sub_m')).body;
+    assert.equal(update.get('items[0][id]'), 'si_m');
+    assert.equal(update.get('items[0][price_data][unit_amount]'), '24900');
+    assert.equal(update.get('items[0][price_data][product]'), 'prod_pro');
+    assert.equal(update.get('proration_behavior'), 'always_invoice');
+    assert.equal(update.get('metadata[plan]'), 'profissional');
+    assert.equal(calls.find((c) => c.url.endsWith('/products')).body.get('name'), 'Falaki — plano Profissional');
+    const meta = (await u('/api/meta')).data;
+    assert.deepEqual([meta.plan.id, meta.plan.max_users, meta.plan.max_leads], ['profissional', 10, null]);
+    assert.equal((await u('/api/upgrade/change', { method: 'POST', body: { plan: 'profissional' } })).status, 400, 'mesmo plano');
+  } finally {
+    config.stripeSecretKey = '';
+  }
 });

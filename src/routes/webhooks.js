@@ -4,6 +4,8 @@ import { HttpError } from '../http.js';
 import { getCompany } from '../services/company.js';
 import { handleInbound, parseMetaWebhook, verifyMetaSignature, parseEvolutionWebhook } from '../services/messaging.js';
 import { markPaid, fetchMercadoPagoPayment } from '../services/billing.js';
+import { config } from '../config.js';
+import { verifyStripeSignature, handleStripeEvent } from '../services/stripe.js';
 
 // As URLs usam o identificador público aleatório da empresa (não o número interno),
 // e cada provedor tem sua verificação: token, assinatura ou consulta à API.
@@ -29,6 +31,13 @@ const chargeFromRef = (companyId, ref) => {
 const active = (company) => company.status === 'ativa';
 
 export function registerWebhooks(router) {
+  // Stripe: assinatura das empresas na plataforma (cartão). Só processa com a assinatura válida.
+  router.post('/webhooks/stripe', (req, res, { body }) => {
+    if (!config.stripeWebhookSecret) throw new HttpError(503, 'Webhook do Stripe não configurado');
+    if (!verifyStripeSignature(config.stripeWebhookSecret, req.rawBody, req.headers['stripe-signature'])) throw new HttpError(400, 'Assinatura inválida');
+    return handleStripeEvent(body);
+  });
+
   // WhatsApp Cloud API (Meta): verificação do webhook
   router.get('/webhooks/whatsapp/meta/:companyId', (req, res, { params, query }) => {
     const wa = companyOr404(params.companyId).settings.whatsapp;

@@ -4,14 +4,25 @@ import { HttpError } from '../http.js';
 import {
   registerCompany, login, createSession, sessionCookie, requireAuth, requireRole, ownerOnly, ROLES, listUsers, createUser, updateUser,
 } from '../auth.js';
-import { getCompany, saveSettings, maskSettings, anthropicKeyFor, placesKeyFor } from '../services/company.js';
+import { getCompany, saveSettings, maskSettings, anthropicKeyFor, aiKeySource, placesKeyFor } from '../services/company.js';
 import {
   STAGES, listContacts, createContact, getContact, updateContact, changeStage, logActivity, PlanLimitError, leadsRemaining, normalizePhone,
 } from '../services/crm.js';
-import { PLANS, publicPlans } from '../services/plans.js';
+import { PLANS, publicPlans, aiAllowed, UPGRADE_PLAN, upgradeTxid } from '../services/plans.js';
+import { pixPayload } from '../services/billing.js';
+import { stripeEnabled, createCheckout, createPixCheckout, createPortal, changeCardPlan } from '../services/stripe.js';
+import { subscriptionState } from '../services/subscriptions.js';
+import { audit } from '../services/admin.js';
 import { PRESETS } from '../services/presets.js';
 import { sendMessage, handleInbound } from '../services/messaging.js';
 import { replyNow } from '../services/ai.js';
+import { assignContact, assignableUsers, userNames, releaseAssignments } from '../services/assignment.js';
+import {
+  PERIODS, listContracts, getContract, createContract, updateContract, renewContract, closeContract, deleteContract, listClients, contractsSummary,
+} from '../services/contracts.js';
+import {
+  CATEGORIES, ALLOWED_EXTENSIONS, MAX_DOCUMENT_BYTES, listDocuments, getDocument, addDocument, documentContent, updateDocument, deleteDocument,
+} from '../services/documents.js';
 import {
   availableSlots, createAppointment, listAppointments, updateAppointment, getAppointment,
 } from '../services/scheduling.js';
@@ -99,7 +110,11 @@ export function registerApi(router) {
     users: listUsers(req.companyId), roles: ROLES, max_users: getCompany(req.companyId).max_users,
   }));
   router.post('/api/users', auth, ownerOnly, (req, res, { body }) => createUser(req.companyId, body));
-  router.put('/api/users/:id', auth, ownerOnly, (req, res, { params, body }) => updateUser(req.companyId, Number(params.id), body));
+  router.put('/api/users/:id', auth, ownerOnly, (req, res, { params, body }) => {
+    const user = updateUser(req.companyId, Number(params.id), body);
+    releaseAssignments(req.companyId, user);
+    return user;
+  });
 
   // ---- Configurações ---------------------------------------------------------
   router.get('/api/meta', auth, (req) => {
@@ -121,6 +136,14 @@ export function registerApi(router) {
       },
       sales_whatsapp: config.salesWhatsapp,
       ai_configured: Boolean(anthropicKeyFor(company)),
+      ai_key_source: aiKeySource(company),
+      ai_locked: !aiAllowed(company),
+      subscription: { method: company.billing_method, paid_until: company.paid_until, ...subscriptionState(company) },
+      team: assignableUsers(company.id),
+      contract_periods: PERIODS,
+      document_categories: CATEGORIES,
+      document_types: ALLOWED_EXTENSIONS,
+      document_max_bytes: MAX_DOCUMENT_BYTES,
       places_configured: Boolean(placesKeyFor(company)),
       whatsapp_provider: company.settings.whatsapp.provider,
       billing_provider: company.settings.billing.provider,
@@ -216,6 +239,9 @@ export function registerApi(router) {
       appointments: listAppointments(req.companyId, { contactId: contact.id }),
       charges: listCharges(req.companyId, { contactId: contact.id }),
       tasks: listTasks(req.companyId, { contactId: contact.id }),
+      contracts: req.user.role === 'professional' ? [] : listContracts(req.companyId, { contactId: contact.id, filter: 'todos' })
+        .map((k) => (req.user.role === 'owner' ? k : { ...k, value_cents: null })),
+      documents: listDocuments(req.companyId, { contactId: contact.id }),
       enrollments: all(
         `SELECT e.*, s.name AS sequence_name, json_array_length(s.steps) AS steps_total FROM enrollments e
          JOIN sequences s ON s.id = e.sequence_id WHERE e.contact_id = ? ORDER BY e.id DESC`, contact.id),
@@ -358,19 +384,29 @@ export function registerApi(router) {
   });
 
   // ---- Atendimento (inbox) ---------------------------------------------------
-  router.get('/api/conversations', auth, (req, res, { query }) => all(
-    `SELECT c.id, c.name, c.phone, c.stage, c.ai_enabled, c.unread, m.body AS last_body, m.direction AS last_direction,
-            m.author AS last_author, m.created_at AS last_at
-     FROM contacts c JOIN messages m ON m.id = (SELECT MAX(id) FROM messages WHERE contact_id = c.id)
-     WHERE c.company_id = ? ${query.q ? 'AND (c.name LIKE ? OR c.phone LIKE ?)' : ''}
-     ORDER BY m.id DESC LIMIT 200`,
-    req.companyId, ...(query.q ? [`%${query.q}%`, `%${query.q}%`] : []),
-  ).filter((c) => visible(req, c.id)));
+  // Filtro por responsável: scope=mine (minhas), unassigned (sem responsável) ou todas.
+  router.get('/api/conversations', auth, (req, res, { query }) => {
+    const where = ['c.company_id = ?'];
+    const params = [req.companyId];
+    if (query.q) { where.push('(c.name LIKE ? OR c.phone LIKE ?)'); params.push(`%${query.q}%`, `%${query.q}%`); }
+    if (query.scope === 'mine') { where.push('c.assigned_user_id = ?'); params.push(req.user.id); }
+    if (query.scope === 'unassigned') where.push('c.assigned_user_id IS NULL');
+    const names = userNames(req.companyId);
+    return all(
+      `SELECT c.id, c.name, c.phone, c.stage, c.ai_enabled, c.unread, c.assigned_user_id, m.body AS last_body, m.direction AS last_direction,
+              m.author AS last_author, m.created_at AS last_at
+       FROM contacts c JOIN messages m ON m.id = (SELECT MAX(id) FROM messages WHERE contact_id = c.id)
+       WHERE ${where.join(' AND ')} ORDER BY m.id DESC LIMIT 200`, ...params,
+    ).filter((c) => visible(req, c.id)).map((c) => ({ ...c, assigned_name: names[c.assigned_user_id] || null }));
+  });
   router.get('/api/conversations/:id/messages', auth, contactGuard, (req, res, { params, query }) => {
     const contact = need(getContact(req.companyId, params.id), 'Contato');
     run('UPDATE contacts SET unread = 0 WHERE id = ?', contact.id);
     const after = int(query.after) || 0;
-    return { contact, messages: all('SELECT * FROM messages WHERE contact_id = ? AND id > ? ORDER BY id DESC LIMIT 300', contact.id, after).reverse() };
+    return {
+      contact: { ...contact, assigned_name: userNames(req.companyId)[contact.assigned_user_id] || null },
+      messages: all('SELECT * FROM messages WHERE contact_id = ? AND id > ? ORDER BY id DESC LIMIT 300', contact.id, after).reverse(),
+    };
   });
   router.post('/api/conversations/:id/messages', auth, contactGuard, async (req, res, { params, body }) => {
     need(getContact(req.companyId, params.id), 'Contato');
@@ -379,16 +415,34 @@ export function registerApi(router) {
     if (run('UPDATE contacts SET ai_enabled = 0 WHERE id = ? AND ai_enabled = 1', params.id).changes) {
       logActivity(req.companyId, Number(params.id), 'ia', `${req.user.name} assumiu a conversa`);
     }
-    return sendMessage(req.companyId, Number(params.id), body.body.trim(), 'human');
+    // Conversa sem responsável fica com quem respondeu.
+    if (!getContact(req.companyId, params.id).assigned_user_id && req.user.role !== 'professional') {
+      assignContact(req.companyId, Number(params.id), req.user.id, req.user);
+    }
+    return sendMessage(req.companyId, Number(params.id), body.body.trim(), 'human', { user: req.user });
   });
+  // Assumir, passar para outro atendente ou tirar o responsável (user_id vazio).
+  router.post('/api/conversations/:id/assign', auth, staff, contactGuard, (req, res, { params, body }) => {
+    need(getContact(req.companyId, params.id), 'Contato');
+    try {
+      const contact = assignContact(req.companyId, Number(params.id), int(body.user_id), req.user);
+      return { ...contact, assigned_name: userNames(req.companyId)[contact.assigned_user_id] || null };
+    } catch (e) { throw new HttpError(400, e.message); }
+  });
+  // Teste grátis: IA bloqueada (o front mostra o cadeado que leva para a assinatura).
+  const needAi = (req) => {
+    if (!aiAllowed(getCompany(req.companyId))) throw new HttpError(402, `A IA faz parte do plano ${PLANS[UPGRADE_PLAN].label}. Assine para desbloquear.`);
+  };
   router.post('/api/conversations/:id/ai', auth, contactGuard, (req, res, { params, body }) => {
     need(getContact(req.companyId, params.id), 'Contato');
+    if (body.enabled) needAi(req);
     run('UPDATE contacts SET ai_enabled = ? WHERE id = ?', body.enabled ? 1 : 0, params.id);
     logActivity(req.companyId, Number(params.id), 'ia', body.enabled ? 'IA reativada na conversa' : `${req.user.name} assumiu a conversa`);
     return getContact(req.companyId, params.id);
   });
   router.post('/api/conversations/:id/ai-reply', auth, contactGuard, async (req, res, { params }) => {
     need(getContact(req.companyId, params.id), 'Contato');
+    needAi(req);
     return (await replyNow(req.companyId, Number(params.id))) || { skipped: true };
   });
   // Simula uma mensagem chegando do WhatsApp (para testar sem conectar um número).
@@ -397,6 +451,73 @@ export function registerApi(router) {
     const r = handleInbound(req.companyId, { phone: body.phone, name: body.name, text: body.text });
     return r || { duplicated: true };
   });
+
+  // ---- Clientes, contratos e documentos ---------------------------------------
+  //
+  // Dono e atendentes gerenciam contratos (valores só para o dono, como no resto do financeiro).
+  // Profissional vê os próprios clientes e os documentos deles, sem contratos.
+  const hideValues = (req, k) => (req.user.role === 'owner' ? k : { ...k, value_cents: null });
+  const by = (req) => req.user.name;
+  const contractGuard = (req, res, { params }) => {
+    const k = need(getContract(req.companyId, Number(params.id)), 'Contrato');
+    if (!visible(req, k.contact_id)) throw new HttpError(404, 'Contrato não encontrado');
+    return undefined;
+  };
+  const tryIt = (fn) => { try { return fn(); } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(400, e.message); } };
+
+  router.get('/api/clients', auth, (req, res, { query }) => {
+    const names = userNames(req.companyId);
+    return listClients(req.companyId, { q: query.q }).filter((c) => visible(req, c.id))
+      .map((c) => ({ ...c, assigned_name: names[c.assigned_user_id] || null }));
+  });
+  router.get('/api/clients/summary', auth, staff, (req) => {
+    const s = contractsSummary(req.companyId);
+    return req.user.role === 'owner' ? s : { ...s, monthly_recurring_cents: null };
+  });
+
+  router.get('/api/contracts', auth, staff, (req, res, { query }) => listContracts(req.companyId, { contactId: int(query.contact_id), filter: query.filter })
+    .map((k) => hideValues(req, k)));
+  router.post('/api/contracts', auth, staff, (req, res, { body }) => {
+    if (body.value !== undefined && req.user.role === 'owner') body.value_cents = cents(body.value || 0);
+    else delete body.value_cents;
+    return hideValues(req, tryIt(() => createContract(req.companyId, { ...body, contact_id: int(body.contact_id) }, { by: by(req) })));
+  });
+  router.put('/api/contracts/:id', auth, staff, contractGuard, (req, res, { params, body }) => {
+    // Atendente não vê nem altera valores.
+    if (body.value !== undefined && req.user.role === 'owner') body.value_cents = cents(body.value || 0);
+    else delete body.value_cents;
+    return hideValues(req, tryIt(() => updateContract(req.companyId, Number(params.id), body, { by: by(req) })));
+  });
+  router.post('/api/contracts/:id/renew', auth, staff, contractGuard, (req, res, { params, body }) => hideValues(req, tryIt(() => renewContract(req.companyId, Number(params.id), {
+    endDate: body.end_date || undefined, valueCents: req.user.role === 'owner' && body.value ? cents(body.value) : undefined, by: by(req),
+  }))));
+  router.post('/api/contracts/:id/close', auth, staff, contractGuard, (req, res, { params, body }) => hideValues(req, tryIt(() => closeContract(req.companyId, Number(params.id), body.status || 'encerrado', { by: by(req) }))));
+  router.delete('/api/contracts/:id', auth, ownerOnly, contractGuard, (req, res, { params }) => ({ ok: deleteContract(req.companyId, Number(params.id)) }));
+
+  // Documentos gerais (sem cliente) são só de dono e atendentes.
+  const docGuard = (req, res, { params }) => {
+    const d = need(getDocument(req.companyId, Number(params.id)), 'Documento');
+    if (d.contact_id ? !visible(req, d.contact_id) : req.user.role === 'professional') throw new HttpError(404, 'Documento não encontrado');
+    return undefined;
+  };
+  router.get('/api/documents', auth, (req, res, { query }) => {
+    if (query.contact_id && !visible(req, query.contact_id)) throw new HttpError(404, 'Contato não encontrado');
+    return listDocuments(req.companyId, {
+      contactId: int(query.contact_id), contractId: int(query.contract_id), q: query.q, scope: query.scope,
+      contactIds: proScope(req) === null ? null : ownContacts(req),
+    });
+  });
+  router.post('/api/documents', auth, (req, res, { body }) => {
+    const contactId = int(body.contact_id);
+    if (contactId ? !visible(req, contactId) : req.user.role === 'professional') throw new HttpError(403, 'Seu perfil só anexa documentos aos próprios clientes.');
+    if (body.contract_id && req.user.role === 'professional') throw new HttpError(403, 'Seu perfil não tem acesso a contratos.');
+    return tryIt(() => addDocument(req.companyId, { ...body, contactId, contractId: int(body.contract_id) }, { by: by(req) }));
+  });
+  router.get('/api/documents/:id/content', auth, docGuard, (req, res, { params }) => documentContent(req.companyId, Number(params.id)));
+  router.put('/api/documents/:id', auth, staff, docGuard, (req, res, { params, body }) => tryIt(() => updateDocument(req.companyId, Number(params.id), {
+    category: body.category, contractId: body.contract_id === undefined ? undefined : int(body.contract_id),
+  })));
+  router.delete('/api/documents/:id', auth, staff, docGuard, (req, res, { params }) => ({ ok: deleteDocument(req.companyId, Number(params.id), { by: by(req) }) }));
 
   // ---- Follow-up -------------------------------------------------------------
   const cleanSteps = (steps) => (Array.isArray(steps) ? steps : []).filter((s) => s.message?.trim()).map((s) => ({
@@ -542,10 +663,61 @@ export function registerApi(router) {
     return { ...data, financial_hidden: true };
   });
   router.post('/api/dashboard/insights', auth, ownerOnly, async (req, res, { body }) => {
+    needAi(req);
     const company = getCompany(req.companyId);
     const metrics = getMetrics(req.companyId, int(body.days) || 30);
     delete metrics.series;
     try { return { text: await generateInsights(company, metrics) }; } catch (e) { throw new HttpError(502, `Falha na IA: ${e.message}`); }
+  });
+
+  // ---- Assinatura (paywall do teste grátis) ------------------------------------
+  //
+  // Pagamento por Pix na chave da plataforma; o cliente envia o comprovante por e-mail e o
+  // administrador muda o plano no painel. O identificador do Pix aponta qual empresa pagou.
+  router.get('/api/upgrade', auth, (req) => {
+    const company = getCompany(req.companyId);
+    const txid = upgradeTxid(company);
+    // Planos pagos, cada um com o Pix do valor dele (mesma chave, identificador da empresa).
+    const plans = publicPlans().filter((p) => p.price_cents > 0).map((p) => ({
+      ...p,
+      recommended: p.id === UPGRADE_PLAN,
+      pix_code: config.platformPixKey
+        ? pixPayload({ key: config.platformPixKey, name: config.platformPixName, city: config.platformPixCity, amountCents: p.price_cents, txid })
+        : null,
+    }));
+    return {
+      plans, current_plan: company.plan, ai_locked: !aiAllowed(company), txid, requested_plan: company.upgrade_plan || null,
+      card_enabled: stripeEnabled(),
+      subscription: {
+        method: company.billing_method, status: company.subscription_status, paid_until: company.paid_until,
+        cancel_at_period_end: Boolean(company.cancel_at_period_end), has_card: Boolean(company.stripe_customer_id), ...subscriptionState(company),
+      },
+      pix_key: config.platformPixKey || null, pix_name: config.platformPixName, email: config.salesEmail, sales_whatsapp: config.salesWhatsapp,
+    };
+  });
+  // Cartão: abre a página de pagamento do Stripe; depois, a área do cliente para trocar cartão ou cancelar.
+  router.post('/api/upgrade/card', auth, ownerOnly, async (req, res, { body }) => {
+    try { return await createCheckout(getCompany(req.companyId), req.user, body.plan); } catch (e) { throw new HttpError(400, e.message); }
+  });
+  router.post('/api/upgrade/pix', auth, ownerOnly, async (req, res, { body }) => {
+    try { return await createPixCheckout(getCompany(req.companyId), req.user, body.plan); } catch (e) { throw new HttpError(400, e.message); }
+  });
+  router.post('/api/upgrade/change', auth, ownerOnly, async (req, res, { body }) => {
+    try { return await changeCardPlan(getCompany(req.companyId), body.plan); } catch (e) { throw new HttpError(400, e.message); }
+  });
+  router.post('/api/upgrade/portal', auth, ownerOnly, async (req) => {
+    try { return await createPortal(getCompany(req.companyId)); } catch (e) { throw new HttpError(400, e.message); }
+  });
+  // "Já enviei o comprovante": fica no histórico do painel do administrador.
+  router.post('/api/upgrade/notify', auth, (req, res, { body }) => {
+    const company = getCompany(req.companyId);
+    const planId = PLANS[body.plan]?.price_cents > 0 ? body.plan : UPGRADE_PLAN;
+    const plan = PLANS[planId];
+    // Fica marcado na empresa até o administrador ativar (ou mudar) o plano.
+    main.run('UPDATE companies SET upgrade_plan = ?, upgrade_requested_at = ? WHERE id = ?', planId, now(), company.id);
+    audit(`usuario:${req.user.email}`, 'pedido de assinatura', company.id,
+      `plano ${plan.label} (${(plan.price_cents / 100).toFixed(2).replace('.', ',')}/mês) via Pix, identificador ${upgradeTxid(company)}; comprovante enviado para ${config.salesEmail}`);
+    return { ok: true };
   });
 
   // Executa as automações agora (útil para testar follow-ups e lembretes).

@@ -1,4 +1,4 @@
-# Fechou
+# Falaki CRM
 
 Sistema integrado para qualquer empresa **prospectar, atender, vender, agendar e cobrar**, tudo no mesmo lugar e conectado ao WhatsApp:
 
@@ -7,6 +7,7 @@ Sistema integrado para qualquer empresa **prospectar, atender, vender, agendar e
 | 🤖 **Atendimento com IA no WhatsApp** | Responde 24h com o Claude (Anthropic): tira dúvidas com base no seu catálogo, consulta horários livres, **agenda**, remarca, cancela, salva dados no CRM, **gera cobrança** e passa para um humano quando precisa. |
 | 📅 **Agendamento inteligente** | Agenda semanal, horários livres calculados pelo horário de funcionamento, duração de cada serviço, capacidade simultânea, feriados e **lembrete automático** pelo WhatsApp. |
 | 👥 **CRM / funil** | Kanban (Novo → Em contato → Qualificado → Proposta → Ganho/Perdido) com arrastar e soltar, ficha completa do cliente e histórico de tudo que aconteceu. As etapas avançam sozinhas (cliente respondeu, agendou, pagou). |
+| 🗂️ **Clientes, contratos e documentos** | Lista de clientes (quem fechou ou tem contrato), contratos com início, vencimento e aviso X dias antes: a equipe recebe uma tarefa para renovar, e o contrato pode renovar sozinho. Documentos (PDF, imagens, Word, Excel…) por cliente, por contrato ou gerais da empresa. Valores dos contratos só para o dono. |
 | 🔁 **Follow-up automático** | Sequências de mensagens com gatilhos (novo lead, mudou de etapa, prospect importado, manual). Só envia em horário comercial, **para sozinha quando o cliente responde** e pode personalizar cada mensagem com IA. |
 | 💰 **Cobrança com IA** | Pix copia e cola (com sua chave, sem intermediário), **Asaas** ou **Mercado Pago** com baixa automática por webhook. Régua de lembretes educada antes e depois do vencimento. Pagamento confirmado → agradece o cliente e move o lead para "Ganho". |
 | 📍 **Prospecção Google Maps** | Busca empresas locais ("academias em Campinas") com telefone, site, nota e avaliações, importa para o CRM e já coloca numa sequência de abordagem. |
@@ -19,7 +20,7 @@ Serve para **vender qualquer coisa**: você cadastra seus produtos/serviços e d
 
 ## Plataforma para várias empresas
 
-O Fechou roda como serviço (SaaS): um único servidor atende várias empresas, cada uma com seus usuários, dados, WhatsApp e integrações.
+O Falaki roda como serviço (SaaS): um único servidor atende várias empresas, cada uma com seus usuários, dados, WhatsApp e integrações.
 
 - **Página inicial** (`/`): apresentação do produto e planos. O botão de teste grátis cria a conta da empresa no plano gratuito.
 - **Sistema** (`/app`): onde cada empresa trabalha.
@@ -36,11 +37,20 @@ Crie o primeiro administrador com `npm run admin:create -- voce@email.com SenhaF
 
 ### Planos
 
-| Plano | Preço | Usuários | Leads |
-|---|---|---|---|
-| Teste grátis | R$ 0 | 1 | até 10 |
-| Essencial | R$ 100/mês | 2 | ilimitados |
-| Profissional | R$ 249/mês | até 10 | ilimitados |
+| Plano | Preço | Usuários | Leads | IA |
+|---|---|---|---|---|
+| Teste grátis | R$ 0 | 1 | até 30 | não (cadeado leva para a assinatura) |
+| Essencial | R$ 100/mês | 2 | até 100 | sim |
+| Profissional | R$ 249/mês | até 10 | ilimitados | sim |
+
+No teste grátis, tudo que usa IA fica bloqueado (respostas automáticas, "Responder com IA", follow-up personalizado, recomendações); o sistema funciona no modo manual. O cadeado leva para a tela de assinatura (`#/assinar`), com pagamento pelo **Stripe**:
+
+- **Cartão:** assinatura mensal automática. O webhook ativa o plano, registra cada mensalidade, marca "cartão recusado" e, se a assinatura for encerrada, volta a empresa para o teste grátis. O cliente troca o cartão ou cancela na área do cliente do Stripe ("Gerenciar assinatura").
+- **Pix:** um mês por pagamento (o Pix Automático do Stripe não está disponível para empresas no Brasil). O webhook confirma e soma o mês; perto do vencimento, o dono vê o aviso para pagar o próximo.
+
+No `/admin`, a página **Financeiro** mostra recebidos (mês, 12 meses, cartão × Pix), a receber nos próximos 30 dias, em atraso, pedidos de Pix e assinantes por plano. Planos pagos colocados manualmente, sem pagamento, aparecem como "sem cobrança" e não entram na receita. O administrador ainda pode registrar um Pix na ficha da empresa (casos fora do Stripe).
+
+Em desenvolvimento use a chave de **teste** do Stripe: chave de produção (`sk_live_`/`rk_live_`) fica bloqueada enquanto `PUBLIC_URL` for localhost. Para receber os webhooks no computador: `stripe listen --forward-to localhost:3000/webhooks/stripe` (o comando mostra o `STRIPE_WEBHOOK_SECRET`).
 
 Os planos ficam em `src/services/plans.js`. O administrador pode ajustar os limites de uma empresa específica. No limite de leads, novos contatos (manuais, importados ou de números novos no WhatsApp) não entram no CRM até a empresa mudar de plano.
 
@@ -64,8 +74,8 @@ Cada empresa escolhe como conectar:
 ## Google Agenda
 
 Cada profissional (ou a empresa, quando não há profissionais) clica em **Agenda → Google Agenda → Conectar** e autoriza uma vez. A partir daí:
-- todo agendamento criado, remarcado ou cancelado no Fechou (pela equipe ou pela IA) aparece sozinho no Google Agenda, com nome e WhatsApp do cliente;
-- compromissos marcados direto no Google bloqueiam aqueles horários no Fechou (eventos marcados como "disponível" não bloqueiam), e a IA não oferece o horário;
+- todo agendamento criado, remarcado ou cancelado no Falaki (pela equipe ou pela IA) aparece sozinho no Google Agenda, com nome e WhatsApp do cliente;
+- compromissos marcados direto no Google bloqueiam aqueles horários no Falaki (eventos marcados como "disponível" não bloqueiam), e a IA não oferece o horário;
 - os horários do Google são relidos a cada 10 minutos (ou na hora, pelo botão "Atualizar agora"), e envios que falharem são repetidos automaticamente.
 
 **Configuração (uma vez, pelo dono da plataforma):**
@@ -83,7 +93,7 @@ Em **CRM → Importar**, a empresa traz os clientes de:
 - **texto colado** direto da planilha (copiar e colar);
 - **contatos do celular**: arquivo `.vcf` exportado do Google Contatos ou do iCloud, ou o CSV do Google Contatos.
 
-O Fechou reconhece as colunas sozinho (nome, telefone/celular/WhatsApp, e-mail, empresa, CPF/CNPJ, etiquetas, valor…), mostra uma prévia para conferir e:
+O Falaki reconhece as colunas sozinho (nome, telefone/celular/WhatsApp, e-mail, empresa, CPF/CNPJ, etiquetas, valor…), mostra uma prévia para conferir e:
 - não duplica contatos com o mesmo telefone ou e-mail (e pode completar os dados que faltarem nos que já existem);
 - permite escolher a etapa do funil, uma etiqueta para a importação e uma sequência de follow-up;
 - respeita o limite de leads do plano.
@@ -114,13 +124,14 @@ O modo define **quais ferramentas a IA recebe**, não só o texto das instruçõ
 Requisitos: **Node.js 22.13 ou superior** (usa o SQLite embutido no Node, sem banco externo).
 
 ```bash
-cd fechou
+git clone https://github.com/netonascimento/Falaki.git
+cd Falaki
 npm install
 npm run seed     # opcional: cria uma empresa de demonstração com dados
 npm start        # http://localhost:3000 (sistema em /app, administração em /admin)
 ```
 
-Login da demonstração: `demo@fechou.app` / `demo1234`. Para um escritório de advocacia de exemplo (3 advogados, triagem, agenda com confirmação): `npm run seed:advocacia` e entre com `advocacia@fechou.app` / `demo1234`. Ou clique em **Cadastre sua empresa** para criar uma conta do zero.
+Login da demonstração: `demo@falaki.me` / `demo1234`. Para um escritório de advocacia de exemplo (3 advogados, triagem, agenda com confirmação): `npm run seed:advocacia` e entre com `advocacia@falaki.me` / `demo1234`. Ou clique em **Cadastre sua empresa** para criar uma conta do zero.
 
 Para testar sem conectar um número de WhatsApp, use o botão **📱 Simular cliente** na tela de Atendimento: a mensagem entra no CRM e a IA responde como responderia no WhatsApp de verdade.
 
@@ -132,14 +143,19 @@ Copie `.env.example` para `.env`. Todas são opcionais; as chaves também podem 
 |---|---|
 | `PORT` | Porta HTTP (padrão 3000) |
 | `PUBLIC_URL` | Endereço público (ex.: `https://app.suaempresa.com`), usado nas URLs de webhook |
-| `ANTHROPIC_API_KEY` | Chave padrão da IA (console.anthropic.com) |
+| `ANTHROPIC_API_KEY` | Chave da IA da plataforma (console.anthropic.com). Só é usada pelas empresas que o administrador marcar em /admin; o consumo de tokens fica registrado para cobrar à parte |
 | `AI_MODEL` | Modelo Claude (padrão `claude-opus-5-5`) |
 | `GOOGLE_PLACES_API_KEY` | Chave padrão da prospecção |
 | `ALLOW_SIGNUP` | `false` para desligar o teste grátis pela página inicial (só o administrador cria empresas) |
 | `SALES_WHATSAPP` | WhatsApp de vendas: os botões dos planos pagos abrem uma conversa com ele |
+| `STRIPE_SECRET_KEY` (ou `STRIPE_API_KEY`) / `STRIPE_WEBHOOK_SECRET` | Assinatura no cartão e Pix pelo Stripe, e a verificação do webhook `/webhooks/stripe` |
+| `PLATFORM_PIX_KEY` / `PLATFORM_PIX_NAME` / `PLATFORM_PIX_CITY` | Pix manual da assinatura (opcional, só sem Stripe) |
+| `SALES_EMAIL` | E-mail que recebe os comprovantes (padrão `contato@falaki.me`) |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Cria o primeiro administrador ao iniciar |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Credenciais OAuth do Google Cloud para sincronizar o Google Agenda |
-| `DB_PATH` | Caminho do banco SQLite (padrão `data/fechou.db`) |
+| `DB_PATH` | Caminho do banco SQLite (padrão `data/falaki.db`; se só existir o antigo `data/fechou.db`, ele continua sendo usado) |
+
+Cada empresa cadastra a própria chave da Anthropic em Configurações → Integrações (o consumo é cobrado direto na conta dela). No painel `/admin`, o administrador pode marcar uma empresa para usar a chave da plataforma; só ele muda essa opção, e o consumo mensal de tokens dessa empresa aparece na ficha dela.
 
 Sem chave da Anthropic, o atendimento funciona em **modo demonstração** (respostas automáticas simples para preço, horários e "falar com atendente").
 
@@ -194,7 +210,7 @@ test/                  testes (npm test)
 
 ## Demonstração no navegador
 
-`npm run build:demo` gera `dist/fechou-demo.html`: um único arquivo que roda o próprio código do Fechou no navegador (o SQLite vai compilado para WebAssembly), com duas empresas de exemplo (clínica odontológica e escritório de advocacia) e um seletor para alternar entre elas. O link com `#advocacia` no final abre direto no escritório. Serve para mostrar o sistema a clientes sem instalar nada.
+`npm run build:demo` gera `dist/falaki-demo.html`: um único arquivo que roda o próprio código do Falaki no navegador (o SQLite vai compilado para WebAssembly), com duas empresas de exemplo (clínica odontológica e escritório de advocacia) e um seletor para alternar entre elas. O link com `#advocacia` no final abre direto no escritório. Serve para mostrar o sistema a clientes sem instalar nada.
 
 ## Testes
 
@@ -207,6 +223,6 @@ Cobrem fuso horário, Pix (CRC conferido com o exemplo do Banco Central), agenda
 ## Produção
 
 - Rode atrás de HTTPS (Nginx, Caddy ou a plataforma de hospedagem) e defina `PUBLIC_URL`.
-- Faça backup do arquivo `data/fechou.db`.
+- Faça backup do arquivo do banco (`data/falaki.db`).
 - Desative cadastros públicos com `ALLOW_SIGNUP=false` se for criar as contas dos clientes manualmente.
-- Há um `Dockerfile` pronto: `docker build -t fechou . && docker run -p 3000:3000 -v fechou-data:/app/data fechou`.
+- Há um `Dockerfile` pronto: `docker build -t falaki . && docker run -p 3000:3000 -v falaki-data:/app/data falaki`.

@@ -1,6 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { all, get, run, now } from '../db.js';
 import { getCompany, anthropicKeyFor, aiModelFor } from './company.js';
+import { recordUsage } from './ai-usage.js';
+import { aiAllowed } from './plans.js';
+import { handToHuman } from './assignment.js';
 import { getContact, updateContact, changeStage, logActivity, formatMoney, firstName, saveCustomFields } from './crm.js';
 import { createTask } from './tasks.js';
 import { hasProfessionals, listProfessionals } from './professionals.js';
@@ -19,6 +22,13 @@ function clientFor(company) {
   if (!key) return null;
   if (!clients.has(key)) clients.set(key, clientFactory(key));
   return clients.get(key);
+}
+
+// Toda chamada à API passa por aqui para o consumo de tokens ficar registrado.
+async function createMessage(company, client, params) {
+  const response = await client.beta.messages.create(params);
+  recordUsage(company, response, params.model);
+  return response;
 }
 
 // Modelos que aceitam o fallback automático do servidor em caso de recusa.
@@ -370,7 +380,7 @@ export async function executeTool(name, input, ctx) {
       return `Cobrança #${charge.id} de ${formatMoney(charge.amount_cents)} criada e JÁ ENVIADA ao cliente em uma mensagem separada com os dados de pagamento. Apenas confirme brevemente.`;
     }
     case 'transferir_para_humano': {
-      run('UPDATE contacts SET ai_enabled = 0 WHERE id = ?', contactId);
+      handToHuman(cid, contactId);
       logActivity(cid, contactId, 'ia', `IA transferiu para humano${input.urgente ? ' (URGENTE)' : ''}: ${input.motivo}`);
       await createTask(cid, { contactId, type: input.urgente ? 'urgente' : 'retorno', details: input.motivo, createdBy: 'ai' });
       return input.urgente
@@ -445,6 +455,8 @@ function buildHistory(companyId, contactId) {
 /** Gera a resposta da IA para a conversa. Retorna o texto (ou null se não houver o que responder). */
 export async function generateReply(companyId, contactId) {
   const company = getCompany(companyId);
+  // Teste grátis: nenhuma resposta automática (nem as simples, sem chave).
+  if (!aiAllowed(company)) return null;
   const contact = getContact(companyId, contactId);
   const messages = buildHistory(companyId, contactId);
   if (!messages.length || messages[messages.length - 1].role !== 'user') return null;
@@ -455,7 +467,7 @@ export async function generateReply(companyId, contactId) {
   const ctx = { company, contactId };
   const tools = toolsFor(company);
   for (let i = 0; i < 8; i++) {
-    const response = await client.beta.messages.create({
+    const response = await createMessage(company, client, {
       ...requestOptions(company),
       max_tokens: 4096,
       system: [
@@ -549,7 +561,7 @@ export async function ruleBasedReply(company, contact, text) {
 
   // 1. Pedido de humano
   if (/(humano|atendente|pessoa de verdade|reclama)/.test(t)) {
-    run('UPDATE contacts SET ai_enabled = 0 WHERE id = ?', contact.id);
+    handToHuman(company.id, contact.id);
     logActivity(company.id, contact.id, 'ia', 'Transferido para humano (pedido do cliente)');
     await createTask(company.id, { contactId: contact.id, type: 'retorno', details: 'Cliente pediu para falar com um atendente', createdBy: 'ai' });
     return 'Claro! Vou chamar um atendente para continuar com você. Só um instante. 🙏';
@@ -558,7 +570,7 @@ export async function ruleBasedReply(company, contact, text) {
   // 2. Urgência configurada
   const hit = urgencyKeywords(company.settings.ai.urgency_rules || '').find((w) => t.includes(w));
   if (hit) {
-    run('UPDATE contacts SET ai_enabled = 0 WHERE id = ?', contact.id);
+    handToHuman(company.id, contact.id);
     logActivity(company.id, contact.id, 'ia', `IA identificou urgência ("${hit}") e chamou a equipe`);
     await createTask(company.id, { contactId: contact.id, type: 'urgente', details: `Mensagem do cliente: "${text}"`, createdBy: 'ai' });
     return 'Entendi, isso é urgente. Já avisei a equipe e alguém vai falar com você em instantes. 🙏';
@@ -690,12 +702,13 @@ export async function replyNow(companyId, contactId) {
 
 /** Personaliza uma mensagem de follow-up com base na conversa. Retorna null se a IA não estiver disponível. */
 export async function writeFollowup(company, contact, baseText, stepNumber) {
+  if (!aiAllowed(company)) return null;
   const client = clientFor(company);
   if (!client) return null;
   const history = all('SELECT direction, body FROM messages WHERE contact_id = ? ORDER BY id DESC LIMIT 12', contact.id)
     .reverse().map((m) => `${m.direction === 'in' ? 'Cliente' : 'Empresa'}: ${m.body}`).join('\n');
   try {
-    const response = await client.beta.messages.create({
+    const response = await createMessage(company, client, {
       ...requestOptions(company),
       max_tokens: 2048,
       system: stablePrompt(company),
@@ -722,7 +735,7 @@ Responda somente com o texto final da mensagem, curto e natural.`,
 export async function generateInsights(company, metrics) {
   const client = clientFor(company);
   if (!client) return ruleBasedInsights(metrics);
-  const response = await client.beta.messages.create({
+  const response = await createMessage(company, client, {
     ...requestOptions(company),
     max_tokens: 4096,
     system: 'Você é um consultor de vendas para pequenas empresas brasileiras. Seja direto e prático.',

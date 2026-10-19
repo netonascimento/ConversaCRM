@@ -6,6 +6,7 @@ import { processDueFollowups } from './followup.js';
 import { processBilling } from './billing.js';
 import { processOverdueTasks } from './tasks.js';
 import { processGoogle } from './google.js';
+import { processContracts } from './contracts.js';
 import { formatLocal } from './time.js';
 
 /** Envia lembretes de agendamento (ex.: 24h antes). */
@@ -39,16 +40,17 @@ export async function tick() {
   if (busy) return;
   busy = true;
   try {
-    let followups = 0; let billing = 0; let reminders = 0; let overdue = 0;
+    let followups = 0; let billing = 0; let reminders = 0; let overdue = 0; let contracts = 0;
     await forEachDatabase(async () => {
       followups += await processDueFollowups();
       billing += await processBilling();
       reminders += await processAppointmentReminders();
       overdue += await processOverdueTasks();
+      contracts += await processContracts();
       await processGoogle();
     });
-    if (followups || billing || reminders || overdue) {
-      console.log(`[agendador] follow-ups: ${followups}, lembretes de cobrança: ${billing}, lembretes de agenda: ${reminders}, tarefas atrasadas: ${overdue}`);
+    if (followups || billing || reminders || overdue || contracts) {
+      console.log(`[agendador] follow-ups: ${followups}, lembretes de cobrança: ${billing}, lembretes de agenda: ${reminders}, tarefas atrasadas: ${overdue}, contratos: ${contracts}`);
     }
   } catch (err) {
     console.error('[agendador] erro:', err);

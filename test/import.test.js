@@ -55,12 +55,12 @@ test('importação pela API: cria, evita duplicados, completa existentes e respe
       { name: 'Repetido na lista', phone: '11 93333-0001' },
       { phone: '11911112222', email: 'existe@x.com' },
       { name: '' },
-      ...Array.from({ length: 12 }, (_, i) => ({ name: `Lote ${i}`, phone: `119444400${String(i).padStart(2, '0')}` })),
+      ...Array.from({ length: 32 }, (_, i) => ({ name: `Lote ${i}`, phone: `119444400${String(i).padStart(2, '0')}` })),
     ],
     tags: 'importado', update_existing: true, stage: 'contato',
   })).data;
-  // Plano grátis: 10 leads (1 já existia) -> 9 novos; o resto fica de fora.
-  assert.equal(r.created, 9);
+  // Plano grátis: 30 leads (1 já existia) -> 29 novos; o resto fica de fora.
+  assert.equal(r.created, 29);
   assert.equal(r.updated, 1);
   assert.equal(r.duplicates, 1);
   assert.equal(r.invalid, 1);

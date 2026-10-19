@@ -4,6 +4,8 @@ import { getCompany } from './company.js';
 import { findOrCreateByPhone, getContact, firstName, changeStage, PlanLimitError } from './crm.js';
 import { stopEnrollments } from './followup.js';
 import { scheduleAiReply } from './ai.js';
+import { autoAssign } from './assignment.js';
+import { aiAllowed } from './plans.js';
 
 // ---- Provedores de WhatsApp -------------------------------------------------
 
@@ -66,15 +68,15 @@ export async function sendToPhone(company, phone, body) {
 
 /**
  * Envia uma mensagem ao contato pelo canal configurado e registra no histórico.
- * author: ai | human | followup | billing | system
+ * author: ai | human | followup | billing | system. `user` é quem da equipe enviou (author human).
  */
-export async function sendMessage(companyId, contactId, body, author = 'human') {
+export async function sendMessage(companyId, contactId, body, author = 'human', { user = null } = {}) {
   const company = getCompany(companyId);
   const contact = getContact(companyId, contactId);
   if (!contact) throw new Error('Contato não encontrado');
   const { id } = run(
-    'INSERT INTO messages (company_id, contact_id, direction, author, body, status) VALUES (?, ?, ?, ?, ?, ?)',
-    companyId, contactId, 'out', author, body, 'sending',
+    'INSERT INTO messages (company_id, contact_id, direction, author, body, status, user_id, user_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    companyId, contactId, 'out', author, body, 'sending', user?.id || null, user?.name || null,
   );
   const wa = company.settings.whatsapp;
   try {
@@ -122,7 +124,9 @@ export function handleInbound(companyId, { phone, name, text, providerId = null 
   stopEnrollments(companyId, contact.id, 'cliente respondeu', { onlyStopOnReply: true });
 
   const company = getCompany(companyId);
-  if (autoReply && company.settings.ai.enabled && contact.ai_enabled) scheduleAiReply(companyId, contact.id);
+  if (autoReply && aiAllowed(company) && company.settings.ai.enabled && contact.ai_enabled) scheduleAiReply(companyId, contact.id);
+  // Sem IA nesta conversa, ela é da equipe: entra no rodízio de atendentes (se ligado).
+  else autoAssign(companyId, contact.id);
   return { contact: getContact(companyId, contact.id), created, messageId: r.id };
 }
 

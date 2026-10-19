@@ -9,9 +9,10 @@ import { createAppointment } from './services/scheduling.js';
 import { createTask } from './services/tasks.js';
 import { saveSettings, getCompany } from './services/company.js';
 import { pixPayload } from './services/billing.js';
+import { createContract } from './services/contracts.js';
 import { zonedToUtc, todayIn, addDays } from './services/time.js';
 
-const EMAIL = process.env.SEED_EMAIL || 'demo@fechou.app';
+const EMAIL = process.env.SEED_EMAIL || 'demo@falaki.me';
 const PASSWORD = process.env.SEED_PASSWORD || 'demo1234';
 
 export function seedDemo() {
@@ -91,6 +92,11 @@ export function seedDemo() {
     return c.id;
   });
 
+  // Contratos de exemplo: um vencendo (gera aviso para a equipe) e um vigente.
+  const byName = (n) => get('SELECT id FROM contacts WHERE company_id = ? AND name = ?', companyId, n).id;
+  createContract(companyId, { contact_id: byName('Mariana Costa'), title: 'Plano de manutenção ortodôntica', value_cents: 18000, period: 'mensal', start_date: addDays(today, -340), end_date: addDays(today, 25), notice_days: 30 }, { by: 'Demonstração' });
+  createContract(companyId, { contact_id: byName('Ricardo Gomes'), title: 'Clareamento — pacote anual', value_cents: 120000, period: 'anual', start_date: addDays(today, -60), end_date: addDays(today, 305), notice_days: 30, auto_renew: true }, { by: 'Demonstração' });
+
   const msg = (cid, direction, author, body, minutesAgo) => run(
     'INSERT INTO messages (company_id, contact_id, direction, author, body, created_at) VALUES (?, ?, ?, ?, ?, ?)',
     companyId, cid, direction, author, body, new Date(Date.now() - minutesAgo * 60000).toISOString(),
@@ -132,7 +138,7 @@ export function seedDemo() {
   return companyId;
 }
 
-const LAW_EMAIL = 'advocacia@fechou.app';
+const LAW_EMAIL = 'advocacia@falaki.me';
 
 export async function seedLawFirm({ email = LAW_EMAIL, password = PASSWORD } = {}) {
   if (main.get('SELECT id FROM users WHERE email = ?', email)) {
@@ -259,6 +265,8 @@ export async function seedLawFirm({ email = LAW_EMAIL, password = PASSWORD } = {
   run('UPDATE contacts SET won_at = ? WHERE id = ?', new Date(Date.now() - 6 * 86400000).toISOString(), fernanda);
   const ricardo = person('Ricardo Mendes', '31933332222', 'ganho', 'google_maps', 'Inventário', { area: 'Família', resumo: 'Inventário do pai, 3 herdeiros', processo: 'Não', cidade: 'Nova Lima' }, 20);
   run('UPDATE contacts SET won_at = ? WHERE id = ?', new Date(Date.now() - 12 * 86400000).toISOString(), ricardo);
+  createContract(companyId, { contact_id: fernanda, title: 'Contrato de honorários — ação trabalhista', value_cents: 150000, period: 'unico', start_date: addDays(today, -6), notice_days: 30 }, { by: 'Demonstração' });
+  createContract(companyId, { contact_id: ricardo, title: 'Honorários mensais — inventário', value_cents: 300000, period: 'mensal', start_date: addDays(today, -12), end_date: addDays(today, 18), notice_days: 30 }, { by: 'Demonstração' });
   const tiago = person('Tiago Ramos', '31922221111', 'perdido', 'whatsapp', 'Multa de trânsito', { area: 'Outro' }, 8);
   msg(tiago, 'in', 'contact', 'Vocês recorrem de multa de trânsito?', 60 * 24 * 8);
   msg(tiago, 'out', 'ai', 'Olá, Tiago! Infelizmente não atuamos com multas de trânsito. Posso te ajudar com algo trabalhista, previdenciário, de família ou de consumidor?', 60 * 24 * 8 - 1);

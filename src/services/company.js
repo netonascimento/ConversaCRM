@@ -26,6 +26,7 @@ export const DEFAULT_SETTINGS = {
     task_sla_hours: 4,
     notify_on_new_task: true,
     client_message_on_overdue: true,
+    auto_assign: false, // distribui as conversas que precisam de humano entre os atendentes
   },
   business_hours: {
     dom: [], seg: [['09:00', '18:00']], ter: [['09:00', '18:00']], qua: [['09:00', '18:00']],
@@ -107,6 +108,19 @@ export function maskSettings(settings) {
   return copy;
 }
 
-export const anthropicKeyFor = (company) => company.settings.integrations.anthropic_api_key || config.anthropicKey;
+/**
+ * De onde vem a chave da IA: 'platform' (chave do .env, só para empresas liberadas pelo
+ * administrador, consumo cobrado à parte), 'company' (chave da própria empresa) ou null.
+ */
+export function aiKeySource(company) {
+  if (company.ai_platform_key && config.anthropicKey) return 'platform';
+  if (company.settings.integrations.anthropic_api_key) return 'company';
+  return null;
+}
+export function anthropicKeyFor(company) {
+  const source = aiKeySource(company);
+  if (source === 'platform') return config.anthropicKey;
+  return source === 'company' ? company.settings.integrations.anthropic_api_key : '';
+}
 export const placesKeyFor = (company) => company.settings.integrations.google_places_key || config.googlePlacesKey;
 export const aiModelFor = (company) => company.settings.ai.model || config.aiModel;

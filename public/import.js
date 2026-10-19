@@ -56,7 +56,7 @@ function decodeVCard(v) {
   return v.replace(/\\n/gi, ' ').replace(/\\,/g, ',').replace(/\\;/g, ';').trim();
 }
 
-// Campos do Fechou e os nomes de coluna que costumam aparecer em planilhas e exportações.
+// Campos do Falaki e os nomes de coluna que costumam aparecer em planilhas e exportações.
 export const FIELDS = [
   { id: 'name', label: 'Nome', match: /^(nome|name|cliente|contato|nome completo|full name|razao social|razão social|first name|given name)$|^nome\b|name$/i },
   { id: 'phone', label: 'Telefone / WhatsApp', match: /(telefone|celular|whats|fone|phone|mobile|tel\b|contato tel)/i },

@@ -34,7 +34,8 @@ export function createServer() {
       const ctx = {
         params: match.params,
         query: Object.fromEntries(url.searchParams),
-        body: ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) ? await readBody(req) : {},
+        body: ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
+          ? await readBody(req, url.pathname === '/api/documents' ? 15 * 1024 * 1024 : undefined) : {},
       };
       let result;
       // Depois do login, cada rota roda no banco da empresa do usuário (compartilhado ou dedicado).
@@ -54,7 +55,7 @@ export function createServer() {
 if (process.argv[1] && path.resolve(process.argv[1]) === path.join(ROOT, 'src', 'server.js')) {
   ensureAdminFromEnv();
   createServer().listen(config.port, () => {
-    console.log(`Fechou rodando em ${config.publicUrl} (porta ${config.port})`);
+    console.log(`Falaki rodando em ${config.publicUrl} (porta ${config.port})`);
     if (!config.disableScheduler) startScheduler(config.schedulerIntervalMs);
   });
 }

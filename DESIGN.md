@@ -1,4 +1,4 @@
-# Fechou Design System
+# Falaki Design System
 
 One design system covers the landing page, the app and the admin. The source of truth is `public/ds.css`. `public/app.css` builds on it and adds only app layout and patterns. `public/landing.html` inlines a copy of the tokens so it can render as a standalone file. If you change a token, change it in both places.
 

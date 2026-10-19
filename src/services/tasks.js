@@ -12,6 +12,7 @@ export const TASK_TYPES = [
   { id: 'urgente', label: 'Atendimento urgente' },
   { id: 'aprovar_cobranca', label: 'Aprovar cobrança' },
   { id: 'retorno', label: 'Retornar contato' },
+  { id: 'renovar_contrato', label: 'Renovar contrato' },
   { id: 'outro', label: 'Outro' },
 ];
 const label = (type) => TASK_TYPES.find((t) => t.id === type)?.label || type;

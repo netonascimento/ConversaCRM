@@ -1,4 +1,5 @@
 import { main } from '../db.js';
+import { config } from '../config.js';
 import { HttpError } from '../http.js';
 import {
   requireAdmin, adminLogin, adminCookie, createAdmin, registerCompany, createUser, updateUser,
@@ -6,9 +7,11 @@ import {
 } from '../auth.js';
 import { PRESETS } from '../services/presets.js';
 import { publicPlans } from '../services/plans.js';
+import { releaseAssignments } from '../services/assignment.js';
+import { stripeMode } from '../services/stripe.js';
 import {
   audit, listAudit, listCompanies, companyDetail, updateCompany, setStatus, exportCompany,
-  moveToDedicated, deleteCompany, platformOverview,
+  moveToDedicated, deleteCompany, platformOverview, activatePlan, financeOverview,
 } from '../services/admin.js';
 
 const need = (row, what) => {
@@ -46,9 +49,11 @@ export function registerAdmin(router) {
     presets: Object.entries(PRESETS).map(([id, p]) => ({ id, label: p.label })),
     plans: publicPlans(),
     roles: ROLES,
+    platform_ai_key: Boolean(config.anthropicKey),
   }));
 
   router.get('/api/admin/overview', admin, () => platformOverview());
+  router.get('/api/admin/finance', admin, () => ({ ...financeOverview(), stripe_mode: stripeMode() }));
   router.get('/api/admin/companies', admin, () => listCompanies());
 
   router.post('/api/admin/companies', admin, (req, res, { body }) => {
@@ -67,9 +72,22 @@ export function registerAdmin(router) {
 
   router.get('/api/admin/companies/:id', admin, (req, res, { params }) => need(companyDetail(Number(params.id)), 'Empresa'));
   router.put('/api/admin/companies/:id', admin, (req, res, { params, body }) => {
+    const before = main.get('SELECT ai_platform_key FROM companies WHERE id = ?', Number(params.id));
     const out = need(updateCompany(Number(params.id), body), 'Empresa');
     audit(actor(req), 'empresa editada', out.id, `plano: ${out.plan || '-'}, usuários: ${out.max_users}, leads: ${out.max_leads ?? 'ilimitados'}`);
+    if (Boolean(before?.ai_platform_key) !== out.ai_platform_key) {
+      audit(actor(req), out.ai_platform_key ? 'IA com chave da plataforma' : 'IA com chave da empresa', out.id,
+        out.ai_platform_key ? 'consumo de tokens cobrado à parte' : 'a empresa usa a própria chave');
+    }
     return out;
+  });
+  router.post('/api/admin/companies/:id/activate-plan', admin, (req, res, { params, body }) => {
+    need(companyName(Number(params.id)), 'Empresa');
+    try {
+      const out = activatePlan(Number(params.id), body.plan);
+      audit(actor(req), 'assinatura ativada', out.id, `plano ${out.plan}: Pix confirmado, pago até ${out.subscription.paid_until}`);
+      return out;
+    } catch (e) { throw new HttpError(400, e.message); }
   });
   router.post('/api/admin/companies/:id/suspend', admin, (req, res, { params }) => {
     need(companyName(Number(params.id)), 'Empresa');
@@ -91,6 +109,7 @@ export function registerAdmin(router) {
   });
   router.put('/api/admin/companies/:id/users/:userId', admin, (req, res, { params, body }) => {
     const user = updateUser(Number(params.id), Number(params.userId), body);
+    releaseAssignments(Number(params.id), user);
     const what = [body.password && 'senha redefinida', body.active === false && 'desativado', body.active === true && 'ativado', body.role && `perfil ${body.role}`].filter(Boolean).join(', ');
     audit(actor(req), 'usuário alterado', Number(params.id), `${user.email}${what ? `: ${what}` : ''}`);
     return user;

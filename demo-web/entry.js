@@ -11,8 +11,8 @@ const { tick } = await import('../src/services/scheduler.js');
 seedDemo();
 await seedLawFirm();
 const DEMOS = [
-  { id: 'clinica', label: 'Clínica odontológica', email: 'demo@fechou.app' },
-  { id: 'advocacia', label: 'Escritório de advocacia', email: 'advocacia@fechou.app' },
+  { id: 'clinica', label: 'Clínica odontológica', email: 'demo@falaki.me' },
+  { id: 'advocacia', label: 'Escritório de advocacia', email: 'advocacia@falaki.me' },
 ];
 const tokens = Object.fromEntries(DEMOS.map((d) => [d.id, createSession(get('SELECT id FROM users WHERE email = ?', d.email).id)]));
 // O link pode abrir direto no escritório: ...#advocacia
@@ -75,7 +75,7 @@ function switcher() {
       token = tokens[current];
       for (const k of ['agenda-pro', 'agenda-week', 'task-filter', 'charge-filter', 'sim-phone', 'sim-name']) sessionStorage.removeItem(k);
       location.hash = '#/dashboard';
-      window.fechou.boot();
+      window.falaki.boot();
     };
   });
 }
@@ -98,9 +98,9 @@ function openApp(hash) {
     if (!token) { current = current || 'clinica'; token = tokens[current]; }
     history.replaceState(null, '', '#/dashboard');
   }
-  window.fechou.boot();
+  window.falaki.boot();
 }
-window.addEventListener('message', (e) => { if (e.data?.fechou === 'open-app') openApp(e.data.hash || ''); });
+window.addEventListener('message', (e) => { if (e.data?.falaki === 'open-app') openApp(e.data.hash || ''); });
 if (startedOnLanding) frame.hidden = false;
 
 await import('../public/app.js');

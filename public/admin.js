@@ -1,4 +1,4 @@
-// Fechou — painel do administrador da plataforma (cadastro de empresas, usuários e planos)
+// Falaki — painel do administrador da plataforma (cadastro de empresas, usuários e planos)
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -55,6 +55,8 @@ const modalHead = (title) => `<div class="modal-head"><h2>${esc(title)}</h2><spa
 const STATUS_BADGE = (s) => `<span class="badge ${s === 'ativa' ? 'green' : 'red'}">${s === 'ativa' ? 'ativa' : 'suspensa'}</span>`;
 const STORAGE_BADGE = (s) => (s === 'dedicated' ? '<span class="badge purple">banco separado</span>' : '<span class="badge">compartilhado</span>');
 const planLabel = (id) => state.me?.plans.find((p) => p.id === id)?.label || id || 'Personalizado';
+// Pedido de assinatura em aberto (cliente clicou em "Já enviei o comprovante").
+const UPGRADE_BADGE = (c) => (c.upgrade_plan ? `<div><span class="badge amber">⏳ aguardando Pix · ${esc(planLabel(c.upgrade_plan))}</span></div>` : '');
 const roleLabel = (id) => state.me?.roles.find((r) => r.id === id)?.label.split(' (')[0] || id;
 const leadsText = (max) => (max === null || max === undefined ? 'ilimitados' : `até ${num(max)}`);
 const randomPassword = () => Array.from(crypto.getRandomValues(new Uint8Array(9)), (b) => 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'[b % 56]).join('');
@@ -67,7 +69,7 @@ function renderLogin() {
   $('#app').innerHTML = `
     <div class="auth"><div>
       <div class="card">
-        <div class="brand" style="color:var(--green-dark);padding:0 0 12px">Fechou</div>
+        <div class="brand" style="color:var(--green-dark);padding:0 0 12px">Falaki</div>
         <h1>Administração</h1>
         <p class="muted">Acesso restrito ao responsável pela plataforma.</p>
         <form id="login" class="stack" style="margin-top:16px">
@@ -89,16 +91,17 @@ function renderLogin() {
 const PAGES = [
   ['visao', 'Visão geral', renderOverview],
   ['empresas', 'Empresas', renderCompanies],
+  ['financeiro', 'Financeiro', renderFinance],
   ['historico', 'Histórico', renderAudit],
   ['admins', 'Administradores', renderAdmins],
 ];
 
 function renderLayout() {
   $('#app').innerHTML = `
-    <div class="mobile-top"><button id="menu-btn" aria-label="Menu">☰</button><strong>Fechou · Admin</strong></div>
+    <div class="mobile-top"><button id="menu-btn" aria-label="Menu">☰</button><strong>Falaki · Admin</strong></div>
     <div class="layout">
       <aside class="sidebar" id="sidebar">
-        <div class="brand">Fechou <span class="badge" style="margin-left:4px">admin</span></div>
+        <div class="brand">Falaki <span class="badge" style="margin-left:4px">admin</span></div>
         <nav class="nav">${PAGES.map(([id, label]) => `<a href="#/${id}" data-page="${id}"><span>${label}</span></a>`).join('')}</nav>
         <div class="sidebar-foot">
           <div><strong style="color:#fff">${esc(state.me.admin.name)}</strong></div>
@@ -132,17 +135,94 @@ async function boot() {
 window.addEventListener('hashchange', () => { $('#modal-root').innerHTML = ''; route(); });
 
 // ---------------------------------------------------------------------------
+// Financeiro: mensalidades das empresas (recebidos, a receber, assinantes por plano)
+// ---------------------------------------------------------------------------
+const METHOD_LABEL = { cartao: '💳 cartão', pix: '◆ Pix' };
+const SUB_BADGE = {
+  em_dia: ['green', 'em dia'], vencida: ['red', 'Pix vencido'], atrasada: ['red', 'cartão recusado'], cancelada: ['', 'cancelada'],
+  cortesia: ['outline', 'sem cobrança'], gratis: ['', 'teste grátis'], personalizado: ['outline', 'personalizado'],
+};
+const subBadge = (s) => { const [c, l] = SUB_BADGE[s?.state] || ['', s?.state || '-']; return `<span class="badge ${c}">${l}</span>`; };
+const fmtDate = (d) => (d ? d.split('-').reverse().join('/') : '—');
+const monthName = (m) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
+
+function monthBars(series) {
+  const w = 600; const h = 170; const pad = 8;
+  const max = Math.max(1, ...series.map((s) => s.cents));
+  const bw = (w - pad * 2) / series.length;
+  const bars = series.map((s, i) => {
+    const bh = (s.cents / max) * (h - 40);
+    return `<rect x="${pad + i * bw + 4}" y="${h - 20 - bh}" width="${Math.max(bw - 8, 2)}" height="${Math.max(bh, s.cents ? 2 : 0)}" rx="3" style="fill:var(--green-700)"><title>${monthName(s.month)}: ${money(s.cents)}</title></rect>
+      <text x="${pad + i * bw + bw / 2}" y="${h - 6}" font-size="11" text-anchor="middle" style="fill:var(--muted)">${monthName(s.month)}</text>`;
+  }).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto" role="img" aria-label="Recebido por mês">
+    <line x1="${pad}" y1="${h - 20}" x2="${w - pad}" y2="${h - 20}" style="stroke:var(--line)"/>${bars}</svg>`;
+}
+
+async function renderFinance(el) {
+  const f = await api('/api/admin/finance');
+  const r = f.received; const rc = f.receivable;
+  const stripeNote = {
+    off: '<span class="badge outline">cartão desligado</span> Configure STRIPE_SECRET_KEY e STRIPE_WEBHOOK_SECRET para cobrar no cartão.',
+    test: '<span class="badge blue">Stripe em modo de teste</span> Os pagamentos no cartão são de teste.',
+    live: '<span class="badge green">Stripe em produção</span>',
+    live_blocked: '<span class="badge amber">chave de produção bloqueada</span> Rodando em localhost, o cartão fica desligado. Use a chave de teste para desenvolver.',
+  }[f.stripe_mode];
+  const row = (x, extra = '') => `<tr class="clickable" data-id="${x.id}"><td><strong>${esc(x.name)}</strong></td><td>${esc(planLabel(x.plan))}</td>${extra}<td class="right nowrap">${money(x.amount_cents)}</td></tr>`;
+  el.innerHTML = `
+    <div class="page-head"><div><h1>Financeiro</h1><p class="muted">Mensalidades que as empresas pagam ao Falaki</p></div>
+      <span class="spacer"></span><span class="small">${stripeNote}</span></div>
+    <div class="grid kpis">
+      <div class="card kpi good"><div class="label">Recebido no mês</div><div class="value">${money(r.this_month_cents)}</div><div class="sub">mês passado: ${money(r.prev_month_cents)}</div></div>
+      <div class="card kpi"><div class="label">A receber (30 dias)</div><div class="value">${money(rc.next_30d_cents)}</div><div class="sub">${money(rc.card_cents)} no cartão (automático) · ${money(rc.pix_cents)} em Pix</div></div>
+      <div class="card kpi ${rc.overdue.length ? 'bad' : ''}"><div class="label">Em atraso</div><div class="value">${money(rc.overdue_cents)}</div><div class="sub">${rc.overdue.length} empresa(s)</div></div>
+      <div class="card kpi"><div class="label">Aguardando Pix</div><div class="value">${money(rc.requests_cents)}</div><div class="sub">${rc.requests.length} pedido(s) para conferir</div></div>
+      <div class="card kpi good"><div class="label">Receita recorrente</div><div class="value">${money(f.mrr_cents)}</div><div class="sub">por mês, só assinantes pagantes</div></div>
+    </div>
+    <div class="grid halves" style="margin-top:14px">
+      <div class="card"><h3>Recebido por mês</h3><div style="margin-top:8px">${monthBars(r.series)}</div>
+        <p class="small muted">Últimos 12 meses: <strong>${money(r.last_12m_cents)}</strong> · cartão ${money(r.by_method.cartao)} · Pix ${money(r.by_method.pix)}</p></div>
+      <div class="card"><h3>Assinantes por plano</h3>
+        <div class="table-wrap"><table class="small" style="margin-top:6px">
+          <tr><th>Plano</th><th>Empresas</th><th>Pagantes</th><th>Cartão / Pix</th><th class="right">Recorrente</th></tr>
+          ${f.plans.map((p) => `<tr><td><strong>${esc(p.label)}</strong><div class="muted">${p.price_cents ? `${money(p.price_cents)}/mês` : 'grátis'}</div></td>
+            <td>${num(p.companies)}</td><td>${p.price_cents ? num(p.paying) : '—'}${p.courtesy ? `<div class="muted">${p.courtesy} sem cobrança</div>` : ''}</td>
+            <td>${p.price_cents ? `${p.card} / ${p.pix}` : '—'}</td><td class="right nowrap">${p.price_cents ? money(p.mrr_cents) : '—'}</td></tr>`).join('')}
+        </table></div>
+        <p class="hint">"Sem cobrança": plano pago colocado manualmente, sem nenhum pagamento registrado (ex.: contas internas e de demonstração). Não entra na receita.</p></div>
+    </div>
+    <div class="grid halves" style="margin-top:14px">
+      <div class="card"><h3>A receber nos próximos 30 dias</h3>
+        ${rc.renewing.length ? `<div class="table-wrap"><table class="small"><tr><th>Empresa</th><th>Plano</th><th>Vence</th><th>Forma</th><th class="right">Valor</th></tr>
+          ${rc.renewing.map((x) => row(x, `<td class="nowrap">${fmtDate(x.due_date)}</td><td>${METHOD_LABEL[x.method] || '-'}</td>`)).join('')}</table></div>` : '<div class="empty">Nenhuma renovação nos próximos 30 dias.</div>'}
+        ${rc.requests.length ? `<h3 style="margin-top:14px">Aguardando Pix</h3><div class="table-wrap"><table class="small"><tr><th>Empresa</th><th>Plano</th><th>Pedido em</th><th class="right">Valor</th></tr>
+          ${rc.requests.map((x) => row(x, `<td class="nowrap">${fmt(x.requested_at)}</td>`)).join('')}</table></div>` : ''}</div>
+      <div class="card"><h3>Em atraso</h3>
+        ${rc.overdue.length ? `<div class="table-wrap"><table class="small"><tr><th>Empresa</th><th>Plano</th><th>Venceu</th><th>Situação</th><th class="right">Valor</th></tr>
+          ${rc.overdue.map((x) => row(x, `<td class="nowrap">${fmtDate(x.due_date)}</td><td>${subBadge(x)}</td>`)).join('')}</table></div>` : '<div class="empty">Ninguém em atraso. 🎉</div>'}
+        <p class="hint">Cartão recusado: o Stripe tenta de novo sozinho e, se não conseguir, encerra a assinatura (a empresa volta para o teste grátis). Pix vencido: confirme o novo Pix na ficha da empresa ou mude o plano.</p></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>Últimos pagamentos</h3>
+      ${f.payments.length ? `<div class="table-wrap"><table class="small"><tr><th>Data</th><th>Empresa</th><th>Plano</th><th>Forma</th><th>Período</th><th>Situação</th><th class="right">Valor</th></tr>
+        ${f.payments.map((p) => `<tr><td class="nowrap">${fmt(p.paid_at || p.created_at)}</td><td>${esc(p.company_name || '(empresa excluída)')}</td><td>${esc(planLabel(p.plan))}</td>
+          <td>${METHOD_LABEL[p.method] || p.method}</td><td class="nowrap">${p.period_start ? `${fmtDate(p.period_start)} a ${fmtDate(p.period_end)}` : '—'}</td>
+          <td><span class="badge ${p.status === 'pago' ? 'green' : 'red'}">${p.status === 'pago' ? 'pago' : 'recusado'}</span></td><td class="right nowrap">${money(p.amount_cents)}</td></tr>`).join('')}</table></div>` : '<div class="empty">Nenhum pagamento ainda.</div>'}
+    </div>`;
+  $$('tr[data-id]', el).forEach((tr) => { tr.onclick = () => openCompany(Number(tr.dataset.id)); });
+}
+
+// ---------------------------------------------------------------------------
 // Visão geral
 // ---------------------------------------------------------------------------
 async function renderOverview(el) {
   const o = await api('/api/admin/overview');
-  const mrr = o.list.filter((c) => c.status === 'ativa').reduce((n, c) => n + (state.me.plans.find((p) => p.id === c.plan)?.price_cents || 0), 0);
   el.innerHTML = `
-    <div class="page-head"><div><h1>Visão geral</h1><p class="muted">Todas as empresas que usam o Fechou</p></div>
+    <div class="page-head"><div><h1>Visão geral</h1><p class="muted">Todas as empresas que usam o Falaki</p></div>
       <span class="spacer"></span><button class="primary" id="new-company">+ Nova empresa</button></div>
     <div class="grid kpis">
+      <div class="card kpi ${o.upgrade_requests ? 'bad' : ''}"><div class="label">Aguardando Pix</div><div class="value">${num(o.upgrade_requests)}</div><div class="sub">pedidos de assinatura para conferir</div></div>
       <div class="card kpi"><div class="label">Empresas ativas</div><div class="value">${num(o.active)}</div><div class="sub">${num(o.suspended)} suspensa(s) · ${num(o.dedicated)} com banco separado</div></div>
-      <div class="card kpi good"><div class="label">Receita mensal (planos)</div><div class="value">${money(mrr)}</div><div class="sub">soma dos planos das empresas ativas</div></div>
+      <div class="card kpi good"><div class="label">Receita mensal (planos)</div><div class="value">${money(o.mrr_cents)}</div><div class="sub">assinantes pagantes · <a href="#/financeiro">ver financeiro</a></div></div>
       <div class="card kpi"><div class="label">Usuários ativos</div><div class="value">${num(o.users)}</div></div>
       <div class="card kpi"><div class="label">Mensagens (30 dias)</div><div class="value">${num(o.messages_30d)}</div><div class="sub">${num(o.ai_messages_30d)} respostas da IA</div></div>
       <div class="card kpi"><div class="label">Leads (30 dias)</div><div class="value">${num(o.leads_30d)}</div></div>
@@ -161,7 +241,7 @@ function companiesTable(list) {
       const nearLeads = c.max_leads !== null && c.usage.contacts >= c.max_leads;
       return `<tr class="clickable" data-id="${c.id}">
         <td><strong>${esc(c.name)}</strong><div class="small muted">${esc(state.me.presets.find((p) => p.id === c.segment)?.label || c.segment)}</div></td>
-        <td>${esc(planLabel(c.plan))}</td>
+        <td>${esc(planLabel(c.plan))} ${c.subscription && !['gratis'].includes(c.subscription.state) ? subBadge(c.subscription) : ''}${UPGRADE_BADGE(c)}${c.ai_platform_key ? `<div><span class="badge brass">IA da plataforma</span></div><div class="small muted">${num(tokensOf(c.ai_platform_month))} tokens no mês</div>` : ''}</td>
         <td class="nowrap">${num(c.usage.active_users)} / ${num(c.max_users)} ${nearUsers ? '<span class="badge amber">no limite</span>' : ''}</td>
         <td class="nowrap">${num(c.usage.contacts)}${c.max_leads !== null ? ` / ${num(c.max_leads)}` : ''} ${nearLeads ? '<span class="badge amber">no limite</span>' : ''}</td>
         <td>${num(c.usage.messages_30d)}<div class="small muted">${num(c.usage.ai_messages_30d)} da IA</div></td>
@@ -169,6 +249,27 @@ function companiesTable(list) {
         <td>${STATUS_BADGE(c.status)} ${STORAGE_BADGE(c.storage)}</td></tr>`;
     }).join('')}
   </table></div>`;
+}
+
+const tokensOf = (u) => (u ? u.input_tokens + u.output_tokens + u.cache_read_tokens + u.cache_write_tokens : 0);
+const monthLabel = (m) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
+function aiUsageCard(c) {
+  const rows = c.ai_usage;
+  const keyNote = c.ai_platform_key
+    ? (state.me.platform_ai_key ? 'Esta empresa usa a <strong>chave da plataforma</strong>. Cobre à parte o consumo da coluna "plataforma".' : '<span class="badge amber">sem chave</span> A empresa está marcada para usar a chave da plataforma, mas <code>ANTHROPIC_API_KEY</code> não está configurada no servidor.')
+    : 'Esta empresa usa a própria chave da Anthropic (o consumo é cobrado direto dela).';
+  return `<div class="card" style="margin-top:14px">
+      <h3>Consumo de IA</h3>
+      <p class="small muted" style="margin:6px 0 10px">${keyNote}</p>
+      ${rows.length ? `<div class="table-wrap"><table class="small">
+        <tr><th>Mês</th><th>Chave</th><th>Modelo</th><th>Chamadas</th><th>Entrada</th><th>Saída</th><th>Cache (leitura / escrita)</th></tr>
+        ${rows.map((r) => `<tr><td class="nowrap">${esc(monthLabel(r.month))}</td>
+          <td><span class="badge ${r.key_source === 'platform' ? 'brass' : 'outline'}">${r.key_source === 'platform' ? 'plataforma' : 'da empresa'}</span></td>
+          <td class="small">${esc(r.model)}</td><td>${num(r.requests)}</td><td>${num(r.input_tokens)}</td><td>${num(r.output_tokens)}</td>
+          <td class="nowrap">${num(r.cache_read_tokens)} / ${num(r.cache_write_tokens)}</td></tr>`).join('')}
+      </table></div>` : '<div class="empty">Nenhum uso da IA registrado ainda.</div>'}
+    </div>`;
 }
 
 function bindCompanyRows(root) {
@@ -240,7 +341,7 @@ function companyForm() {
 }
 
 function showCredentials(company, email, password) {
-  const text = `Acesso ao Fechou — ${company}\nEndereço: ${location.origin}/app\nE-mail: ${email}\nSenha: ${password}`;
+  const text = `Acesso ao Falaki — ${company}\nEndereço: ${location.origin}/app\nE-mail: ${email}\nSenha: ${password}`;
   const box = openModal(`${modalHead('Acesso criado')}
     <p>Envie estes dados para o cliente:</p>
     <pre class="pix" style="white-space:pre-wrap">${esc(text)}</pre>
@@ -256,6 +357,11 @@ async function openCompany(id) {
       <div><h2>${esc(c.name)}</h2><div class="small muted">${esc(state.me.presets.find((p) => p.id === c.segment)?.label || c.segment)} · desde ${fmt(c.created_at)}</div></div>
       <span class="spacer"></span><button class="ghost" data-close aria-label="Fechar">✕</button>
     </div>
+    ${c.upgrade_plan ? `<div class="card" style="margin-bottom:14px;border-color:var(--warning)">
+      <h3>⏳ Pedido de assinatura: plano ${esc(planLabel(c.upgrade_plan))} — ${money(state.me.plans.find((p) => p.id === c.upgrade_plan)?.price_cents)}/mês</h3>
+      <p class="small muted" style="margin:6px 0 10px">Pedido em ${fmt(c.upgrade_requested_at)}. Confira no seu banco um Pix com o identificador <strong>${esc(c.upgrade_txid)}</strong> e o comprovante no e-mail. Ao confirmar, o plano e os limites dele são aplicados na hora e a IA é liberada.</p>
+      <div class="row wrap"><button class="primary sm" id="activate">Confirmar pagamento e ativar o ${esc(planLabel(c.upgrade_plan))}</button></div>
+    </div>` : ''}
     <div class="row wrap" style="margin-bottom:14px">
       ${STATUS_BADGE(c.status)} ${STORAGE_BADGE(c.storage)}
       <span class="spacer"></span>
@@ -273,6 +379,8 @@ async function openCompany(id) {
             <div class="field"><label for="p-users">Usuários</label><input id="p-users" name="max_users" type="number" min="1" value="${c.max_users}"></div>
             <div class="field"><label for="p-leads">Leads</label><input id="p-leads" name="max_leads" type="number" min="1" value="${c.max_leads ?? ''}" placeholder="ilimitado"></div>
           </div>
+          <label class="check field"><input type="checkbox" name="ai_platform_key" ${c.ai_platform_key ? 'checked' : ''}> Usar a minha chave de IA (consumo cobrado à parte)</label>
+          <div class="hint" style="margin:-6px 0 12px">Desmarcado, a empresa usa a chave da Anthropic que ela mesma cadastra em Configurações → Integrações.</div>
           <div class="field"><label for="p-notes">Observações internas</label><textarea id="p-notes" name="notes">${esc(c.notes)}</textarea></div>
           <button class="primary sm">Salvar</button>
         </form>
@@ -290,6 +398,17 @@ async function openCompany(id) {
         </table>
         ${c.storage !== 'dedicated' ? `<div class="hint" style="margin-top:12px">Precisa de isolamento físico (ex.: política de sigilo do cliente)?</div><button class="sm" id="ded" style="margin-top:6px">Mover para banco separado</button>` : '<p class="hint" style="margin-top:12px">Os dados desta empresa ficam num arquivo de banco só dela.</p>'}
       </div>
+    </div>
+    ${aiUsageCard(c)}
+    <div class="card" style="margin-top:14px">
+      <div class="card-head"><h3>Assinatura</h3><span class="spacer"></span>${subBadge(c.subscription)}</div>
+      <p class="small muted" style="margin:6px 0 10px">${c.subscription.method ? `${METHOD_LABEL[c.subscription.method]} · pago até ${fmtDate(c.subscription.paid_until)}${c.subscription.cancel_at_period_end ? ' · <strong>cancelamento agendado</strong> para o fim do período' : ''}` : 'Nenhum pagamento registrado.'}</p>
+      ${c.subscription.method !== 'cartao' ? `<div class="row wrap" style="margin-bottom:10px">${state.me.plans.filter((p) => p.price_cents > 0).map((p) => `<button class="sm" data-pix-plan="${p.id}">Registrar Pix do ${esc(p.label)} (${money(p.price_cents)})</button>`).join('')}</div>
+        <p class="hint" style="margin-bottom:10px">Cada Pix confirmado ativa o plano e soma um mês ao período pago.</p>` : '<p class="hint" style="margin-bottom:10px">Pagamento no cartão: o Stripe renova sozinho todo mês.</p>'}
+      ${c.payments.length ? `<div class="table-wrap"><table class="small"><tr><th>Data</th><th>Plano</th><th>Forma</th><th>Período</th><th>Situação</th><th class="right">Valor</th></tr>
+        ${c.payments.map((p) => `<tr><td class="nowrap">${fmt(p.paid_at || p.created_at)}</td><td>${esc(planLabel(p.plan))}</td><td>${METHOD_LABEL[p.method] || p.method}</td>
+          <td class="nowrap">${p.period_start ? `${fmtDate(p.period_start)} a ${fmtDate(p.period_end)}` : '—'}</td><td><span class="badge ${p.status === 'pago' ? 'green' : 'red'}">${p.status === 'pago' ? 'pago' : 'recusado'}</span></td>
+          <td class="right nowrap">${money(p.amount_cents)}</td></tr>`).join('')}</table></div>` : ''}
     </div>
     <div class="card" style="margin-top:14px">
       <div class="card-head"><h3>Usuários (${num(u.active_users)} de ${num(c.max_users)} ativos)</h3><span class="spacer"></span><button class="sm primary" id="add-user">+ Usuário</button></div>
@@ -322,6 +441,15 @@ async function openCompany(id) {
     e.preventDefault();
     try { await api(`/api/admin/companies/${id}`, { method: 'PUT', body: formData(e.target) }); toast('Empresa atualizada'); reopen(); } catch (err) { fail(err); }
   };
+  $$('[data-pix-plan]', box).forEach((b) => { b.onclick = async () => {
+    const label = planLabel(b.dataset.pixPlan);
+    if (!confirm(`Registrar um Pix do plano ${label} para ${c.name}? Ativa o plano e soma um mês.`)) return;
+    try { await api(`/api/admin/companies/${id}/activate-plan`, { method: 'POST', body: { plan: b.dataset.pixPlan } }); toast(`Pix registrado: plano ${label}`); reopen(); } catch (err) { fail(err); }
+  }; });
+  $('#activate', box)?.addEventListener('click', async () => {
+    if (!confirm(`Confirmar o pagamento e ativar o plano ${planLabel(c.upgrade_plan)} para ${c.name}?`)) return;
+    try { await api(`/api/admin/companies/${id}/activate-plan`, { method: 'POST', body: { plan: c.upgrade_plan } }); toast(`Plano ${planLabel(c.upgrade_plan)} ativado`); reopen(); } catch (err) { fail(err); }
+  });
   $('#sus', box)?.addEventListener('click', () => post(`/api/admin/companies/${id}/suspend`, 'Empresa suspensa: os usuários não conseguem mais entrar'));
   $('#rea', box)?.addEventListener('click', () => post(`/api/admin/companies/${id}/reactivate`, 'Empresa reativada'));
   $('#ded', box)?.addEventListener('click', () => post(`/api/admin/companies/${id}/dedicated`, 'Dados movidos para um banco separado'));
@@ -334,7 +462,7 @@ async function openCompany(id) {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `fechou-${c.name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `falaki-${c.name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(a.href);
     } catch (err) { fail(err); }

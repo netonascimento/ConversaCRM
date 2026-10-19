@@ -19,9 +19,22 @@ loadDotEnv();
 export const config = {
   port: Number(process.env.PORT || 3000),
   publicUrl: (process.env.PUBLIC_URL || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, ''),
-  dbPath: process.env.DB_PATH || path.join(ROOT, 'data', 'fechou.db'),
+  // Banco padrão: data/falaki.db. Instalações antigas (data/fechou.db) continuam usando o arquivo delas.
+  dbPath: process.env.DB_PATH || (fs.existsSync(path.join(ROOT, 'data', 'fechou.db')) && !fs.existsSync(path.join(ROOT, 'data', 'falaki.db'))
+    ? path.join(ROOT, 'data', 'fechou.db') : path.join(ROOT, 'data', 'falaki.db')),
   allowSignup: process.env.ALLOW_SIGNUP !== 'false',
   salesWhatsapp: (process.env.SALES_WHATSAPP || '').replace(/\D/g, ''),
+  // Pix da plataforma para a assinatura (botão Comprar do teste grátis) e e-mail para o comprovante.
+  platformPixKey: (process.env.PLATFORM_PIX_KEY || '').trim(),
+  platformPixName: process.env.PLATFORM_PIX_NAME || 'Falaki',
+  platformPixCity: process.env.PLATFORM_PIX_CITY || 'Sao Paulo',
+  salesEmail: process.env.SALES_EMAIL || 'contato@falaki.me',
+  // Stripe (cartão e Pix). STRIPE_SECRET_KEY tem prioridade; senão, rodando em localhost usa a chave de
+  // teste (STRIPE_TEST_API_KEY) e, publicado, a de produção (STRIPE_API_KEY).
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY || (/^http:\/\/(localhost|127\.0\.0\.1)/.test(process.env.PUBLIC_URL || 'http://localhost')
+    ? process.env.STRIPE_TEST_API_KEY || process.env.STRIPE_API_KEY
+    : process.env.STRIPE_API_KEY || process.env.STRIPE_TEST_API_KEY) || '',
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   aiModel: process.env.AI_MODEL || 'claude-opus-5-5',
   googlePlacesKey: process.env.GOOGLE_PLACES_API_KEY || '',
