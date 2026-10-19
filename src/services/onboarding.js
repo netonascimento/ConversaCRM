@@ -13,33 +13,33 @@ export function onboarding(companyId) {
     {
       id: 'empresa', title: 'Conte sobre a sua empresa',
       text: 'O que você faz, endereço, formas de pagamento e diferenciais. É com isso que a IA responde os clientes.',
-      action: 'Preencher', href: '#/config/empresa',
+      action: 'Preencher', href: '#/comecar/1',
       done: (s.ai.business_description || '').trim().length >= 20,
     },
     {
       id: 'servicos', title: 'Cadastre seus serviços e preços',
       text: 'A IA usa o catálogo para informar valores e agendar o serviço certo.',
-      action: 'Cadastrar serviços', href: '#/produtos',
+      action: 'Cadastrar serviços', href: '#/comecar/2',
       done: one('SELECT COUNT(*) AS n FROM products WHERE company_id = ? AND active = 1'),
     },
     {
       id: 'horarios', title: 'Defina seus horários de atendimento',
       text: 'Os dias e horários em que você atende. A agenda e a IA só oferecem horários livres dentro deles.',
-      action: 'Definir horários', href: '#/config/agenda',
+      action: 'Definir horários', href: '#/comecar/3',
       done: Boolean(flags.hours),
     },
     {
       id: 'teste', title: 'Teste o atendimento',
       text: aiAllowed(company)
         ? 'Mande uma mensagem como se fosse um cliente e veja a IA responder, agendar e cobrar.'
-        : 'Mande uma mensagem como se fosse um cliente e responda pela tela de Atendimento.',
-      action: 'Fazer um teste', href: '#/inbox?simular=1',
+        : 'Mande uma mensagem como se fosse um cliente e responda você mesmo, aqui. É assim que a sua equipe vai atender.',
+      action: 'Fazer um teste', href: '#/comecar/4',
       done: one("SELECT COUNT(*) AS n FROM messages WHERE company_id = ? AND direction = 'in'"),
     },
     {
       id: 'whatsapp', title: 'Conecte o seu WhatsApp',
       text: 'Use o número que você já tem, lendo um QR Code. A partir daí os clientes de verdade são atendidos.',
-      action: 'Conectar WhatsApp', href: '#/config/whatsapp',
+      action: 'Conectar WhatsApp', href: '#/comecar/5',
       done: s.whatsapp.provider !== 'simulator',
     },
   ];

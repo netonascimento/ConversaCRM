@@ -213,7 +213,7 @@ function renderLayout() {
         <nav class="nav">${allowedPages().map(([id, label]) => `<a href="#/${id}" data-page="${id}">${icon(id)}<span>${label}</span>${id === 'inbox' ? '<span class="badge count hidden" id="unread-badge"></span>' : id === 'tarefas' ? '<span class="badge count hidden" id="tasks-badge"></span>' : ''}</a>`).join('')}</nav>
         <div class="sidebar-foot">
           <div><strong style="color:#fff">${esc(state.me.company.name)}</strong></div>
-          ${isOwner() && state.meta?.onboarding && !state.meta.onboarding.complete ? `<a class="onboard-pill" href="#/dashboard" id="onboard-pill">Primeiros passos · ${state.meta.onboarding.done_count} de ${state.meta.onboarding.total}<div class="onboard-bar"><span style="width:${state.meta.onboarding.percent}%"></span></div></a>` : ''}
+          ${isOwner() && state.meta?.onboarding && !state.meta.onboarding.complete ? `<a class="onboard-pill" href="#/comecar" id="onboard-pill">Primeiros passos · ${state.meta.onboarding.done_count} de ${state.meta.onboarding.total}<div class="onboard-bar"><span style="width:${state.meta.onboarding.percent}%"></span></div></a>` : ''}
           ${isOwner() && state.meta?.plan ? `<div><a href="#/assinar" style="color:inherit">${state.meta.ai_locked ? '🔒 ' : ''}Plano ${esc(state.meta.plan.label)} · assinatura</a></div>` : ''}
           <div>${esc(state.me.user.email)}</div>
           <button class="sm" id="logout">Sair</button>
@@ -293,7 +293,18 @@ async function route() {
     history.replaceState(null, '', `#${path}`);
   }
   const pages = allowedPages();
-  const def = page === 'assinar' ? ['assinar', 'Assinatura', renderPaywall] : pages.find((p) => p[0] === page) || pages[0];
+  // Primeira entrada do dono: abre o assistente de configuração uma vez por sessão.
+  const ob = state.meta?.onboarding;
+  if (isOwner() && ob && !ob.complete && !ob.dismissed && ob.done_count === 0 && (page === 'dashboard' || !page) && !sessionGet('wizard-auto')) {
+    sessionSet('wizard-auto', '1');
+    location.hash = '#/comecar';
+    return;
+  }
+  // No assistente, um assunto por vez: os avisos do topo saem da frente.
+  document.body.classList.toggle('wizard-mode', page === 'comecar');
+  const def = page === 'assinar' ? ['assinar', 'Assinatura', renderPaywall]
+    : page === 'comecar' && isOwner() ? ['comecar', 'Primeiros passos', renderWizard]
+      : pages.find((p) => p[0] === page) || pages[0];
   $$('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === def[0]));
   $('#sidebar')?.classList.remove('open');
   const el = $('#page');
@@ -347,7 +358,7 @@ function onboardingCard(o) {
         <span class="step-num ${x.done ? 'ok' : ''}">${x.done ? '✓' : i + 1}</span>
         <div style="flex:1">
           <div class="onboard-title"><strong>${esc(x.title)}</strong></div>
-          ${x.id === o.next ? `<p class="small muted" style="margin:4px 0 12px">${esc(x.text)}</p><a class="btn primary" href="${x.href}">${esc(x.action)} →</a>` : ''}
+          ${x.id === o.next ? `<p class="small muted" style="margin:4px 0 12px">${esc(x.text)}</p><a class="btn primary" href="#/comecar">${o.done_count ? 'Continuar configuração' : 'Começar a configuração'} →</a>` : ''}
         </div></div>`;
     }).join('')}
     <div class="row" style="margin-top:10px"><span class="spacer"></span><button class="sm ghost" id="hide-onboarding">Esconder por enquanto</button></div>
@@ -1243,6 +1254,263 @@ function checkout(info, plan) {
     } catch (err) { fail(err); e.target.disabled = false; }
   };
   box.scrollIntoView({ behavior: 'smooth' });
+}
+
+// ---------------------------------------------------------------------------
+// Assistente de configuração ("Primeiros passos"): um fluxo contínuo, uma pergunta por tela
+// ---------------------------------------------------------------------------
+const WZ_DAYS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sab', 'dom'];
+const WZ_TEST_PHONE = '11900000001';
+
+async function renderWizard(el, [n]) {
+  const [ob, cfg] = await Promise.all([api('/api/onboarding'), api('/api/settings')]);
+  const total = ob.steps.length;
+  const firstOpen = Math.max(0, ob.steps.findIndex((x) => !x.done));
+  let i = n === 'fim' ? total : Math.min(Math.max((Number(n) || firstOpen + 1) - 1, 0), total);
+  const go = (to) => { location.hash = to >= total ? '#/comecar/fim' : `#/comecar/${to + 1}`; };
+
+  if (i >= total) return wizardDone(el, ob);
+  const step = ob.steps[i];
+  el.innerHTML = `
+    <div class="wizard">
+      <div class="row small muted"><span>Passo ${i + 1} de ${total}</span><span class="spacer"></span><a href="#/dashboard">Sair e continuar depois</a></div>
+      <div class="onboard-bar"><span style="width:${Math.round(((i + (step.done ? 1 : 0)) / total) * 100)}%"></span></div>
+      <ol class="wizard-dots">${ob.steps.map((x, k) => `<li class="${k === i ? 'now' : x.done ? 'ok' : ''}"><a href="#/comecar/${k + 1}" title="${esc(x.title)}">${x.done && k !== i ? '✓' : k + 1}</a></li>`).join('')}</ol>
+      <div class="card wizard-card">
+        <h1>${esc(step.title)}</h1>
+        <p class="muted" style="margin:6px 0 18px">${esc(step.text)}</p>
+        <div id="wz-body"></div>
+        <div class="wizard-foot">
+          ${i > 0 ? '<button type="button" id="wz-back">← Voltar</button>' : ''}
+          <span class="spacer"></span>
+          <button type="button" class="ghost" id="wz-skip">${i === total - 1 ? 'Fazer depois' : 'Pular'}</button>
+          <button type="button" class="primary" id="wz-next">${i === total - 1 ? 'Concluir' : 'Continuar →'}</button>
+        </div>
+      </div>
+    </div>`;
+  $('#wz-back')?.addEventListener('click', () => go(i - 1));
+  $('#wz-skip').onclick = () => go(i + 1);
+  const body = $('#wz-body');
+  const save = await ({ empresa: wzCompany, servicos: wzServices, horarios: wzHours, teste: wzTest, whatsapp: wzWhatsapp })[step.id](body, cfg);
+  $('#wz-next').onclick = async (e) => {
+    e.target.disabled = true;
+    try {
+      if (await save() !== false) go(i + 1);
+    } catch (err) { fail(err); }
+    e.target.disabled = false;
+  };
+  body.querySelector('input, textarea')?.focus();
+}
+
+// 1. Sobre a empresa
+function wzCompany(body, cfg) {
+  body.innerHTML = `
+    <div class="field"><label for="wz-desc">O que você faz, endereço, formas de pagamento e diferenciais</label>
+      <textarea id="wz-desc" rows="6" placeholder="Ex.: Barbearia no centro de Campinas (Rua das Flores, 123). Corte, barba e sobrancelha. Aceitamos Pix e cartão em até 3x. Atendemos com hora marcada.">${esc(cfg.settings.ai.business_description)}</textarea>
+      <div class="hint" id="wz-count"></div></div>
+    <div class="field"><label for="wz-tone">Como a atendente deve falar <span class="muted">(opcional)</span></label>
+      <textarea id="wz-tone" rows="2" placeholder="Ex.: simpática e objetiva, mensagens curtas.">${esc(cfg.settings.ai.instructions)}</textarea></div>`;
+  const desc = $('#wz-desc', body);
+  const count = () => { const n = desc.value.trim().length; $('#wz-count', body).textContent = n >= 20 ? '✓ Ótimo, a IA já tem o que precisa.' : `Escreva pelo menos uma frase (${n}/20).`; };
+  desc.oninput = count; count();
+  return async () => {
+    if (desc.value.trim().length < 20) { toast('Escreva um pouco sobre a empresa (pelo menos uma frase) ou clique em Pular.', 'error'); return false; }
+    await api('/api/settings', { method: 'PUT', body: { settings: { ai: { business_description: desc.value.trim(), instructions: $('#wz-tone', body).value.trim() } } } });
+    return true;
+  };
+}
+
+// 2. Serviços e preços (lista contínua: adiciona um embaixo do outro)
+async function wzServices(body) {
+  let items = (await api('/api/products')).filter((p) => p.active);
+  const draw = () => {
+    body.innerHTML = `
+      <div id="wz-list">${items.length ? items.map((p) => `<div class="wizard-item"><strong>${esc(p.name)}</strong><span class="muted">${money(p.price_cents)}${p.duration_min ? ` · ${p.duration_min} min` : ''}</span><span class="spacer"></span><button type="button" class="sm ghost danger" data-rm="${p.id}" aria-label="Remover ${esc(p.name)}">✕</button></div>`).join('')
+        : '<p class="small muted" style="margin:0 0 10px">Nenhum serviço ainda. Comece pelo mais procurado.</p>'}</div>
+      <form id="wz-add" class="wizard-add">
+        <div class="field" style="flex:2"><label for="wz-pname">Serviço</label><input id="wz-pname" name="name" required placeholder="Ex.: Corte masculino"></div>
+        <div class="field" style="flex:1"><label for="wz-pprice">Preço (R$)</label><input id="wz-pprice" name="price" inputmode="decimal" required placeholder="50,00"></div>
+        <div class="field" style="flex:1"><label for="wz-pdur">Duração (min)</label><input id="wz-pdur" name="duration_min" type="number" min="0" placeholder="30"></div>
+        <button class="primary" style="align-self:flex-end;margin-bottom:var(--s-4)">+ Adicionar</button>
+      </form>`;
+    $('#wz-add', body).onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await api('/api/products', { method: 'POST', body: { ...formData(e.target), kind: 'servico' } });
+        items = (await api('/api/products')).filter((p) => p.active);
+        draw();
+        $('#wz-pname', body).focus();
+      } catch (err) { fail(err); }
+    };
+    $$('[data-rm]', body).forEach((b) => { b.onclick = async () => {
+      await api(`/api/products/${b.dataset.rm}`, { method: 'DELETE' }).catch(fail);
+      items = items.filter((p) => String(p.id) !== b.dataset.rm);
+      draw();
+    }; });
+  };
+  draw();
+  return async () => {
+    // Digitou um serviço e clicou em Continuar sem adicionar: adiciona por ele.
+    const f = $('#wz-add', body);
+    if (f.name.value.trim() && f.price.value.trim()) await api('/api/products', { method: 'POST', body: { ...formData(f), kind: 'servico' } });
+    else if (!items.length) { toast('Adicione pelo menos um serviço ou clique em Pular.', 'error'); return false; }
+    return true;
+  };
+}
+
+// 3. Horários: dia a dia, com abre/fecha e pausa para almoço (sem digitar formatos)
+function wzHours(body, cfg) {
+  const h = cfg.settings.business_hours;
+  const first = WZ_DAYS.map((d) => h[d]).find((r) => r?.length) || [['09:00', '18:00']];
+  const lunch = first.length > 1 ? [first[0][1], first[1][0]] : ['12:00', '13:00'];
+  body.innerHTML = `
+    <div class="row wrap" style="margin-bottom:12px"><span class="small muted">Atalhos:</span>
+      <button type="button" class="sm" data-preset="semana">Seg a sex, 9h às 18h</button>
+      <button type="button" class="sm" data-preset="sabado">Seg a sáb, 9h às 18h</button></div>
+    <div class="wizard-hours">${WZ_DAYS.map((d) => {
+      const r = h[d] || [];
+      return `<div class="wizard-hour" data-day="${d}">
+        <label class="check"><input type="checkbox" data-open ${r.length ? 'checked' : ''}> ${WD_LABEL[d]}</label>
+        <input type="time" data-from value="${r[0]?.[0] || '09:00'}" aria-label="${WD_LABEL[d]}: abre">
+        <span class="small muted">às</span>
+        <input type="time" data-to value="${r.at(-1)?.[1] || '18:00'}" aria-label="${WD_LABEL[d]}: fecha">
+      </div>`;
+    }).join('')}</div>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="wz-lunch" ${first.length > 1 ? 'checked' : ''}> Pausa para almoço das
+      <input type="time" id="wz-l1" value="${lunch[0]}" style="width:auto"> às <input type="time" id="wz-l2" value="${lunch[1]}" style="width:auto"></label>`;
+  const sync = () => $$('.wizard-hour', body).forEach((row) => row.classList.toggle('closed', !$('[data-open]', row).checked));
+  $$('[data-open]', body).forEach((c) => { c.onchange = sync; });
+  $$('[data-preset]', body).forEach((b) => { b.onclick = () => {
+    $$('.wizard-hour', body).forEach((row) => {
+      const d = row.dataset.day;
+      $('[data-open]', row).checked = b.dataset.preset === 'sabado' ? d !== 'dom' : !['sab', 'dom'].includes(d);
+      $('[data-from]', row).value = '09:00';
+      $('[data-to]', row).value = '18:00';
+    });
+    sync();
+  }; });
+  sync();
+  return async () => {
+    const withLunch = $('#wz-lunch', body).checked;
+    const [l1, l2] = [$('#wz-l1', body).value, $('#wz-l2', body).value];
+    const hours = {};
+    for (const row of $$('.wizard-hour', body)) {
+      const from = $('[data-from]', row).value;
+      const to = $('[data-to]', row).value;
+      if (!$('[data-open]', row).checked) { hours[row.dataset.day] = []; continue; }
+      if (!from || !to || from >= to) { toast(`${WD_LABEL[row.dataset.day]}: o horário de fechar precisa ser depois do de abrir.`, 'error'); return false; }
+      hours[row.dataset.day] = withLunch && l1 > from && l2 < to && l1 < l2 ? [[from, l1], [l2, to]] : [[from, to]];
+    }
+    if (!Object.values(hours).some((r) => r.length)) { toast('Marque pelo menos um dia de atendimento.', 'error'); return false; }
+    await api('/api/settings', { method: 'PUT', body: { settings: { business_hours: hours } } });
+    return true;
+  };
+}
+
+// 4. Teste: um chat aqui dentro; a pessoa escreve como cliente e vê a resposta
+function wzTest(body) {
+  const locked = aiLocked();
+  let contactId = null;
+  let lastId = 0;
+  body.innerHTML = `
+    <div class="wizard-chat" id="wz-chat"><div class="small muted" style="text-align:center;padding:24px 0">Escreva como se fosse um cliente chegando pelo WhatsApp.</div></div>
+    <div class="row wrap" style="margin:10px 0" id="wz-suggest">
+      ${['Oi! Quanto custa?', 'Tem horário amanhã?', 'Vocês aceitam Pix?'].map((t) => `<button type="button" class="sm" data-say="${esc(t)}">${esc(t)}</button>`).join('')}</div>
+    <form class="row" id="wz-say"><input name="text" placeholder="Mensagem do cliente…" aria-label="Mensagem do cliente" autocomplete="off"><button class="primary">Enviar como cliente</button></form>
+    ${locked ? `<div id="wz-reply-box" class="hidden" style="margin-top:12px">
+        <p class="small muted" style="margin:0 0 6px">No teste grátis a IA não responde: quem responde é a sua equipe. Responda você:</p>
+        <form class="row" id="wz-reply"><input name="text" placeholder="Sua resposta…" aria-label="Sua resposta" autocomplete="off"><button>Responder como equipe</button></form>
+        <p class="small" style="margin-top:8px">🔒 Com um plano pago, a IA responde, agenda e cobra sozinha. <a href="#/assinar">Ver planos</a></p></div>` : ''}
+    <p class="hint" style="margin-top:10px">O cliente de teste aparece no Atendimento e no CRM como "Cliente teste". Pode apagar depois.</p>`;
+  const chat = $('#wz-chat', body);
+  const draw = (msgs, reset) => {
+    if (reset) chat.innerHTML = '';
+    chat.insertAdjacentHTML('beforeend', msgs.map((m) => `<div class="bubble ${m.direction}">${esc(m.body)}<div class="meta">${m.direction === 'out' ? (m.author === 'ai' ? '🤖 IA' : '👤 Equipe') : 'Cliente'}</div></div>`).join(''));
+    chat.scrollTop = chat.scrollHeight;
+  };
+  const poll = async () => {
+    if (!contactId || !$('#wz-chat')) return;
+    const { messages } = await api(`/api/conversations/${contactId}/messages?after=${lastId}`).catch(() => ({ messages: [] }));
+    if (messages.length) { lastId = messages.at(-1).id; draw(messages); }
+  };
+  every(1500, poll);
+  const say = async (text) => {
+    if (!text.trim()) return;
+    const r = await api('/api/simulator/inbound', { method: 'POST', body: { phone: WZ_TEST_PHONE, name: 'Cliente teste', text } });
+    if (r.contact && !contactId) { contactId = r.contact.id; chat.innerHTML = ''; }
+    $('#wz-reply-box')?.classList.remove('hidden');
+    await poll();
+  };
+  $$('[data-say]', body).forEach((b) => { b.onclick = () => say(b.dataset.say).catch(fail); });
+  $('#wz-say', body).onsubmit = async (e) => { e.preventDefault(); const t = e.target.text.value; e.target.text.value = ''; await say(t).catch(fail); };
+  $('#wz-reply', body)?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const t = e.target.text.value.trim();
+    if (!t || !contactId) return;
+    e.target.text.value = '';
+    await api(`/api/conversations/${contactId}/messages`, { method: 'POST', body: { body: t } }).catch(fail);
+    await poll();
+  });
+  return async () => {
+    if (!contactId) { toast('Mande pelo menos uma mensagem de teste, ou clique em Pular.', 'error'); return false; }
+    return true;
+  };
+}
+
+// 5. WhatsApp: conectar agora ou depois
+function wzWhatsapp(body, cfg) {
+  const w = cfg.settings.whatsapp;
+  const webhook = state.meta.webhooks?.evolution || '';
+  body.innerHTML = `
+    ${w.provider !== 'simulator' ? `<div class="banner" style="margin-bottom:14px">✓ WhatsApp já conectado (${w.provider === 'meta' ? 'API oficial' : 'QR Code'}).</div>` : ''}
+    <div class="wizard-choice">
+      <label class="card wizard-option"><input type="radio" name="wz-wa" value="later" ${w.provider === 'simulator' ? 'checked' : ''}>
+        <strong>Conectar depois</strong><span class="small muted">Continue testando com o simulador. Você conecta quando quiser em Configurações → WhatsApp.</span></label>
+      <label class="card wizard-option"><input type="radio" name="wz-wa" value="evolution" ${w.provider === 'evolution' ? 'checked' : ''}>
+        <strong>Conectar meu número por QR Code</strong><span class="small muted">Use o número que você já tem. Precisa dos dados do servidor de conexão (Evolution API).</span></label>
+    </div>
+    <div id="wz-evo" class="hidden" style="margin-top:14px">
+      <div class="fields">
+        <div class="field"><label for="wz-eurl">Endereço do servidor</label><input id="wz-eurl" value="${esc(w.evolution_url)}" placeholder="https://evolution.seudominio.com"></div>
+        <div class="field"><label for="wz-einst">Nome da instância</label><input id="wz-einst" value="${esc(w.evolution_instance)}"></div>
+        <div class="field"><label for="wz-ekey">Chave (API key)</label><input id="wz-ekey" value="${esc(w.evolution_api_key)}"></div>
+      </div>
+      <p class="hint">No servidor de conexão, aponte o webhook (evento MESSAGES_UPSERT) para:</p><div class="code">${esc(webhook)}</div>
+      <p class="hint">Não tem esses dados? Fale com a gente em <a href="mailto:contato@falaki.me">contato@falaki.me</a> que ajudamos a conectar.</p>
+    </div>`;
+  const evo = $('#wz-evo', body);
+  const sync = () => evo.classList.toggle('hidden', $('[name="wz-wa"]:checked', body)?.value !== 'evolution');
+  $$('[name="wz-wa"]', body).forEach((r) => { r.onchange = sync; });
+  sync();
+  return async () => {
+    if ($('[name="wz-wa"]:checked', body)?.value !== 'evolution') return true;
+    const url = $('#wz-eurl', body).value.trim();
+    const instance = $('#wz-einst', body).value.trim();
+    const key = $('#wz-ekey', body).value.trim();
+    if (!url || !instance || !key) { toast('Preencha os três dados de conexão, ou escolha "Conectar depois".', 'error'); return false; }
+    await api('/api/settings', { method: 'PUT', body: { settings: { whatsapp: { provider: 'evolution', evolution_url: url, evolution_instance: instance, evolution_api_key: key } } } });
+    return true;
+  };
+}
+
+async function wizardDone(el) {
+  const ob = await api('/api/onboarding');
+  state.meta.onboarding = ob;
+  const pending = ob.steps.filter((x) => !x.done);
+  el.innerHTML = `
+    <div class="wizard">
+      <div class="onboard-bar"><span style="width:${ob.percent}%"></span></div>
+      <div class="card wizard-card" style="text-align:center">
+        <div style="font-size:42px">${pending.length ? '👏' : '🎉'}</div>
+        <h1>${pending.length ? 'Quase lá!' : 'Tudo pronto!'}</h1>
+        <p class="muted">${pending.length ? `Seu Falaki está ${ob.percent}% pronto. Falta${pending.length > 1 ? 'm' : ''}: ${pending.map((x) => esc(x.title.charAt(0).toLowerCase() + x.title.slice(1))).join(', ')}.` : 'O Falaki já pode atender os seus clientes.'}</p>
+        <div class="row wrap" style="justify-content:center;margin-top:18px;gap:10px">
+          ${pending.length ? `<a class="btn" href="#/comecar/${ob.steps.indexOf(pending[0]) + 1}">Terminar agora</a>` : ''}
+          <a class="btn primary" href="#/inbox">Ir para o Atendimento →</a>
+          ${aiLocked() ? '<a class="btn" href="#/assinar">🔒 Desbloquear a IA</a>' : ''}
+        </div>
+      </div>
+    </div>`;
 }
 
 // ---------------------------------------------------------------------------
