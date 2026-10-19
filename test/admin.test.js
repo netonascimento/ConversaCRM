@@ -816,3 +816,33 @@ test('cortesia: admin libera plano pago de graça, com motivo e prazo; vence soz
   const internal = (await a(`/api/admin/companies/${id}`, { method: 'PUT', body: { plan: 'profissional', max_users: 10, max_leads: '' } })).data;
   assert.equal(internal.subscription.state, 'em_dia', 'continua com o Pix pago registrado');
 });
+
+test('primeiros passos: cada passo é marcado pelo que a empresa configurou de verdade', async () => {
+  const u = browser();
+  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Rho', name: 'Rui', email: 'rui@rho.com', password: 'senhaforte1' } });
+  let o = (await u('/api/onboarding')).data;
+  assert.deepEqual([o.done_count, o.total, o.percent, o.next], [0, 5, 0, 'empresa']);
+  assert.equal((await u('/api/meta')).data.onboarding.done_count, 0);
+
+  await u('/api/settings', { method: 'PUT', body: { settings: { ai: { business_description: 'Barbearia no centro de Campinas. Aceitamos Pix e cartão.' } } } });
+  await u('/api/products', { method: 'POST', body: { name: 'Corte', price: '50,00', kind: 'servico', duration_min: 30 } });
+  o = (await u('/api/onboarding')).data;
+  assert.deepEqual([o.done_count, o.next], [2, 'horarios']);
+
+  // Salvar outra aba não conta como horários; salvar os horários conta.
+  await u('/api/settings', { method: 'PUT', body: { settings: { team: { task_sla_hours: 2 } } } });
+  assert.equal((await u('/api/onboarding')).data.next, 'horarios');
+  await u('/api/settings', { method: 'PUT', body: { settings: { business_hours: { seg: [['09:00', '18:00']] } } } });
+  await u('/api/simulator/inbound', { method: 'POST', body: { phone: '11955550123', text: 'Oi, tem horário amanhã?' } });
+  o = (await u('/api/onboarding')).data;
+  assert.deepEqual([o.done_count, o.percent, o.next, o.complete], [4, 80, 'whatsapp', false]);
+
+  // Esconder e voltar.
+  assert.equal((await u('/api/onboarding/dismiss', { method: 'POST' })).data.dismissed, true);
+  assert.equal((await u('/api/onboarding/dismiss', { method: 'POST', body: { dismissed: false } })).data.dismissed, false);
+
+  // Cliente cadastrado direto na tela Clientes.
+  const c = (await u('/api/contacts', { method: 'POST', body: { name: 'Cliente Direto', phone: '11955550124', stage: 'ganho' } })).data;
+  const listed = (await u('/api/clients')).data.find((x) => x.id === c.id);
+  assert.ok(listed && listed.won_at, 'aparece em Clientes com a data em que virou cliente');
+});

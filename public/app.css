@@ -254,3 +254,16 @@ td > button + button, td > .btn + .btn, td > button + .btn, td > .btn + button {
 /* Importação de contatos: área de soltar arquivo */
 .dropzone { display: grid; place-content: center; min-height: 150px; gap: 2px; transition: border-color .15s, background .15s; }
 .dropzone:hover, .dropzone.drag-over { border-color: var(--green-600, #1f7a45); background: var(--green-50, #eef7f1); }
+
+/* Primeiros passos (onboarding) */
+.onboard-bar { height: 8px; border-radius: 999px; background: var(--paper-2); border: 1px solid var(--line); overflow: hidden; margin: var(--s-2) 0 var(--s-4); }
+.onboard-bar > span { display: block; height: 100%; background: var(--green-700); border-radius: inherit; transition: width .4s ease; }
+.onboard-step { display: flex; gap: var(--s-3); align-items: flex-start; padding: var(--s-3) 0; border-top: 1px solid var(--line); }
+.onboard-step.done .onboard-title { color: var(--muted); text-decoration: line-through; }
+.onboard-step.later { opacity: .6; }
+.onboard-step.next { padding: var(--s-4); margin: var(--s-2) 0; border: 1px solid var(--green-600); border-radius: var(--r); background: var(--paper); }
+.onboard-step .step-num.ok { background: var(--green-700); color: #fff; border-color: var(--green-700); }
+.onboard-pill { display: block; margin: var(--s-3) var(--s-2) 0; padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); background: rgba(255, 255, 255, .08); color: #e3f2e8; font-size: var(--fs-12); text-decoration: none; }
+.onboard-pill:hover { background: rgba(255, 255, 255, .14); text-decoration: none; }
+.onboard-pill .onboard-bar { height: 4px; margin: 6px 0 0; background: rgba(255, 255, 255, .15); border: 0; }
+.onboard-pill .onboard-bar > span { background: #b9e2c5; }

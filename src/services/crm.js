@@ -57,6 +57,8 @@ export function createContact(companyId, data, { trigger = true } = {}) {
   const fields = { stage: STAGE_IDS.includes(data.stage) ? data.stage : 'novo' };
   for (const k of EDITABLE) if (data[k] !== undefined) fields[k] = data[k];
   if (fields.phone) fields.phone = normalizePhone(fields.phone);
+  // Cadastrado direto como cliente (etapa "Ganho"): já entra com a data em que virou cliente.
+  if (fields.stage === 'ganho') fields.won_at = now();
   const cols = Object.keys(fields);
   const { id } = run(
     `INSERT INTO contacts (company_id, ${cols.join(', ')}) VALUES (?, ${cols.map(() => '?').join(', ')})`,

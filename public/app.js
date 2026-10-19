@@ -213,6 +213,7 @@ function renderLayout() {
         <nav class="nav">${allowedPages().map(([id, label]) => `<a href="#/${id}" data-page="${id}">${icon(id)}<span>${label}</span>${id === 'inbox' ? '<span class="badge count hidden" id="unread-badge"></span>' : id === 'tarefas' ? '<span class="badge count hidden" id="tasks-badge"></span>' : ''}</a>`).join('')}</nav>
         <div class="sidebar-foot">
           <div><strong style="color:#fff">${esc(state.me.company.name)}</strong></div>
+          ${isOwner() && state.meta?.onboarding && !state.meta.onboarding.complete ? `<a class="onboard-pill" href="#/dashboard" id="onboard-pill">Primeiros passos · ${state.meta.onboarding.done_count} de ${state.meta.onboarding.total}<div class="onboard-bar"><span style="width:${state.meta.onboarding.percent}%"></span></div></a>` : ''}
           ${isOwner() && state.meta?.plan ? `<div><a href="#/assinar" style="color:inherit">${state.meta.ai_locked ? '🔒 ' : ''}Plano ${esc(state.meta.plan.label)} · assinatura</a></div>` : ''}
           <div>${esc(state.me.user.email)}</div>
           <button class="sm" id="logout">Sair</button>
@@ -224,6 +225,8 @@ function renderLayout() {
         <div id="page"></div>
       </main>
     </div>`;
+  // Voltar aos Primeiros passos pelo menu reabre o painel, mesmo se estava escondido.
+  $('#onboard-pill')?.addEventListener('click', () => { if (state.meta.onboarding?.dismissed) api('/api/onboarding/dismiss', { method: 'POST', body: { dismissed: false } }).then((o) => { state.meta.onboarding = o; route(); }).catch(() => {}); });
   $('#logout').onclick = async () => { await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); renderAuth(); };
   $('#menu-btn').onclick = () => $('#sidebar').classList.toggle('open');
 }
@@ -249,6 +252,18 @@ function planBanner() {
   if (left === 0) return `<div class="banner">Você usou os ${plan.max_leads} leads do plano ${esc(plan.label)}. Novos contatos não entram no CRM até você mudar de plano. ${aiLocked() ? '<a href="#/assinar">Assinar</a>' : contact}</div>`;
   if (aiLocked()) return `<div class="banner">Teste grátis: ${plan.leads_used} de ${plan.max_leads} leads usados, sem IA. <a href="#/assinar">🔒 Desbloquear a IA</a></div>`;
   return `<div class="banner">Plano ${esc(plan.label)}: ${plan.leads_used} de ${plan.max_leads} leads usados.${contact}</div>`;
+}
+
+// Atualiza o atalho "Primeiros passos" do menu depois de cada tela (o passo pode ter sido concluído nela).
+async function refreshOnboardingPill() {
+  if (!isOwner() || !state.meta?.onboarding || state.meta.onboarding.complete) return;
+  const o = await api('/api/onboarding').catch(() => null);
+  if (!o) return;
+  const changed = o.done_count !== state.meta.onboarding.done_count || o.complete;
+  state.meta.onboarding = o;
+  if (o.complete) { $('#onboard-pill')?.remove(); toast('Tudo pronto! O Falaki já pode atender seus clientes. 🎉'); return; }
+  const pill = $('#onboard-pill');
+  if (pill && changed) pill.innerHTML = `Primeiros passos · ${o.done_count} de ${o.total}<div class="onboard-bar"><span style="width:${o.percent}%"></span></div>`;
 }
 
 async function refreshUnread() {
@@ -284,6 +299,7 @@ async function route() {
   const el = $('#page');
   el.innerHTML = '<div class="empty">Carregando…</div>';
   try { await def[2](el, rest); } catch (err) { el.innerHTML = `<div class="empty">Erro: ${esc(err.message)}</div>`; }
+  refreshOnboardingPill();
   every(10000, refreshUnread);
   refreshUnread();
 }
@@ -320,9 +336,28 @@ function barChart(series, key, { color = 'var(--green-700)', format = (v) => v }
     <text x="0" y="12" font-size="10" fill="#66736b">${esc(format(max))}</text>${bars}${labels}</svg>`;
 }
 
+function onboardingCard(o) {
+  return `<div class="card" style="margin-bottom:14px" id="onboarding">
+    <div class="card-head"><h2>Primeiros passos</h2><span class="spacer"></span><span class="small muted">${o.done_count} de ${o.total}</span></div>
+    <p class="muted" style="margin:6px 0 0">Seu Falaki está <strong>${o.percent}% pronto</strong>. ${o.done_count === 0 ? 'São 5 passos rápidos para ele atender sozinho.' : o.total - o.done_count === 1 ? 'Falta só um passo!' : `Faltam ${o.total - o.done_count} passos.`}</p>
+    <div class="onboard-bar" role="progressbar" aria-valuenow="${o.percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${o.percent}%"></span></div>
+    ${o.steps.map((x, i) => {
+      const cls = x.done ? 'done' : x.id === o.next ? 'next' : 'later';
+      return `<div class="onboard-step ${cls}">
+        <span class="step-num ${x.done ? 'ok' : ''}">${x.done ? '✓' : i + 1}</span>
+        <div style="flex:1">
+          <div class="onboard-title"><strong>${esc(x.title)}</strong></div>
+          ${x.id === o.next ? `<p class="small muted" style="margin:4px 0 12px">${esc(x.text)}</p><a class="btn primary" href="${x.href}">${esc(x.action)} →</a>` : ''}
+        </div></div>`;
+    }).join('')}
+    <div class="row" style="margin-top:10px"><span class="spacer"></span><button class="sm ghost" id="hide-onboarding">Esconder por enquanto</button></div>
+  </div>`;
+}
+
 async function renderDashboard(el) {
   const days = Number(sessionStorage.getItem('dash-days') || 30);
-  const d = await api(`/api/dashboard?days=${days}`);
+  const [d, ob] = await Promise.all([api(`/api/dashboard?days=${days}`), isOwner() ? api('/api/onboarding').catch(() => null) : null]);
+  const showOnboarding = ob && !ob.complete && !ob.dismissed;
   const m = d.metrics;
   const fin = !d.financial_hidden;
   const maxStage = Math.max(1, ...Object.values(m.stages));
@@ -332,7 +367,7 @@ async function renderDashboard(el) {
       <span class="spacer"></span>
       <select id="days" style="width:auto">${[7, 30, 90, 365].map((n) => `<option value="${n}" ${n === days ? 'selected' : ''}>Últimos ${n} dias</option>`).join('')}</select>
     </div>
-    ${aiLocked() ? lockCard('O atendimento com IA') : !state.meta.ai_configured ? '<div class="banner">A IA está em <strong>modo demonstração</strong> (respostas automáticas simples). Adicione sua chave da API Anthropic em <a href="#/config">Configurações → Integrações</a> para ativar o atendimento inteligente.</div>' : ''}
+    ${showOnboarding ? onboardingCard(ob) : aiLocked() ? lockCard('O atendimento com IA') : !state.meta.ai_configured ? '<div class="banner">A IA está em <strong>modo demonstração</strong> (respostas automáticas simples). Adicione sua chave da API Anthropic em <a href="#/config">Configurações → Integrações</a> para ativar o atendimento inteligente.</div>' : ''}
     <div class="grid kpis">
       ${fin ? `<div class="card kpi good"><div class="label">Faturamento</div><div class="value">${money(m.revenue_cents)}</div><div class="sub">recebido no período</div></div>
       <div class="card kpi"><div class="label">A receber</div><div class="value">${money(m.receivable_cents)}</div><div class="sub">cobranças pendentes</div></div>
@@ -373,6 +408,12 @@ async function renderDashboard(el) {
       <ul class="feed">${d.activities.map((a) => `<li><span class="muted small">${ago(a.created_at)}</span> · <strong>${esc(a.contact_name || '')}</strong> ${esc(a.description)}</li>`).join('') || '<li class="muted">Nada ainda.</li>'}</ul>
     </div>`;
   $('#days').onchange = (e) => { sessionStorage.setItem('dash-days', e.target.value); route(); };
+  $('#hide-onboarding')?.addEventListener('click', async () => {
+    await api('/api/onboarding/dismiss', { method: 'POST' }).catch(fail);
+    toast('Primeiros passos escondidos. Você pode voltar a eles pelo menu lateral.');
+    state.meta.onboarding = { ...state.meta.onboarding, dismissed: true };
+    renderLayout(); route();
+  });
   if ($('#insights')) $('#insights').onclick = async (e) => {
     e.target.disabled = true;
     $('#insights-box').innerHTML = 'Analisando seus números…';
@@ -518,6 +559,7 @@ async function renderInbox(el, [selected]) {
   }
 
   $('#conv-q').oninput = () => loadConvs().catch(() => {});
+  if (/[?&]simular=1/.test(location.hash)) { history.replaceState(null, '', '#/inbox'); openSimulator(); }
   $$('#conv-scope button').forEach((b) => {
     b.onclick = () => {
       scope = b.dataset.scope;
@@ -623,23 +665,32 @@ async function renderCrm(el) {
   await load();
 }
 
-function contactForm(contact, onSaved) {
-  const c = contact || {};
-  const box = openModal(`${modalHead(contact ? 'Editar contato' : 'Novo lead')}
+function contactForm(contact, onSaved, { asClient = false } = {}) {
+  const c = contact || (asClient ? { stage: 'ganho' } : {});
+  const box = openModal(`${modalHead(contact ? 'Editar contato' : asClient ? 'Novo cliente' : 'Novo lead')}
+    ${asClient ? '<p class="small muted" style="margin-top:-6px">Entra direto como cliente (etapa "Ganho"). Depois você pode cadastrar contratos e anexar documentos na ficha.</p>' : ''}
     <form id="contact-form">
-      <div class="fields">
-        <div class="field"><label>Nome</label><input name="name" value="${esc(c.name)}"></div>
-        <div class="field"><label>WhatsApp / telefone</label><input name="phone" value="${esc(c.phone ? phoneFmt(c.phone) : '')}" placeholder="(11) 99999-9999"></div>
-        <div class="field"><label>E-mail</label><input name="email" type="email" value="${esc(c.email)}"></div>
-        <div class="field"><label>CPF / CNPJ</label><input name="document" value="${esc(c.document)}"></div>
-        <div class="field"><label>Empresa do cliente</label><input name="business_name" value="${esc(c.business_name)}"></div>
-        <div class="field"><label>Valor estimado (R$)</label><input name="value" value="${c.value_cents ? reais(c.value_cents) : ''}" inputmode="decimal"></div>
-        <div class="field"><label>Etapa</label><select name="stage">${state.meta.stages.map((s) => `<option value="${s.id}" ${s.id === (c.stage || 'novo') ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
-        <div class="field"><label>Origem</label><select name="source">${Object.entries(SOURCE_LABEL).map(([k, v]) => `<option value="${k}" ${k === (c.source || 'manual') ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
-      </div>
-      <div class="field"><label>Interesse</label><input name="interest" value="${esc(c.interest)}"></div>
-      <div class="field"><label>Tags (separadas por vírgula)</label><input name="tags" value="${esc(c.tags)}"></div>
-      <div class="field"><label>Observações</label><textarea name="notes">${esc(c.notes)}</textarea></div>
+      ${(() => {
+        const origin = `<div class="field"><label>Origem</label><select name="source">${Object.entries(SOURCE_LABEL).map(([k, v]) => `<option value="${k}" ${k === (c.source || 'manual') ? 'selected' : ''}>${v}</option>`).join('')}</select></div>`;
+        const extra = `<div class="field"><label>Interesse</label><input name="interest" value="${esc(c.interest)}"></div>
+          <div class="field"><label>Tags (separadas por vírgula)</label><input name="tags" value="${esc(c.tags)}"></div>
+          <div class="field"><label>Observações</label><textarea name="notes">${esc(c.notes)}</textarea></div>`;
+        const basic = `<div class="field"><label>Nome</label><input name="name" value="${esc(c.name)}" ${asClient ? 'required' : ''}></div>
+          <div class="field"><label>WhatsApp / telefone</label><input name="phone" value="${esc(c.phone ? phoneFmt(c.phone) : '')}" placeholder="(11) 99999-9999"></div>
+          <div class="field"><label>E-mail</label><input name="email" type="email" value="${esc(c.email)}"></div>
+          <div class="field"><label>CPF / CNPJ</label><input name="document" value="${esc(c.document)}"></div>
+          <div class="field"><label>Empresa do cliente</label><input name="business_name" value="${esc(c.business_name)}"></div>`;
+        // Cliente novo: só o essencial à vista; o resto fica em "Mais informações".
+        if (asClient) {
+          return `<input type="hidden" name="stage" value="ganho"><div class="fields">${basic}</div>
+            <details style="margin:4px 0 12px"><summary class="small" style="cursor:pointer">Mais informações (origem, interesse, tags, observações)</summary>
+              <div style="margin-top:10px"><div class="fields">${origin}</div>${extra}</div></details>`;
+        }
+        return `<div class="fields">${basic}
+          <div class="field"><label>Valor estimado (R$)</label><input name="value" value="${c.value_cents ? reais(c.value_cents) : ''}" inputmode="decimal"></div>
+          <div class="field"><label>Etapa</label><select name="stage">${state.meta.stages.map((s) => `<option value="${s.id}" ${s.id === (c.stage || 'novo') ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
+          ${origin}</div>${extra}`;
+      })()}
       <div class="modal-foot"><button type="button" data-close>Cancelar</button><button class="primary">Salvar</button></div>
     </form>`);
   $('#contact-form', box).onsubmit = async (e) => {
@@ -766,16 +817,17 @@ async function renderClients(el, [tab = 'lista']) {
   const summary = canContracts() ? await api('/api/clients/summary') : null;
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>Clientes</h1><p class="muted">Quem já fechou com você, os contratos e os documentos de cada um</p></div>
+      <div><h1>Clientes</h1><p class="muted">Quem já fechou com você. Quem ainda está negociando fica no <a href="#/crm">CRM / Funil</a>.</p></div>
       <span class="spacer"></span>
-      ${canContracts() ? '<button id="new-contract">+ Novo contrato</button>' : ''}
-      <button class="primary" id="new-doc">Anexar documento</button>
+      <button id="new-doc">Anexar documento</button>
+      ${canContracts() ? '<button id="new-contract">+ Contrato</button>' : ''}
+      <button class="primary" id="new-client">+ Novo cliente</button>
     </div>
     ${summary ? `<div class="grid kpis" style="margin-bottom:14px">
       <div class="card kpi"><div class="label">Clientes</div><div class="value">${summary.clients}</div></div>
       <div class="card kpi"><div class="label">Contratos ativos</div><div class="value">${summary.active}</div></div>
       <div class="card kpi"><div class="label">Vencendo</div><div class="value">${summary.expiring}</div><div class="sub">dentro do prazo de aviso</div></div>
-      <div class="card kpi bad"><div class="label">Vencidos</div><div class="value">${summary.expired}</div></div>
+      <div class="card kpi ${summary.expired ? 'bad' : ''}"><div class="label">Vencidos</div><div class="value">${summary.expired}</div></div>
       ${summary.monthly_recurring_cents !== null ? `<div class="card kpi good"><div class="label">Recorrente / mês</div><div class="value">${money(summary.monthly_recurring_cents)}</div></div>` : ''}
     </div>` : ''}
     <div class="card">
@@ -783,6 +835,7 @@ async function renderClients(el, [tab = 'lista']) {
       <div id="clients-body"></div>
     </div>`;
   $('#new-contract')?.addEventListener('click', () => contractForm({}, route));
+  $('#new-client').onclick = () => contactForm(null, (saved) => { route(); if (saved?.id) openContact(saved.id, route); }, { asClient: true });
   $('#new-doc').onclick = () => uploadForm({}, route);
   const body = $('#clients-body');
   if (tab === 'contratos') return renderContractsTab(body);
@@ -806,7 +859,9 @@ async function renderClientsTab(body) {
         <td>${c.documents || '<span class="muted">0</span>'}</td>
         <td class="small">${esc(c.assigned_name || '-')}</td>
         <td class="small nowrap">${c.won_at ? fmt(c.won_at, { dateStyle: 'short' }) : '-'}</td></tr>`).join('')}
-    </table></div>` : `<div class="empty">${q ? 'Nenhum cliente encontrado.' : 'Nenhum cliente ainda. Marque um lead como "Ganho" no CRM ou cadastre um contrato.'}</div>`;
+    </table></div>` : q ? '<div class="empty">Nenhum cliente encontrado.</div>'
+      : '<div class="empty">Nenhum cliente ainda.<br><button class="primary" id="empty-new-client" style="margin-top:12px">+ Cadastrar o primeiro cliente</button><div class="small muted" style="margin-top:8px">Quem você marcar como "Ganho" no CRM também aparece aqui.</div></div>';
+    $('#empty-new-client', box)?.addEventListener('click', () => $('#new-client')?.click());
     $$('tr[data-id]', box).forEach((tr) => { tr.onclick = () => openContact(Number(tr.dataset.id), draw); });
   };
   $('#cl-q').oninput = () => draw().catch(() => {});
@@ -1667,7 +1722,7 @@ async function renderBilling(el) {
     </div>
     <div class="grid kpis">
       <div class="card kpi"><div class="label">Pendente</div><div class="value">${money(sum('pendente'))}</div></div>
-      <div class="card kpi bad"><div class="label">Vencido</div><div class="value">${money(sum('vencido'))}</div></div>
+      <div class="card kpi ${sum('vencido') ? 'bad' : ''}"><div class="label">Vencido</div><div class="value">${money(sum('vencido'))}</div></div>
       <div class="card kpi good"><div class="label">Recebido (total)</div><div class="value">${money(sum('pago'))}</div></div>
     </div>
     <div class="card" style="margin-top:14px">

@@ -17,6 +17,7 @@ import { PRESETS } from '../services/presets.js';
 import { sendMessage, handleInbound } from '../services/messaging.js';
 import { replyNow } from '../services/ai.js';
 import { assignContact, assignableUsers, userNames, releaseAssignments } from '../services/assignment.js';
+import { onboarding, markOnboarding } from '../services/onboarding.js';
 import {
   PERIODS, listContracts, getContract, createContract, updateContract, renewContract, closeContract, deleteContract, listClients, contractsSummary,
 } from '../services/contracts.js';
@@ -138,6 +139,7 @@ export function registerApi(router) {
       ai_configured: Boolean(anthropicKeyFor(company)),
       ai_key_source: aiKeySource(company),
       ai_locked: !aiAllowed(company),
+      onboarding: req.user.role === 'owner' ? onboarding(company.id) : null,
       subscription: { method: company.billing_method, paid_until: company.paid_until, ...subscriptionState(company) },
       team: assignableUsers(company.id),
       contract_periods: PERIODS,
@@ -165,8 +167,15 @@ export function registerApi(router) {
       try { new Intl.DateTimeFormat('pt-BR', { timeZone: body.timezone }); } catch { throw new HttpError(400, 'Fuso horário inválido'); }
       main.run('UPDATE companies SET timezone = ? WHERE id = ?', body.timezone, req.companyId);
     }
-    const c = body.settings ? saveSettings(req.companyId, body.settings) : getCompany(req.companyId);
+    let c = body.settings ? saveSettings(req.companyId, body.settings) : getCompany(req.companyId);
+    // Salvou os horários: o passo "Defina seus horários" dos Primeiros passos está feito.
+    if (body.settings?.business_hours) c = markOnboarding(req.companyId, { hours: true });
     return { name: c.name, timezone: c.timezone, settings: maskSettings(c.settings) };
+  });
+  router.get('/api/onboarding', auth, ownerOnly, (req) => onboarding(req.companyId));
+  router.post('/api/onboarding/dismiss', auth, ownerOnly, (req, res, { body }) => {
+    markOnboarding(req.companyId, { dismissed: body.dismissed !== false });
+    return onboarding(req.companyId);
   });
 
   // ---- CRM -------------------------------------------------------------------
