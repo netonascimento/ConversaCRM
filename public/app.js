@@ -121,6 +121,23 @@ const aiLocked = () => Boolean(state.meta?.ai_locked);
 const lockBtn = (label = 'Desbloquear IA') => `<a class="btn sm" href="#/assinar" title="A IA faz parte dos planos pagos">🔒 ${esc(label)}</a>`;
 const lockCard = (what) => `<div class="banner">🔒 <strong>${esc(what)}</strong> faz parte dos planos pagos. No teste grátis você usa o atendimento manual, o CRM, a agenda e o resto do sistema. <a href="#/assinar">Desbloquear a IA</a></div>`;
 const AUTHOR_LABEL = { ai: '🤖 IA', human: '👤 Equipe', followup: '🔁 Follow-up', billing: '💰 Cobrança', system: '⏰ Lembrete', contact: '' };
+// Mídias recebidas no WhatsApp (os mesmos textos do servidor, em src/services/media.js).
+const MEDIA_LABEL = { image: '📷 Foto', audio: '🎤 Áudio', video: '🎬 Vídeo', document: '📄 Documento', sticker: '🖼️ Figurinha' };
+const mediaDefault = (m) => (m.media_type === 'document' && m.media_name ? `📄 ${m.media_name}` : MEDIA_LABEL[m.media_type]);
+const sizeFmt = (b) => (b >= 1024 * 1024 ? `${(b / 1024 / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB` : `${Math.max(1, Math.round(b / 1024))} KB`);
+// Sem quebras de linha: o balão da conversa preserva os espaços do texto.
+function mediaHtml(m) {
+  if (!m.media_type) return '';
+  const label = mediaDefault(m);
+  const url = `/api/messages/${m.id}/media`;
+  if (m.media_status === 'pending') return `<div class="media-note">⏳ Baixando ${esc(label)}…</div>`;
+  if (m.media_status === 'too_big') return `<div class="media-note">${esc(label)} grande demais para guardar aqui${m.media_size ? ` (${sizeFmt(m.media_size)})` : ''}. Veja no celular.</div>`;
+  if (m.media_status !== 'ok') return `<div class="media-note">${esc(label)} · não foi possível baixar. <button type="button" class="sm" data-media-retry="${m.id}">Tentar baixar</button></div>`;
+  if (m.media_type === 'image' || m.media_type === 'sticker') return `<a href="${url}" target="_blank" rel="noopener" title="Abrir em tamanho grande"><img class="media-img${m.media_type === 'sticker' ? ' sticker' : ''}" src="${url}" alt="${esc(label)}" loading="lazy"></a>`;
+  if (m.media_type === 'audio') return `<audio class="media-player" controls preload="metadata" src="${url}"></audio><a class="small" href="${url}" download>Baixar áudio</a>`;
+  if (m.media_type === 'video') return `<video class="media-player video" controls preload="metadata" src="${url}"></video>`;
+  return `<a class="btn sm media-doc" href="${url}" download>📄 ${esc(m.media_name || 'Documento')}${m.media_size ? ` · ${sizeFmt(m.media_size)}` : ''}</a>`;
+}
 
 // ---------------------------------------------------------------------------
 // Autenticação
@@ -492,7 +509,9 @@ async function renderInbox(el, [selected]) {
   }
 
   function bubble(m) {
-    return `<div class="bubble ${m.direction} ${m.status === 'failed' ? 'failed' : ''}">${esc(m.body)}
+    // Mídia sem legenda: o texto padrão ("📷 Foto") não se repete embaixo da foto.
+    const text = m.media_type && m.body === mediaDefault(m) ? '' : esc(m.body);
+    return `<div class="bubble ${m.direction} ${m.status === 'failed' ? 'failed' : ''}" data-mid="${m.id}"${m.media_status === 'pending' ? ' data-pending="1"' : ''}>${mediaHtml(m)}${text}
       <div class="meta">${numbers ? `📱 ${esc(numLabel(m.channel_id))} · ` : ''}${m.direction === 'out' ? `${m.author === 'human' && m.user_name ? `👤 ${esc(m.user_name)}` : AUTHOR_LABEL[m.author] || ''} · ` : ''}${fmt(m.created_at, { hour: '2-digit', minute: '2-digit' })}${m.status === 'failed' ? ` · ❌ ${esc(m.error || 'falhou')}` : ''}</div></div>`;
   }
 
@@ -522,6 +541,16 @@ async function renderInbox(el, [selected]) {
       </form>`;
     const msgs = $('#msgs');
     msgs.scrollTop = msgs.scrollHeight;
+    msgs.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-media-retry]');
+      if (!b) return;
+      b.disabled = true; b.textContent = 'Baixando…';
+      try {
+        const m = await api(`/api/messages/${b.dataset.mediaRetry}/media/retry`, { method: 'POST' });
+        b.closest('.bubble').outerHTML = bubble(m);
+        if (m.media_status !== 'ok') toast('O WhatsApp não entregou o arquivo. Ele pode ter expirado; veja no celular.', 'error');
+      } catch (err) { fail(err); b.disabled = false; b.textContent = 'Tentar baixar'; }
+    });
     $('#back').onclick = () => { location.hash = '#/inbox'; };
     $('#open-contact').onclick = () => openContact(contact.id);
     const assign = async (userId) => {
@@ -573,11 +602,21 @@ async function renderInbox(el, [selected]) {
   async function poll() {
     if (!current || !$('#msgs')) return;
     const { messages } = await api(`/api/conversations/${current}/messages?after=${lastId}`);
-    if (!messages.length) return;
-    lastId = messages.at(-1).id;
     const msgs = $('#msgs');
-    msgs.insertAdjacentHTML('beforeend', messages.map(bubble).join(''));
-    msgs.scrollTop = msgs.scrollHeight;
+    if (!msgs) return;
+    if (messages.length) {
+      lastId = messages.at(-1).id;
+      msgs.insertAdjacentHTML('beforeend', messages.map(bubble).join(''));
+      msgs.scrollTop = msgs.scrollHeight;
+    }
+    // Mídias que estavam baixando: troca o "Baixando…" pela foto, áudio ou documento.
+    const pending = $$('[data-pending]', msgs).map((b) => b.dataset.mid);
+    if (!pending.length) return;
+    const { messages: done } = await api(`/api/conversations/${current}/messages?ids=${pending.join(',')}`);
+    for (const m of done) {
+      const el = msgs.querySelector(`[data-mid="${m.id}"]`);
+      if (el && m.media_status !== 'pending') el.outerHTML = bubble(m);
+    }
   }
 
   $('#conv-q').oninput = () => loadConvs().catch(() => {});

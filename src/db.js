@@ -278,6 +278,13 @@ CREATE TABLE IF NOT EXISTS document_files (
   document_id INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
   data BLOB NOT NULL
 );
+-- Fotos, áudios, vídeos e documentos recebidos no WhatsApp (o arquivo fica fora de messages, para
+-- listar conversas sem carregar os arquivos).
+CREATE TABLE IF NOT EXISTS message_media (
+  message_id INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+  company_id INTEGER NOT NULL,
+  data BLOB NOT NULL
+);
 -- Números de WhatsApp extras da empresa (o número principal continua em companies.settings.whatsapp).
 CREATE TABLE IF NOT EXISTS whatsapp_numbers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -353,6 +360,11 @@ const COLUMNS = [
   ['messages', 'user_name', 'TEXT'],
   ['messages', 'cold', 'INTEGER NOT NULL DEFAULT 0'],
   ['messages', 'channel_id', 'INTEGER'],
+  ['messages', 'media_type', 'TEXT'],
+  ['messages', 'media_status', 'TEXT'],
+  ['messages', 'media_mime', 'TEXT'],
+  ['messages', 'media_name', 'TEXT'],
+  ['messages', 'media_size', 'INTEGER'],
   ['users', 'active', 'INTEGER NOT NULL DEFAULT 1'],
   ['users', 'professional_id', 'INTEGER'],
   ['users', 'last_login_at', 'TEXT'],

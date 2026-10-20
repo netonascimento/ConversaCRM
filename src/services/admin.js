@@ -8,7 +8,7 @@ import { zonedParts } from './time.js';
 
 // Tabelas com dados de cada empresa, na ordem em que podem ser copiadas (respeita as referências).
 export const TENANT_TABLES = [
-  'products', 'professionals', 'professional_services', 'contacts', 'activities', 'appointments', 'messages',
+  'products', 'professionals', 'professional_services', 'contacts', 'activities', 'appointments', 'messages', 'message_media',
   'sequences', 'enrollments', 'charges', 'tasks', 'prospect_searches', 'prospects', 'google_connections',
   'contracts', 'documents', 'document_files',
 ];
@@ -139,6 +139,7 @@ export function exportCompany(companyId) {
   data.google_connections = data.google_connections.map(({ refresh_token: r, access_token: a, ...rest }) => rest);
   // Arquivos dos documentos vão em base64, para a exportação ser um JSON válido e completo.
   data.document_files = data.document_files.map((f) => ({ document_id: f.document_id, data_base64: Buffer.from(f.data).toString('base64') }));
+  data.message_media = data.message_media.map((f) => ({ message_id: f.message_id, data_base64: Buffer.from(f.data).toString('base64') }));
   const { settings, ...info } = company;
   return {
     exported_at: new Date().toISOString(),

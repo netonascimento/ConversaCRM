@@ -1141,3 +1141,113 @@ test('vários números de WhatsApp: limite por plano, resposta pelo número da c
     config.evolutionApiKey = '';
   }
 });
+
+test('mídias do WhatsApp: foto, áudio e documento aparecem na conversa; grande demais, falha e mensagens antigas', async () => {
+  const { config } = await import('../src/config.js');
+  const { setEvolutionFetch } = await import('../src/services/whatsapp-connect.js');
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
+  const asked = [];
+  let mediaFails = false;
+  setEvolutionFetch(async (url, init = {}) => {
+    const path = new URL(url).pathname;
+    if (path.startsWith('/chat/getBase64FromMediaMessage/')) {
+      const req = JSON.parse(init.body);
+      asked.push(req.message.key.id);
+      if (mediaFails) return { ok: false, status: 400, json: async () => ({ response: { message: ['mídia expirada'] } }) };
+      const kind = req.message.message?.audioMessage ? { mimetype: 'audio/ogg; codecs=opus' } : req.message.message?.documentWithCaptionMessage ? { mimetype: 'application/pdf' } : { mimetype: 'image/png' };
+      return { ok: true, status: 200, json: async () => ({ base64: PNG.toString('base64'), ...kind }) };
+    }
+    const data = path === '/instance/create' ? { hash: 'tok-media' } : path.startsWith('/instance/connectionState') ? { instance: { state: 'open' } }
+      : path.startsWith('/instance/connect') ? { base64: 'QR' } : { ok: true };
+    return { ok: true, status: 200, json: async () => data };
+  });
+  config.evolutionUrl = 'https://evo.conversacrm.test';
+  config.evolutionApiKey = 'chave-global';
+  try {
+    resetLoginAttempts();
+    const u = browser();
+    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Foto Ltda', name: 'Fá', email: 'fa@foto.com', password: 'senhaforte1' } });
+    await u('/api/whatsapp/connect', { method: 'POST' });
+    const hook = new URL((await u('/api/meta')).data.webhooks.evolution);
+    const post = (data) => fetch(base + hook.pathname + hook.search, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'messages.upsert', data }) });
+    await post({ key: { remoteJid: '5511966660000@s.whatsapp.net', fromMe: false, id: 'state' }, message: {} });
+    await fetch(base + hook.pathname + hook.search, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'connection.update', data: { state: 'open' } }) });
+    const key = (id) => ({ remoteJid: '5511966660001@s.whatsapp.net', fromMe: false, id });
+    await post({ key: key('img1'), pushName: 'Cliente Foto', message: { imageMessage: { mimetype: 'image/jpeg', caption: 'Segue o comprovante', fileLength: '68' }, messageContextInfo: {} } });
+    await post({ key: key('aud1'), message: { audioMessage: { mimetype: 'audio/ogg; codecs=opus', fileLength: { low: 5000, high: 0 } } } });
+    await post({ key: key('doc1'), message: { documentWithCaptionMessage: { message: { documentMessage: { mimetype: 'application/pdf', fileName: 'contrato.pdf', fileLength: 2048 } } } } });
+    await post({ key: key('vid1'), message: { videoMessage: { mimetype: 'video/mp4', fileLength: String(50 * 1024 * 1024) } } });
+    await post({ key: key('reac1'), message: { reactionMessage: { text: '👍' } } });
+    await post({ key: key('loc1'), message: { locationMessage: { degreesLatitude: -23.5 } } });
+
+    const conv = (await u('/api/conversations')).data.find((c) => c.phone === '5511966660001');
+    let msgs = [];
+    for (let i = 0; i < 50; i++) {
+      msgs = (await u(`/api/conversations/${conv.id}/messages`)).data.messages;
+      if (!msgs.some((m) => m.media_status === 'pending')) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    const by = (pid) => msgs.find((m) => m.provider_id === pid);
+    assert.equal(msgs.length, 5, 'a reação não vira mensagem');
+    assert.deepEqual([by('img1').body, by('img1').media_type, by('img1').media_status], ['Segue o comprovante', 'image', 'ok']);
+    assert.deepEqual([by('aud1').body, by('aud1').media_status], ['🎤 Áudio', 'ok']);
+    assert.deepEqual([by('doc1').body, by('doc1').media_name, by('doc1').media_status], ['📄 contrato.pdf', 'contrato.pdf', 'ok']);
+    assert.equal(by('vid1').media_status, 'too_big');
+    assert.ok(!asked.includes('vid1'), 'vídeo grande demais nem é baixado');
+    assert.equal(by('loc1').body, '📍 Localização');
+
+    // O arquivo abre para a equipe, com o tipo certo; documento é sempre baixado.
+    const cookie = async () => {
+      const r = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'fa@foto.com', password: 'senhaforte1' }) });
+      return r.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+    };
+    const ck = await cookie();
+    const img = await fetch(`${base}/api/messages/${by('img1').id}/media`, { headers: { cookie: ck } });
+    assert.equal(img.status, 200);
+    assert.equal(img.headers.get('content-type'), 'image/png');
+    assert.match(img.headers.get('content-disposition'), /^inline/);
+    assert.deepEqual(Buffer.from(await img.arrayBuffer()), PNG);
+    const doc = await fetch(`${base}/api/messages/${by('doc1').id}/media`, { headers: { cookie: ck } });
+    assert.match(doc.headers.get('content-disposition'), /^attachment; filename\*=UTF-8''contrato\.pdf/);
+    assert.equal((await fetch(`${base}/api/messages/${by('img1').id}/media`)).status, 401);
+
+    // Outra empresa não abre o arquivo desta.
+    const other = browser();
+    await other('/api/auth/register', { method: 'POST', body: { companyName: 'Outra Foto', name: 'Ou', email: 'ou@foto.com', password: 'senhaforte1' } });
+    assert.equal((await other(`/api/messages/${by('img1').id}/media`)).status, 404);
+    assert.equal((await other(`/api/messages/${by('img1').id}/media/retry`, { method: 'POST' })).status, 404);
+
+    // Falhou ao baixar: fica "não foi possível baixar" e dá para tentar de novo.
+    mediaFails = true;
+    await post({ key: key('img2'), message: { imageMessage: { mimetype: 'image/jpeg' } } });
+    let failed;
+    for (let i = 0; i < 50; i++) {
+      failed = (await u(`/api/conversations/${conv.id}/messages`)).data.messages.find((m) => m.provider_id === 'img2');
+      if (failed?.media_status !== 'pending') break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    assert.deepEqual([failed.body, failed.media_status], ['📷 Foto', 'failed']);
+    mediaFails = false;
+    assert.equal((await u(`/api/messages/${failed.id}/media/retry`, { method: 'POST' })).data.media_status, 'ok');
+
+    // Mensagem antiga ("[imageMessage recebido]"): aparece como foto para baixar e converte ao tentar.
+    const { id: companyId } = (await u('/api/auth/me')).data.company;
+    mainDb.prepare("INSERT INTO messages (company_id, contact_id, direction, author, body, status, provider_id) VALUES (?, ?, 'in', 'contact', '[imageMessage recebido]', 'received', 'old1')").run(companyId, conv.id);
+    mainDb.prepare("INSERT INTO messages (company_id, contact_id, direction, author, body, status, provider_id) VALUES (?, ?, 'in', 'contact', '[contactMessage recebido]', 'received', 'old2')").run(companyId, conv.id);
+    const list = (await u(`/api/conversations/${conv.id}/messages`)).data.messages;
+    const old = list.find((m) => m.provider_id === 'old1');
+    assert.deepEqual([old.body, old.media_type, old.media_status], ['📷 Foto', 'image', 'failed']);
+    assert.equal(list.find((m) => m.provider_id === 'old2').body, '👤 Contato');
+    assert.equal((await u('/api/conversations')).data.find((c) => c.id === conv.id).last_body, '👤 Contato');
+    const fixed = (await u(`/api/messages/${old.id}/media/retry`, { method: 'POST' })).data;
+    assert.deepEqual([fixed.body, fixed.media_status], ['📷 Foto', 'ok']);
+    assert.ok(asked.includes('old1'));
+
+    // Exclusão do contato leva os arquivos junto.
+    await u(`/api/contacts/${conv.id}`, { method: 'DELETE' });
+    assert.equal(mainDb.prepare('SELECT COUNT(*) AS n FROM message_media WHERE company_id = ?').get(companyId).n, 0);
+  } finally {
+    config.evolutionUrl = '';
+    config.evolutionApiKey = '';
+  }
+});

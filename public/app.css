@@ -133,6 +133,14 @@ td > button + button, td > .btn + .btn, td > button + .btn, td > .btn + button {
 .bubble.out { background: #e2efe4; margin-left: auto; border-top-right-radius: 4px; border-color: color-mix(in srgb, var(--green-600) 14%, transparent); }
 .bubble .meta { font-size: var(--fs-11); color: var(--muted); text-align: right; margin-top: 3px; font-variant-numeric: tabular-nums; }
 .bubble.failed { border-color: var(--danger); background: var(--danger-soft); }
+/* Mídias recebidas no WhatsApp */
+.bubble .media-img { display: block; max-width: min(280px, 100%); max-height: 320px; border-radius: var(--r-sm); margin: 2px 0 var(--s-1); background: var(--line-2); }
+.bubble .media-img.sticker { max-width: 140px; background: transparent; }
+.bubble .media-player { display: block; width: min(280px, 100%); margin: 2px 0 var(--s-1); }
+.bubble .media-player.video { max-height: 320px; border-radius: var(--r-sm); background: var(--line-2); }
+.bubble .media-doc { margin: 2px 0 var(--s-1); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bubble .media-note { color: var(--muted); font-size: var(--fs-13); margin-bottom: var(--s-1); }
+.bubble .media-note button { margin-left: var(--s-1); }
 .chat-input { display: flex; gap: var(--s-2); padding: var(--s-3); border-top: 1px solid var(--line); background: var(--surface); align-items: flex-end; }
 .chat-input textarea { min-height: var(--control-h); height: var(--control-h); resize: none; }
 .chat-input button { flex: none; }

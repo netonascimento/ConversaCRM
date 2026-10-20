@@ -32,6 +32,7 @@ import {
 import { TRIGGERS, listSequences, parseSequence, enroll } from '../services/followup.js';
 import { listCharges, createCharge, markPaid, cancelCharge, getCharge, chargeMessage } from '../services/billing.js';
 import { searchPlaces, listSearches, getSearch, importProspects, searchQuota } from '../services/prospecting.js';
+import { presentMessage, friendlyBody, retryMedia, mediaFile } from '../services/media.js';
 import { getDashboard, getMetrics } from '../services/dashboard.js';
 import { generateInsights } from '../services/ai.js';
 import { tick } from '../services/scheduler.js';
@@ -441,17 +442,41 @@ export function registerApi(router) {
               m.author AS last_author, m.created_at AS last_at, ${lastChannel} AS channel_id
        FROM contacts c JOIN messages m ON m.id = (SELECT MAX(id) FROM messages WHERE contact_id = c.id)
        WHERE ${where.join(' AND ')} ORDER BY m.id DESC LIMIT 200`, ...params,
-    ).filter((c) => visible(req, c.id)).map((c) => ({ ...c, assigned_name: names[c.assigned_user_id] || null }));
+    ).filter((c) => visible(req, c.id)).map((c) => ({ ...c, last_body: friendlyBody(c.last_body), assigned_name: names[c.assigned_user_id] || null }));
   });
   router.get('/api/conversations/:id/messages', auth, contactGuard, (req, res, { params, query }) => {
     const contact = need(getContact(req.companyId, params.id), 'Contato');
+    // ?ids=1,2: só estas mensagens (a tela acompanha as mídias que ainda estão baixando).
+    if (query.ids) {
+      const ids = String(query.ids).split(',').map(Number).filter(Boolean).slice(0, 50);
+      return { messages: ids.length ? all(`SELECT * FROM messages WHERE contact_id = ? AND id IN (${ids.map(() => '?').join(',')})`, contact.id, ...ids).map(presentMessage) : [] };
+    }
     run('UPDATE contacts SET unread = 0 WHERE id = ?', contact.id);
     const after = int(query.after) || 0;
     return {
       contact: { ...contact, assigned_name: userNames(req.companyId)[contact.assigned_user_id] || null },
-      messages: all('SELECT * FROM messages WHERE contact_id = ? AND id > ? ORDER BY id DESC LIMIT 300', contact.id, after).reverse(),
+      messages: all('SELECT * FROM messages WHERE contact_id = ? AND id > ? ORDER BY id DESC LIMIT 300', contact.id, after).reverse().map(presentMessage),
     };
   });
+  // Foto, áudio, vídeo ou documento recebido: só para quem pode ver a conversa.
+  const messageGuard = (req, res, { params }) => {
+    const m = get('SELECT contact_id FROM messages WHERE id = ? AND company_id = ?', Number(params.id), req.companyId);
+    if (!m || !visible(req, m.contact_id)) throw new HttpError(404, 'Mensagem não encontrada');
+  };
+  router.get('/api/messages/:id/media', auth, messageGuard, (req, res, { params }) => {
+    const file = need(mediaFile(req.companyId, Number(params.id)), 'Arquivo');
+    res.writeHead(200, {
+      'Content-Type': file.mime,
+      'Content-Length': file.data.length,
+      'Content-Disposition': `${file.inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+      'Cache-Control': 'private, max-age=86400',
+    });
+    res.end(file.data);
+  });
+  router.post('/api/messages/:id/media/retry', auth, messageGuard, async (req, res, { params }) => presentMessage(need(await retryMedia(req.companyId, Number(params.id)), 'Mensagem')));
+
   router.post('/api/conversations/:id/messages', auth, contactGuard, async (req, res, { params, body }) => {
     need(getContact(req.companyId, params.id), 'Contato');
     if (!body.body?.trim()) throw new HttpError(400, 'Mensagem vazia');

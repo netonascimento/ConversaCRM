@@ -8,6 +8,7 @@ import { autoAssign } from './assignment.js';
 import { evolutionFetch, channelConfig } from './whatsapp-connect.js';
 import { config } from '../config.js';
 import { todayIn, zonedToUtc } from './time.js';
+import { readEvolutionMessage, mediaLabel, MAX_MEDIA_BYTES } from './media.js';
 
 // Pelo QR Code (conexão não oficial), mandar muitas primeiras mensagens para quem nunca falou
 // com a empresa pode bloquear o número. Limite por dia, no fuso da empresa.
@@ -128,7 +129,7 @@ export async function sendMessage(companyId, contactId, body, author = 'human', 
  * Processa uma mensagem recebida de um cliente (de qualquer provedor ou do simulador).
  * Retorna null se for duplicada.
  */
-export function handleInbound(companyId, { phone, name, text, providerId = null }, { autoReply = true, channelId = null } = {}) {
+export function handleInbound(companyId, { phone, name, text, providerId = null, media = null }, { autoReply = true, channelId = null } = {}) {
   if (!text || !phone) return null;
   let found;
   try {
@@ -142,10 +143,13 @@ export function handleInbound(companyId, { phone, name, text, providerId = null 
     throw err;
   }
   const { contact, created } = found;
+  // Mídia: a mensagem entra já, e o arquivo é baixado depois (media_status 'pending').
+  const mediaStatus = media ? (media.size > MAX_MEDIA_BYTES ? 'too_big' : 'pending') : null;
   const r = run(
-    `INSERT OR IGNORE INTO messages (company_id, contact_id, direction, author, body, status, provider_id, channel_id)
-     VALUES (?, ?, 'in', 'contact', ?, 'received', ?, ?)`,
+    `INSERT OR IGNORE INTO messages (company_id, contact_id, direction, author, body, status, provider_id, channel_id, media_type, media_status, media_mime, media_name, media_size)
+     VALUES (?, ?, 'in', 'contact', ?, 'received', ?, ?, ?, ?, ?, ?, ?)`,
     companyId, contact.id, text, providerId, channelId,
+    media?.type || null, mediaStatus, media?.mime || null, media?.name || null, media?.size || null,
   );
   if (!r.changes) return null;
   run('UPDATE contacts SET last_inbound_at = ?, updated_at = ?, unread = unread + 1 WHERE id = ?', now(), now(), contact.id);
@@ -156,7 +160,7 @@ export function handleInbound(companyId, { phone, name, text, providerId = null 
   if (autoReply && aiAllowed(company) && company.settings.ai.enabled && contact.ai_enabled) scheduleAiReply(companyId, contact.id);
   // Sem IA nesta conversa, ela é da equipe: entra no rodízio de atendentes (se ligado).
   else autoAssign(companyId, contact.id);
-  return { contact: getContact(companyId, contact.id), created, messageId: r.id };
+  return { contact: getContact(companyId, contact.id), created, messageId: r.id, mediaPending: mediaStatus === 'pending' };
 }
 
 // ---- Parsers de webhook ------------------------------------------------------
@@ -169,7 +173,9 @@ export function parseMetaWebhook(body) {
       const names = Object.fromEntries((value.contacts || []).map((c) => [c.wa_id, c.profile?.name]));
       for (const m of value.messages || []) {
         let text = m.text?.body || m.button?.text || m.interactive?.button_reply?.title || m.interactive?.list_reply?.title;
-        if (!text && m.type !== 'text') text = `[${m.type} recebido]`;
+        if (m.type === 'reaction') continue;
+        // Mídia pela API oficial: por enquanto só o texto amigável (com a legenda, se houver).
+        if (!text && m.type !== 'text') text = m[m.type]?.caption || mediaLabel(m.type, m.document?.filename);
         out.push({ phone: m.from, name: names[m.from] || '', text, providerId: m.id });
       }
     }
@@ -195,10 +201,10 @@ export function parseEvolutionWebhook(body) {
     if (!d?.key || d.key.fromMe) continue;
     const jid = d.key.remoteJid || '';
     if (jid.endsWith('@g.us')) continue; // ignora grupos
-    const msg = d.message || {};
-    const text = msg.conversation || msg.extendedTextMessage?.text || msg.imageMessage?.caption
-      || (Object.keys(msg)[0] ? `[${Object.keys(msg)[0]} recebido]` : null);
-    out.push({ phone: jid.split('@')[0], name: d.pushName || '', text, providerId: d.key.id });
+    const content = readEvolutionMessage(d.message);
+    if (!content) continue; // reação, mensagem apagada e avisos internos não são conversa
+    // raw vai junto para baixar o arquivo sem depender do histórico do servidor do WhatsApp.
+    out.push({ phone: jid.split('@')[0], name: d.pushName || '', text: content.text, providerId: d.key.id, ...(content.media ? { media: content.media, raw: { key: d.key, message: d.message } } : {}) });
   }
   return out;
 }

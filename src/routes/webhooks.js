@@ -4,6 +4,7 @@ import { HttpError } from '../http.js';
 import { getCompany } from '../services/company.js';
 import { handleInbound, parseMetaWebhook, verifyMetaSignature, parseEvolutionWebhook } from '../services/messaging.js';
 import { applyState, getNumber } from '../services/whatsapp-connect.js';
+import { downloadMedia } from '../services/media.js';
 import { markPaid, fetchMercadoPagoPayment } from '../services/billing.js';
 import { config } from '../config.js';
 import { verifyStripeSignature, handleStripeEvent } from '../services/stripe.js';
@@ -74,7 +75,15 @@ export function registerWebhooks(router) {
     // Conectou ou desconectou o celular (QR Code gerenciado pelo Conversa CRM).
     const event = String(body?.event || '').toLowerCase().replace('_', '.');
     if (event === 'connection.update' && body.data?.state) applyState(company.id, body.data.state, channelId);
-    if (active(company)) withCompanyDb(company.id, () => { for (const msg of parseEvolutionWebhook(body)) handleInbound(company.id, msg, { channelId }); });
+    if (active(company)) {
+      withCompanyDb(company.id, () => {
+        for (const msg of parseEvolutionWebhook(body)) {
+          const saved = handleInbound(company.id, msg, { channelId });
+          // Foto, áudio, vídeo ou documento: baixa em seguida, sem segurar a resposta ao servidor do WhatsApp.
+          if (saved?.mediaPending) downloadMedia(company.id, saved.messageId, msg.raw).catch(() => {});
+        }
+      });
+    }
     return { ok: true };
   });
 
