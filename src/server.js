@@ -5,7 +5,7 @@ import { Router, HttpError, send, readBody, serveStatic } from './http.js';
 import { registerApi } from './routes/api.js';
 import { registerWebhooks } from './routes/webhooks.js';
 import { registerAdmin, ensureAdminFromEnv } from './routes/admin.js';
-import { withCompanyDb } from './db.js';
+import { withCompanyDb, closeAllDatabases } from './db.js';
 import { startScheduler } from './services/scheduler.js';
 import { managedEnabled } from './services/whatsapp-connect.js';
 import { stripeMode } from './services/stripe.js';
@@ -67,8 +67,22 @@ export function createServer() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.join(ROOT, 'src', 'server.js')) {
   ensureAdminFromEnv();
-  createServer().listen(config.port, () => {
+  const server = createServer().listen(config.port, () => {
     console.log(`Conversa CRM rodando em ${config.publicUrl} (porta ${config.port})`);
     if (!config.disableScheduler) startScheduler(config.schedulerIntervalMs);
   });
+  // Troca de versão (o Railway manda SIGTERM): para de aceitar conexões, termina as que estão em
+  // andamento, fecha o banco direito e sai sem erro. Se demorar, sai assim mesmo.
+  let stopping = false;
+  const shutdown = (signal) => {
+    if (stopping) return;
+    stopping = true;
+    console.log(`[servidor] ${signal} recebido: desligando para a troca de versão`);
+    const finish = () => { closeAllDatabases(); process.exit(0); };
+    server.close(finish);
+    server.closeIdleConnections?.();
+    setTimeout(finish, 8000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }

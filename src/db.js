@@ -413,6 +413,12 @@ export function tenantDb(publicId) {
   return tenantDbs.get(publicId);
 }
 
+/** Fecha todos os bancos (desligamento do servidor): grava o que está no WAL antes de sair. */
+export function closeAllDatabases() {
+  for (const [id, db] of tenantDbs) { try { db.close(); } catch { /* já fechado */ } tenantDbs.delete(id); }
+  try { mainDb.close(); } catch { /* já fechado */ }
+}
+
 export function closeTenantDb(publicId) {
   tenantDbs.get(publicId)?.close();
   tenantDbs.delete(publicId);
