@@ -2,14 +2,26 @@ import { all, get, run } from '../db.js';
 import { getCompany, placesKeyFor } from './company.js';
 import { createContact, normalizePhone, logActivity } from './crm.js';
 import { triggerSequences, enroll } from './followup.js';
-import { maxSearches } from './plans.js';
+import { PLANS } from './plans.js';
+import { todayIn, zonedToUtc } from './time.js';
 
-/** Buscas usadas e limite do plano (null = sem limite). No teste grátis são poucas, para sempre. */
+/**
+ * Buscas no Google Maps pela chave da plataforma: teste grátis tem poucas, para sempre; planos pagos,
+ * um tanto por mês (renova no dia 1º, no fuso da empresa). Com chave própria do Google, o custo é da
+ * empresa e o plano pago não limita. null = sem limite (também para planos fora da tabela).
+ */
 export function searchQuota(company) {
-  const max = maxSearches(company);
-  if (max == null) return null;
-  return { max, used: get('SELECT COUNT(*) AS n FROM prospect_searches WHERE company_id = ?', company.id).n };
+  const plan = PLANS[company.plan];
+  if (!plan?.max_searches) return null;
+  const monthly = plan.searches_period === 'month';
+  if (monthly && company.settings.integrations.google_places_key) return null;
+  const since = monthly ? zonedToUtc(`${todayIn(company.timezone).slice(0, 8)}01`, '00:00', company.timezone).toISOString() : '';
+  const used = get('SELECT COUNT(*) AS n FROM prospect_searches WHERE company_id = ? AND created_at >= ?', company.id, since).n;
+  return { max: plan.max_searches, used, period: monthly ? 'month' : 'total' };
 }
+const quotaMessage = (company, q) => (q.period === 'month'
+  ? `Você já usou as ${q.max} buscas deste mês do plano ${PLANS[company.plan].label}. Elas renovam no dia 1º.${company.plan === 'essencial' ? ' No plano Profissional são 50 por mês.' : ''}`
+  : `Você já usou as ${q.max} buscas do teste grátis. Assine um plano para continuar prospectando.`);
 // Busca em andamento por empresa: dois cliques ao mesmo tempo não passam do limite.
 const searching = new Set();
 
@@ -26,7 +38,7 @@ export async function searchPlaces(companyId, query, { maxResults = 60 } = {}) {
   if (!key) throw new Error('Configure a chave da Google Places API em Configurações → Avançado');
   if (!query?.trim()) throw new Error('Informe o que buscar, ex.: "dentista em Campinas"');
   const quota = searchQuota(company);
-  if (quota && quota.used >= quota.max) throw new Error(`Você já usou as ${quota.max} buscas do teste grátis. Assine um plano para continuar prospectando.`);
+  if (quota && quota.used >= quota.max) throw new Error(quotaMessage(company, quota));
   if (searching.has(companyId)) throw new Error('Já tem uma busca em andamento. Aguarde terminar.');
   searching.add(companyId);
   try {

@@ -152,11 +152,13 @@ test('teste grátis: cadastro pela página inicial com limite de 30 leads', asyn
   assert.deepEqual(info.plans.map((p) => p.price_cents), [0, 10000, 24900]);
 });
 
-test('teste grátis: só 3 buscas no Google Maps, para sempre; plano pago busca à vontade', async () => {
+test('buscas no Google Maps: teste grátis 3 para sempre, Essencial 30 e Profissional 50 por mês', async () => {
   resetLoginAttempts();
   const u = browser();
   assert.equal((await u('/api/auth/register', { method: 'POST', body: { companyName: 'Busca Free', name: 'Bia', email: 'bia@free.com', password: 'senhaforte1', segment: 'loja' } })).status, 200);
-  await u('/api/settings', { method: 'PUT', body: { settings: { integrations: { google_places_key: 'chave-places-teste' } } } });
+  const { config } = await import('../src/config.js');
+  const platformKey = config.googlePlacesKey;
+  config.googlePlacesKey = 'chave-places-da-plataforma';
   const realFetch = globalThis.fetch;
   let googleCalls = 0;
   globalThis.fetch = (url, opts) => {
@@ -167,22 +169,35 @@ test('teste grátis: só 3 buscas no Google Maps, para sempre; plano pago busca 
     return realFetch(url, opts);
   };
   try {
-    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 3, used: 0 });
+    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 3, used: 0, period: 'total' });
     for (let i = 0; i < 3; i++) assert.equal((await u('/api/prospecting/search', { method: 'POST', body: { query: `pet shop ${i}` } })).status, 200);
     const blocked = await u('/api/prospecting/search', { method: 'POST', body: { query: 'pet shop 4' } });
     assert.equal(blocked.status, 400);
     assert.match(blocked.data.error, /3 buscas do teste grátis/);
     assert.equal(googleCalls, 3); // a quarta nem chega ao Google
-    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 3, used: 3 });
+    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 3, used: 3, period: 'total' });
     assert.equal((await u('/api/prospecting/searches')).data.length, 3); // as anteriores continuam abertas
 
-    // Assinou: sem limite.
+    // Assinou o Essencial: 30 por mês pela chave da plataforma (as do teste contam no mês em que foram feitas).
     const a = await adminSession();
     const company = (await a('/api/admin/companies')).data.find((c) => c.name === 'Busca Free');
     assert.equal((await a(`/api/admin/companies/${company.id}`, { method: 'PUT', body: { plan: 'essencial' } })).status, 200);
+    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 30, used: 3, period: 'month' });
+    for (let i = 3; i < 30; i++) assert.equal((await u('/api/prospecting/search', { method: 'POST', body: { query: `pet shop ${i}` } })).status, 200);
+    const monthBlocked = await u('/api/prospecting/search', { method: 'POST', body: { query: 'pet shop 31' } });
+    assert.equal(monthBlocked.status, 400);
+    assert.match(monthBlocked.data.error, /30 buscas deste mês.*renovam no dia 1º.*Profissional são 50/);
+    // Busca do mês passado não conta.
+    mainDb.prepare("UPDATE prospect_searches SET created_at = '2000-01-01T00:00:00.000Z' WHERE company_id = ?").run(company.id);
+    assert.equal((await u('/api/meta')).data.prospecting_searches.used, 0);
+    // Profissional: 50 por mês.
+    assert.equal((await a(`/api/admin/companies/${company.id}`, { method: 'PUT', body: { plan: 'profissional' } })).status, 200);
+    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 50, used: 0, period: 'month' });
+    // Com chave própria do Google o custo é da empresa: plano pago sem limite.
+    await u('/api/settings', { method: 'PUT', body: { settings: { integrations: { google_places_key: 'chave-propria' } } } });
     assert.equal((await u('/api/meta')).data.prospecting_searches, null);
-    assert.equal((await u('/api/prospecting/search', { method: 'POST', body: { query: 'pet shop 4' } })).status, 200);
   } finally {
+    config.googlePlacesKey = platformKey;
     globalThis.fetch = realFetch;
   }
 });
@@ -1037,7 +1052,8 @@ test('vários números de WhatsApp: limite por plano, resposta pelo número da c
   const sends = [];
   setEvolutionFetch(async (url, init = {}) => {
     const path = new URL(url).pathname;
-    if (path.startsWith('/message/sendText/')) sends.push(decodeURIComponent(path.split('/').pop()));
+    // Guarda por qual conexão saiu cada texto (a IA também pode responder no meio do teste).
+    if (path.startsWith('/message/sendText/')) sends.push({ inst: decodeURIComponent(path.split('/').pop()), text: JSON.parse(init.body || '{}').text });
     const data = path === '/instance/create' ? { hash: `tok-${path}` } : path.startsWith('/instance/connectionState') ? { instance: { state: 'open' } }
       : path.startsWith('/instance/connect') ? { base64: 'data:image/png;base64,QR' } : path.startsWith('/message/sendText') ? { key: { id: `m${sends.length}` } } : { ok: true };
     return { ok: true, status: 200, json: async () => data };
@@ -1095,8 +1111,9 @@ test('vários números de WhatsApp: limite por plano, resposta pelo número da c
     const m1 = (await u(`/api/conversations/${cFin.id}/messages`, { method: 'POST', body: { body: 'Olá do financeiro' } })).data;
     const m2 = (await u(`/api/conversations/${cPri.id}/messages`, { method: 'POST', body: { body: 'Olá do principal' } })).data;
     assert.deepEqual([m1.channel_id, m2.channel_id], [fin.id, null]);
-    assert.match(sends[0], new RegExp(`-n${fin.id}$`));
-    assert.doesNotMatch(sends[1], /-n\d+$/);
+    const via = (text) => sends.find((x) => x.text === text)?.inst;
+    assert.match(via('Olá do financeiro'), new RegExp(`-n${fin.id}$`));
+    assert.doesNotMatch(via('Olá do principal'), /-n\d+$/);
     // Primeira mensagem para quem nunca falou: pelo principal.
     const novo = (await u('/api/contacts', { method: 'POST', body: { name: 'Prospect', phone: '11911110003' } })).data;
     assert.equal((await u(`/api/conversations/${novo.id}/messages`, { method: 'POST', body: { body: 'Oi!' } })).data.channel_id, null);

@@ -1207,6 +1207,7 @@ async function renderPaywall(el, [planId] = []) {
         <p class="muted">${esc(p.description || '')}</p>
         <ul class="small" style="padding-left:18px;margin:10px 0">
           <li><strong>${usersText(p.max_users)} · ${leadsText(p.max_leads)}</strong></li>
+          ${p.max_searches ? `<li>${p.max_searches} buscas no Google Maps ${p.searches_period === 'month' ? 'por mês' : 'no teste'}</li>` : ''}
           ${PLAN_PERKS.map((x) => `<li>${esc(x)}</li>`).join('')}
         </ul>
         ${p.id === info.current_plan && info.subscription.paying ? ''
@@ -2236,22 +2237,26 @@ async function chargeForm(defaults, onSaved) {
 // Prospecção Google Maps
 // ---------------------------------------------------------------------------
 async function renderProspecting(el, [searchId]) {
-  const [searches, seqs] = await Promise.all([api('/api/prospecting/searches'), api('/api/sequences')]);
+  const [searches, seqs, meta] = await Promise.all([api('/api/prospecting/searches'), api('/api/sequences'), api('/api/meta')]);
+  state.meta = meta;
   const current = searchId ? await api(`/api/prospecting/searches/${searchId}`) : null;
-  // Teste grátis: poucas buscas no total; usadas todas, a busca vira o convite para assinar.
-  const quota = state.meta.prospecting_searches;
-  const left = quota ? Math.max(quota.max - searches.length, 0) : null;
+  // Buscas do plano (teste grátis: poucas, para sempre; planos pagos: por mês). Acabou: aviso no lugar da busca.
+  const quota = meta.prospecting_searches;
+  const left = quota ? Math.max(quota.max - quota.used, 0) : null;
+  const monthly = quota?.period === 'month';
   el.innerHTML = `
     <div class="page-head"><div><h1>Prospecção Google Maps</h1><p class="muted">Encontre empresas locais, importe para o CRM e inicie a abordagem automática</p></div>
       ${state.meta.prospecting_limit ? `<span class="spacer"></span><span class="badge ${state.meta.prospecting_limit.used >= state.meta.prospecting_limit.limit ? 'amber' : 'outline'}" title="Proteção contra bloqueio do número no WhatsApp por QR Code">Hoje: ${state.meta.prospecting_limit.used} de ${state.meta.prospecting_limit.limit} primeiras mensagens</span>` : ''}</div>
-    ${!state.meta.places_configured ? '<div class="banner">Configure a chave da <strong>Google Places API</strong> em <a href="#/config/avancado">Configurações → Avançado</a> para buscar empresas.</div>' : ''}
+    ${!meta.places_configured ? '<div class="banner">A busca no Google Maps está temporariamente indisponível. Tente de novo mais tarde. Se preferir, use uma chave própria do Google em <a href="#/config/avancado">Configurações → Avançado</a>.</div>' : ''}
     <div class="card">
-      ${left === 0 ? `<div class="banner">🔒 Você usou as <strong>${quota.max} buscas do teste grátis</strong>. As buscas anteriores continuam aqui. <a href="#/assinar">Assine um plano</a> para continuar prospectando.</div>` : `
+      ${left === 0 ? (monthly
+    ? `<div class="banner">Você usou as <strong>${quota.max} buscas deste mês</strong>. Elas renovam no dia 1º, e as buscas anteriores continuam aqui.${meta.plan?.id === 'essencial' ? ' <a href="#/assinar">No plano Profissional são 50 por mês.</a>' : ''}</div>`
+    : `<div class="banner">🔒 Você usou as <strong>${quota.max} buscas do teste grátis</strong>. As buscas anteriores continuam aqui. <a href="#/assinar">Assine um plano</a> para continuar prospectando.</div>`) : `
       <form id="search-form" class="row wrap">
         <input name="query" placeholder='Ex.: "academias em Campinas", "pet shop zona sul São Paulo"' required style="flex:1;min-width:240px">
         <button class="primary">🔎 Buscar empresas</button>
       </form>
-      <p class="hint">Até 60 resultados por busca, com telefone, site, endereço e nota no Google.${quota ? ` Teste grátis: ${left === 1 ? 'resta 1 busca' : `restam ${left} buscas`} de ${quota.max}.` : ''}</p>`}
+      <p class="hint">Até 60 resultados por busca, com telefone, site, endereço e nota no Google.${quota ? ` ${monthly ? 'Este mês' : 'Teste grátis'}: ${left === 1 ? 'resta 1 busca' : `restam ${left} buscas`} de ${quota.max}.` : ''}</p>`}
     </div>
     <div class="grid two" style="margin-top:14px">
       <div class="card" id="results">${current ? '' : '<div class="empty">Faça uma busca ou abra uma busca anterior.</div>'}</div>

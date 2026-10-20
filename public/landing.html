@@ -809,9 +809,9 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
   /* pricing */
   var FALLBACK = {
     plans: [
-      {id:'trial', label:'Teste grátis', price_cents:0, max_users:1, max_leads:30, ai:false, description:'Para conhecer o sistema com seus próprios clientes.'},
-      {id:'essencial', label:'Essencial', price_cents:10000, max_users:2, max_leads:100, description:'Para quem atende sozinho ou em dupla.'},
-      {id:'profissional', label:'Profissional', price_cents:24900, max_users:10, max_leads:null, description:'Para equipes com vários atendentes e profissionais.'}
+      {id:'trial', label:'Teste grátis', price_cents:0, max_users:1, max_leads:30, ai:false, max_searches:3, searches_period:'total', description:'Para conhecer o sistema com seus próprios clientes.'},
+      {id:'essencial', label:'Essencial', price_cents:10000, max_users:2, max_leads:100, max_searches:30, searches_period:'month', description:'Para quem atende sozinho ou em dupla.'},
+      {id:'profissional', label:'Profissional', price_cents:24900, max_users:10, max_leads:null, max_searches:50, searches_period:'month', description:'Para equipes com vários atendentes e profissionais.'}
     ],
     sales_whatsapp: '',
     allow_signup: true
@@ -829,6 +829,7 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
     if (n === 1) return '1 usuário';
     return (isTop && n > 2 ? 'até ' : '') + n + ' usuários';
   }
+  function searchesText(p){ return !p.max_searches ? 'Ilimitadas' : p.max_searches + (p.searches_period === 'month' ? ' por mês' : ' no teste'); }
   function leadsText(p){ return p.max_leads == null ? 'Ilimitados' : 'Até ' + Number(p.max_leads).toLocaleString('pt-BR'); }
 
   function render(info){
@@ -856,6 +857,7 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
         '<ul class="limits">' +
           '<li><span>Usuários</span><b>' + esc(usersText(p, (Number(p.max_users)||1) === maxUsers)) + '</b></li>' +
           '<li><span>Leads</span><b>' + esc(leadsText(p)) + '</b></li>' +
+          '<li><span>Buscas no Google Maps</span><b>' + esc(searchesText(p)) + '</b></li>' +
           '<li><span>Atendimento com IA</span><b>' + (p.ai === false ? 'Não incluso' : 'Incluso') + '</b></li>' +
           '<li><span>Módulos</span><b>Todos</b></li>' +
         '</ul>' +
