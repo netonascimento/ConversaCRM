@@ -6,7 +6,7 @@ import {
 } from '../auth.js';
 import { getCompany, saveSettings, maskSettings, anthropicKeyFor, aiKeySource, placesKeyFor } from '../services/company.js';
 import {
-  STAGES, listContacts, createContact, getContact, updateContact, changeStage, logActivity, PlanLimitError, leadsRemaining, normalizePhone,
+  STAGES, listContacts, createContact, getContact, updateContact, changeStage, logActivity, PlanLimitError, leadsRemaining, normalizePhone, normalizeBirthDate,
 } from '../services/crm.js';
 import { PLANS, publicPlans, aiAllowed, UPGRADE_PLAN, upgradeTxid } from '../services/plans.js';
 import { pixPayload } from '../services/billing.js';
@@ -19,6 +19,7 @@ import { managedEnabled, startConnection, connectionState, disconnect as disconn
 import { replyNow } from '../services/ai.js';
 import { assignContact, assignableUsers, userNames, releaseAssignments } from '../services/assignment.js';
 import { onboarding, markOnboarding } from '../services/onboarding.js';
+import { listBirthdays, birthdaysSoon } from '../services/birthdays.js';
 import {
   PERIODS, listContracts, getContract, createContract, updateContract, renewContract, closeContract, deleteContract, listClients, contractsSummary,
 } from '../services/contracts.js';
@@ -200,10 +201,13 @@ export function registerApi(router) {
     if (body.value !== undefined) body.value_cents = cents(body.value || 0);
     try { return createContact(req.companyId, body); } catch (e) {
       if (e instanceof PlanLimitError) throw new HttpError(403, e.message);
+      if (/nascimento/.test(e.message)) throw new HttpError(400, e.message);
       throw e;
     }
   });
   // Importação em lote (planilha, contatos do celular ou texto colado; a leitura do arquivo é feita no navegador).
+  // Na importação, data de nascimento inválida é ignorada (não derruba a linha).
+  const safeBirth = (v) => { try { return normalizeBirthDate(v); } catch { return null; } };
   router.post('/api/contacts/import', auth, staff, (req, res, { body }) => {
     const rows = Array.isArray(body.contacts) ? body.contacts : [];
     if (!rows.length) throw new HttpError(400, 'Nenhum contato para importar');
@@ -233,6 +237,7 @@ export function registerApi(router) {
           updateContact(req.companyId, existing.id, {
             name: existing.name || name || undefined, email: existing.email || email || undefined,
             business_name: existing.business_name || r.business_name || undefined, document: existing.document || r.document || undefined,
+            birth_date: existing.birth_date || safeBirth(r.birth_date) || undefined,
             tags: [existing.tags, tags].filter(Boolean).join(', ') || undefined,
           });
           result.updated++;
@@ -240,7 +245,7 @@ export function registerApi(router) {
         }
         if (leadsRemaining(req.companyId) === 0) { result.limit_skipped++; continue; }
         const c = createContact(req.companyId, {
-          name, phone: validPhone, email, business_name: r.business_name, document: r.document, interest: r.interest,
+          name, phone: validPhone, email, business_name: r.business_name, document: r.document, interest: r.interest, birth_date: safeBirth(r.birth_date),
           notes: r.notes, tags, value_cents: r.value ? cents(r.value) : undefined, stage, source: 'importacao',
         }, { trigger: false });
         if (sequenceId) enroll(req.companyId, sequenceId, c.id);
@@ -268,7 +273,10 @@ export function registerApi(router) {
   });
   router.put('/api/contacts/:id', auth, contactGuard, (req, res, { params, body }) => {
     if (body.value !== undefined) body.value_cents = cents(body.value || 0);
-    return need(updateContact(req.companyId, params.id, body), 'Contato');
+    try { return need(updateContact(req.companyId, params.id, body), 'Contato'); } catch (e) {
+      if (/nascimento/.test(e.message)) throw new HttpError(400, e.message);
+      throw e;
+    }
   });
   router.delete('/api/contacts/:id', auth, staff, contactGuard, (req, res, { params }) => {
     need(getContact(req.companyId, params.id), 'Contato');
@@ -491,6 +499,11 @@ export function registerApi(router) {
     const names = userNames(req.companyId);
     return listClients(req.companyId, { q: query.q }).filter((c) => visible(req, c.id))
       .map((c) => ({ ...c, assigned_name: names[c.assigned_user_id] || null }));
+  });
+  // Aniversariantes (todos os contatos, leads e clientes): do mês e dos próximos 7 dias.
+  router.get('/api/birthdays', auth, (req, res, { query }) => {
+    const month = Math.min(Math.max(int(query.month) || Number(new Date().toISOString().slice(5, 7)), 1), 12);
+    return { month, list: listBirthdays(req.companyId, month).filter((c) => visible(req, c.id)), soon: birthdaysSoon(req.companyId).filter((c) => visible(req, c.id)) };
   });
   router.get('/api/clients/summary', auth, staff, (req) => {
     const s = contractsSummary(req.companyId);

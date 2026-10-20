@@ -8,6 +8,7 @@ import { processOverdueTasks } from './tasks.js';
 import { processGoogle } from './google.js';
 import { processContracts } from './contracts.js';
 import { processCourtesies } from './subscriptions.js';
+import { processBirthdays } from './birthdays.js';
 import { formatLocal } from './time.js';
 
 /** Envia lembretes de agendamento (ex.: 24h antes). */
@@ -51,6 +52,7 @@ export async function tick() {
       reminders += await processAppointmentReminders();
       overdue += await processOverdueTasks();
       contracts += await processContracts();
+      processBirthdays();
       await processGoogle();
     });
     if (followups || billing || reminders || overdue || contracts) {

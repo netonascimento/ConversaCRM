@@ -30,7 +30,7 @@ export function parseDelimited(text) {
 /** Arquivo .vcf (exportado do celular, Google Contatos ou iCloud) -> linhas com cabeçalho. */
 export function parseVCard(text) {
   const unfolded = String(text || '').replace(/\r\n?/g, '\n').replace(/\n[ \t]/g, '');
-  const out = [['Nome', 'Telefone', 'E-mail', 'Empresa', 'Observações']];
+  const out = [['Nome', 'Telefone', 'E-mail', 'Empresa', 'Observações', 'Nascimento']];
   for (const card of unfolded.split(/BEGIN:VCARD/i).slice(1)) {
     const lines = card.split('\n');
     const value = (prop) => {
@@ -47,9 +47,16 @@ export function parseVCard(text) {
     const mobile = tels.find((l) => /CELL|MOBILE|WHATSAPP/i.test(l)) || tels[0];
     const phone = mobile ? decodeVCard(mobile.slice(mobile.indexOf(':') + 1)) : '';
     if (!name && !phone) continue;
-    out.push([name, phone, value('EMAIL'), value('ORG').replace(/;+$/, '').replace(/;/g, ' '), value('NOTE')]);
+    out.push([name, phone, value('EMAIL'), value('ORG').replace(/;+$/, '').replace(/;/g, ' '), value('NOTE'), vcardBirthday(value('BDAY'))]);
   }
   return out;
+}
+
+// BDAY do vCard: 19850315, 1985-03-15 ou --0315 (sem ano) -> dd/mm/aaaa ou dd/mm.
+function vcardBirthday(v) {
+  const m = String(v || '').replace(/T.*$/, '').match(/^(\d{4}|--)-?(\d{2})-?(\d{2})$/);
+  if (!m) return '';
+  return m[1] === '--' ? `${m[3]}/${m[2]}` : `${m[3]}/${m[2]}/${m[1]}`;
 }
 
 function decodeVCard(v) {
@@ -63,6 +70,7 @@ export const FIELDS = [
   { id: 'email', label: 'E-mail', match: /(e-?mail|correio)/i },
   { id: 'business_name', label: 'Empresa', match: /(empresa|company|organization|organiza|org\b|negócio|negocio)/i },
   { id: 'document', label: 'CPF / CNPJ', match: /(cpf|cnpj|documento)/i },
+  { id: 'birth_date', label: 'Data de nascimento', match: /(nascimento|anivers|birthday|birth|data nasc|dt nasc)/i },
   { id: 'interest', label: 'Interesse', match: /(interesse|produto|serviço|servico)/i },
   { id: 'tags', label: 'Etiquetas', match: /(etiqueta|tag|grupo|group|label|categoria)/i },
   { id: 'value', label: 'Valor (R$)', match: /(valor|value|ticket|preço|preco)/i },

@@ -14,6 +14,7 @@ export const TRIGGERS = [
   { id: 'stage:ganho', label: 'Venda ganha (pós-venda)' },
   { id: 'stage:perdido', label: 'Lead perdido (reativação)' },
   { id: 'prospect', label: 'Prospect importado do Google Maps' },
+  { id: 'birthday', label: 'No dia do aniversário' },
 ];
 
 export function parseSequence(row) {

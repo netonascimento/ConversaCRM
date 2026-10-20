@@ -29,10 +29,11 @@ test('exportação do Google Contatos e texto colado sem cabeçalho', () => {
 });
 
 test('contatos do celular (.vcf), preferindo o celular', () => {
-  const vcf = 'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Pedro Alves\r\nTEL;TYPE=HOME:1133334444\r\nTEL;TYPE=CELL:11 96666-5555\r\nEMAIL:pedro@x.com\r\nORG:Oficina;\r\nEND:VCARD\r\nBEGIN:VCARD\r\nN:Souza;Lia;;;\r\nTEL:21988887777\r\nEND:VCARD';
+  const vcf = 'BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Pedro Alves\r\nTEL;TYPE=HOME:1133334444\r\nTEL;TYPE=CELL:11 96666-5555\r\nEMAIL:pedro@x.com\r\nORG:Oficina;\r\nBDAY:1985-03-15\r\nEND:VCARD\r\nBEGIN:VCARD\r\nN:Souza;Lia;;;\r\nTEL:21988887777\r\nBDAY:--0712\r\nEND:VCARD';
   const rows = parseVCard(vcf);
-  assert.deepEqual(rows[1], ['Pedro Alves', '11 96666-5555', 'pedro@x.com', 'Oficina', '']);
+  assert.deepEqual(rows[1], ['Pedro Alves', '11 96666-5555', 'pedro@x.com', 'Oficina', '', '15/03/1985']);
   assert.equal(rows[2][0], 'Lia Souza');
+  assert.equal(rows[2][5], '12/07', 'aniversário sem ano');
 });
 
 let server; let base;

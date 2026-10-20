@@ -334,6 +334,8 @@ const COLUMNS = [
   ['companies', 'stripe_customer_id', 'TEXT'],
   ['companies', 'stripe_subscription_id', 'TEXT'],
   ['contacts', 'assigned_user_id', 'INTEGER'],
+  ['contacts', 'birth_date', 'TEXT'],
+  ['contacts', 'birthday_year', 'INTEGER'],
   ['contacts', 'assigned_at', 'TEXT'],
   ['messages', 'user_id', 'INTEGER'],
   ['messages', 'user_name', 'TEXT'],

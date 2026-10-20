@@ -39,7 +39,25 @@ export const getContact = (companyId, id) => get('SELECT * FROM contacts WHERE c
 export const findContactByPhone = (companyId, phone) =>
   get('SELECT * FROM contacts WHERE company_id = ? AND phone = ?', companyId, normalizePhone(phone));
 
-const EDITABLE = ['name', 'phone', 'email', 'document', 'business_name', 'source', 'value_cents', 'tags', 'notes', 'interest', 'address', 'website', 'rating', 'place_id', 'ai_enabled'];
+const EDITABLE = ['name', 'phone', 'email', 'document', 'business_name', 'source', 'value_cents', 'tags', 'notes', 'interest', 'address', 'website', 'rating', 'place_id', 'ai_enabled', 'birth_date'];
+
+// Data de nascimento: guarda AAAA-MM-DD. Sem o ano (só "dd/mm"), usa 1904 (ano bissexto, aceita 29/02)
+// e a idade fica de fora.
+export const UNKNOWN_BIRTH_YEAR = 1904;
+export function normalizeBirthDate(value) {
+  const v = String(value ?? '').trim();
+  if (!v) return null;
+  let d; let m; let y;
+  let match = v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (match) [, y, m, d] = match;
+  else if ((match = v.match(/^(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?$/))) [, d, m, y] = match;
+  else throw new Error(`Data de nascimento inválida: "${v}". Use dd/mm/aaaa ou só dd/mm.`);
+  y = y ? Number(y.length === 2 ? (Number(y) > 30 ? `19${y}` : `20${y}`) : y) : UNKNOWN_BIRTH_YEAR;
+  const date = new Date(Date.UTC(y, Number(m) - 1, Number(d)));
+  if (date.getUTCMonth() !== Number(m) - 1 || date.getUTCDate() !== Number(d)) throw new Error(`Data de nascimento inválida: "${v}".`);
+  if (y !== UNKNOWN_BIRTH_YEAR && (y < 1900 || date > new Date())) throw new Error(`Data de nascimento inválida: "${v}".`);
+  return date.toISOString().slice(0, 10);
+}
 
 export class PlanLimitError extends Error {}
 
@@ -57,6 +75,7 @@ export function createContact(companyId, data, { trigger = true } = {}) {
   const fields = { stage: STAGE_IDS.includes(data.stage) ? data.stage : 'novo' };
   for (const k of EDITABLE) if (data[k] !== undefined) fields[k] = data[k];
   if (fields.phone) fields.phone = normalizePhone(fields.phone);
+  if (fields.birth_date !== undefined) fields.birth_date = normalizeBirthDate(fields.birth_date);
   // Cadastrado direto como cliente (etapa "Ganho"): já entra com a data em que virou cliente.
   if (fields.stage === 'ganho') fields.won_at = now();
   const cols = Object.keys(fields);
@@ -86,7 +105,7 @@ export function updateContact(companyId, id, data) {
   for (const k of EDITABLE) {
     if (data[k] === undefined) continue;
     sets.push(`${k} = ?`);
-    vals.push(k === 'phone' ? normalizePhone(data[k]) : data[k]);
+    vals.push(k === 'phone' ? normalizePhone(data[k]) : k === 'birth_date' ? normalizeBirthDate(data[k]) : data[k]);
   }
   if (sets.length) run(`UPDATE contacts SET ${sets.join(', ')}, updated_at = ? WHERE id = ?`, ...vals, now(), id);
   if (data.stage && data.stage !== contact.stage) changeStage(companyId, id, data.stage);

@@ -946,3 +946,52 @@ test('limite de prospecção: follow-up que passa das 20 do dia fica para amanh�
   assert.equal(get("SELECT COUNT(*) AS n FROM messages WHERE contact_id = ? AND direction = 'out'", novo.id).n, 0);
   saveSettings(cid, { whatsapp: { provider: 'simulator' } });
 });
+
+test('ficha única com data de nascimento: aniversariantes do mês e parabéns automático uma vez por ano', async () => {
+  const { processBirthdays } = await import('../src/services/birthdays.js');
+  const { todayIn } = await import('../src/services/time.js');
+  const { get, run } = await import('../src/db.js');
+  const today = todayIn('America/Sao_Paulo');
+  const [ty, tm, td] = today.split('-');
+  const u = browser();
+  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Tau', name: 'Teo', email: 'teo@tau.com', password: 'senhaforte1' } });
+
+  // Formatos aceitos: dd/mm/aaaa, dd/mm (sem ano) e AAAA-MM-DD; inválida é recusada.
+  const lead = (await u('/api/contacts', { method: 'POST', body: { name: 'Lia Lead', phone: '11955551001', birth_date: `${td}/${tm}/1990` } })).data;
+  assert.equal(lead.birth_date, `1990-${tm}-${td}`);
+  assert.equal(lead.stage, 'novo');
+  const client = (await u('/api/contacts', { method: 'POST', body: { name: 'Caio Cliente', phone: '11955551002', stage: 'ganho', birth_date: `${td}/${tm}` } })).data;
+  assert.equal(client.birth_date, `1904-${tm}-${td}`, 'sem ano');
+  const bad = await u('/api/contacts', { method: 'POST', body: { name: 'X', phone: '11955551003', birth_date: '31/02/1990' } });
+  assert.equal(bad.status, 400);
+  assert.match(bad.data.error, /nascimento/);
+  // Mesma ficha: lead vira cliente só trocando a etapa, e a data continua lá.
+  const updated = (await u(`/api/contacts/${lead.id}`, { method: 'PUT', body: { stage: 'ganho', birth_date: '1990-01-15' } })).data;
+  assert.deepEqual([updated.stage, updated.birth_date], ['ganho', '1990-01-15']);
+  await u(`/api/contacts/${lead.id}`, { method: 'PUT', body: { birth_date: `${td}/${tm}/1990` } });
+
+  // Aniversariantes do mês: leads e clientes, com a idade e "hoje".
+  const b = (await u(`/api/birthdays?month=${Number(tm)}`)).data;
+  const lia = b.list.find((x) => x.id === lead.id);
+  const caio = b.list.find((x) => x.id === client.id);
+  assert.deepEqual([lia.today, lia.turns, caio.today, caio.turns], [true, Number(ty) - 1990, true, null]);
+  assert.equal(b.soon.length, 2);
+
+  // Parabéns automático: sequência com o gatilho "No dia do aniversário", uma vez por ano.
+  const companyId = (await u('/api/auth/me')).data.company.id;
+  run('INSERT INTO sequences (company_id, name, trigger, steps, active) VALUES (?, ?, ?, ?, 1)', companyId, 'Parabéns', 'birthday', JSON.stringify([{ delay_hours: 0, message: 'Feliz aniversário, {{nome}}! 🎉' }]));
+  processBirthdays();
+  processBirthdays();
+  const enrolled = get("SELECT COUNT(*) AS n FROM enrollments e JOIN sequences s ON s.id = e.sequence_id WHERE s.company_id = ? AND s.trigger = 'birthday'", companyId).n;
+  assert.equal(enrolled, 2);
+  assert.ok((await u('/api/meta')).data.triggers.some((t) => t.id === 'birthday'));
+
+  // Importação traz a data; data inválida na planilha é ignorada sem derrubar a linha.
+  const imp = (await u('/api/contacts/import', { method: 'POST', body: { contacts: [
+    { name: 'Importado', phone: '11955551004', birth_date: '05/09/1988' }, { name: 'Data ruim', phone: '11955551005', birth_date: 'ontem' },
+  ] } })).data;
+  assert.equal(imp.created, 2);
+  const all = (await u('/api/contacts')).data;
+  assert.equal(all.find((x) => x.name === 'Importado').birth_date, '1988-09-05');
+  assert.equal(all.find((x) => x.name === 'Data ruim').birth_date, null);
+});

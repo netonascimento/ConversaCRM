@@ -546,6 +546,8 @@ async function renderInbox(el, [selected]) {
       e.target.disabled = false;
     };
     const ta = $('#send-form textarea');
+    const prefill = sessionGet(`prefill:${id}`);
+    if (prefill) { ta.value = prefill; sessionSet(`prefill:${id}`, ''); ta.focus(); }
     ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); $('#send-form').requestSubmit(); } });
     $('#send-form').onsubmit = async (e) => {
       e.preventDefault();
@@ -626,7 +628,7 @@ async function renderCrm(el) {
       <select id="crm-view" style="width:auto"><option value="kanban">Kanban</option><option value="list" ${view === 'list' ? 'selected' : ''}>Lista</option></select>
       ${state.me.user.role !== 'professional' ? '<button id="import-contacts">Importar</button>' : ''}
       <button id="export-contacts">Exportar</button>
-      <button class="primary" id="new-contact">+ Novo lead</button>
+      <button class="primary" id="new-contact">+ Novo contato</button>
     </div>
     <div id="crm-body"></div>`;
   const load = async () => {
@@ -679,32 +681,49 @@ async function renderCrm(el) {
   await load();
 }
 
+// Data de nascimento: sem ano é guardada com 1904 (só dia e mês).
+const UNKNOWN_BIRTH_YEAR = '1904';
+function birthText(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return y === UNKNOWN_BIRTH_YEAR ? `${d}/${m}` : `${d}/${m}/${y}`;
+}
+function birthInfo(iso) {
+  if (!iso) return '-';
+  const [y, m, d] = iso.split('-').map(Number);
+  const [ty, tm, td] = todayStr().split('-').map(Number);
+  const isToday = m === tm && d === td;
+  const age = String(y) === UNKNOWN_BIRTH_YEAR ? null : ty - y - (tm < m || (tm === m && td < d) ? 1 : 0);
+  return `${birthText(iso)}${age !== null ? ` · ${age} anos` : ''}${isToday ? ' <span class="badge green">🎂 aniversário hoje</span>' : ''}`;
+}
+
+// Ficha única: lead e cliente são o mesmo contato, só muda a etapa ("Ganho" = cliente).
 function contactForm(contact, onSaved, { asClient = false } = {}) {
-  const c = contact || (asClient ? { stage: 'ganho' } : {});
-  const box = openModal(`${modalHead(contact ? 'Editar contato' : asClient ? 'Novo cliente' : 'Novo lead')}
-    ${asClient ? '<p class="small muted" style="margin-top:-6px">Entra direto como cliente (etapa "Ganho"). Depois você pode cadastrar contratos e anexar documentos na ficha.</p>' : ''}
+  const c = contact || { stage: asClient ? 'ganho' : 'novo' };
+  const title = contact ? 'Editar ficha' : asClient ? 'Novo cliente' : 'Novo contato';
+  const box = openModal(`${modalHead(title)}
     <form id="contact-form">
-      ${(() => {
-        const origin = `<div class="field"><label>Origem</label><select name="source">${Object.entries(SOURCE_LABEL).map(([k, v]) => `<option value="${k}" ${k === (c.source || 'manual') ? 'selected' : ''}>${v}</option>`).join('')}</select></div>`;
-        const extra = `<div class="field"><label>Interesse</label><input name="interest" value="${esc(c.interest)}"></div>
-          <div class="field"><label>Tags (separadas por vírgula)</label><input name="tags" value="${esc(c.tags)}"></div>
-          <div class="field"><label>Observações</label><textarea name="notes">${esc(c.notes)}</textarea></div>`;
-        const basic = `<div class="field"><label>Nome</label><input name="name" value="${esc(c.name)}" ${asClient ? 'required' : ''}></div>
-          <div class="field"><label>WhatsApp / telefone</label><input name="phone" value="${esc(c.phone ? phoneFmt(c.phone) : '')}" placeholder="(11) 99999-9999"></div>
-          <div class="field"><label>E-mail</label><input name="email" type="email" value="${esc(c.email)}"></div>
-          <div class="field"><label>CPF / CNPJ</label><input name="document" value="${esc(c.document)}"></div>
-          <div class="field"><label>Empresa do cliente</label><input name="business_name" value="${esc(c.business_name)}"></div>`;
-        // Cliente novo: só o essencial à vista; o resto fica em "Mais informações".
-        if (asClient) {
-          return `<input type="hidden" name="stage" value="ganho"><div class="fields">${basic}</div>
-            <details style="margin:4px 0 12px"><summary class="small" style="cursor:pointer">Mais informações (origem, interesse, tags, observações)</summary>
-              <div style="margin-top:10px"><div class="fields">${origin}</div>${extra}</div></details>`;
-        }
-        return `<div class="fields">${basic}
-          <div class="field"><label>Valor estimado (R$)</label><input name="value" value="${c.value_cents ? reais(c.value_cents) : ''}" inputmode="decimal"></div>
-          <div class="field"><label>Etapa</label><select name="stage">${state.meta.stages.map((s) => `<option value="${s.id}" ${s.id === (c.stage || 'novo') ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
-          ${origin}</div>${extra}`;
-      })()}
+      <div class="fields">
+        <div class="field"><label for="cf-name">Nome</label><input id="cf-name" name="name" value="${esc(c.name)}" required></div>
+        <div class="field"><label for="cf-phone">WhatsApp / telefone</label><input id="cf-phone" name="phone" value="${esc(c.phone ? phoneFmt(c.phone) : '')}" placeholder="(11) 99999-9999"></div>
+        <div class="field"><label for="cf-email">E-mail</label><input id="cf-email" name="email" type="email" value="${esc(c.email)}"></div>
+        <div class="field"><label for="cf-birth">Data de nascimento</label><input id="cf-birth" name="birth_date" value="${esc(birthText(c.birth_date))}" placeholder="dd/mm/aaaa (o ano é opcional)" inputmode="numeric"></div>
+        <div class="field"><label for="cf-stage">Etapa</label><select id="cf-stage" name="stage">${state.meta.stages.map((s) => `<option value="${s.id}" ${s.id === (c.stage || 'novo') ? 'selected' : ''}>${s.label}${s.id === 'ganho' ? ' (cliente)' : ''}</option>`).join('')}</select></div>
+        <div class="field"><label for="cf-doc">CPF / CNPJ</label><input id="cf-doc" name="document" value="${esc(c.document)}"></div>
+      </div>
+      <details style="margin:4px 0 12px" ${contact && (c.business_name || c.interest || c.tags || c.notes || c.value_cents) ? 'open' : ''}>
+        <summary class="small" style="cursor:pointer">Mais informações (empresa, valor, origem, interesse, tags, observações)</summary>
+        <div style="margin-top:10px">
+          <div class="fields">
+            <div class="field"><label for="cf-biz">Empresa do contato</label><input id="cf-biz" name="business_name" value="${esc(c.business_name)}"></div>
+            <div class="field"><label for="cf-value">Valor estimado (R$)</label><input id="cf-value" name="value" value="${c.value_cents ? reais(c.value_cents) : ''}" inputmode="decimal"></div>
+            <div class="field"><label for="cf-source">Origem</label><select id="cf-source" name="source">${Object.entries(SOURCE_LABEL).map(([k, v]) => `<option value="${k}" ${k === (c.source || 'manual') ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+            <div class="field"><label for="cf-interest">Interesse</label><input id="cf-interest" name="interest" value="${esc(c.interest)}"></div>
+          </div>
+          <div class="field"><label for="cf-tags">Tags (separadas por vírgula)</label><input id="cf-tags" name="tags" value="${esc(c.tags)}"></div>
+          <div class="field"><label for="cf-notes">Observações</label><textarea id="cf-notes" name="notes">${esc(c.notes)}</textarea></div>
+        </div>
+      </details>
       <div class="modal-foot"><button type="button" data-close>Cancelar</button><button class="primary">Salvar</button></div>
     </form>`);
   $('#contact-form', box).onsubmit = async (e) => {
@@ -715,7 +734,7 @@ function contactForm(contact, onSaved, { asClient = false } = {}) {
         ? await api(`/api/contacts/${contact.id}`, { method: 'PUT', body: data })
         : await api('/api/contacts', { method: 'POST', body: data });
       box.close();
-      toast('Contato salvo');
+      toast('Ficha salva');
       onSaved?.(saved);
     } catch (err) { fail(err); }
   };
@@ -746,6 +765,7 @@ async function openContact(id, onChange) {
           <tr><td class="muted">Valor</td><td>${c.value_cents ? money(c.value_cents) : '-'}</td></tr>
           <tr><td class="muted">Origem</td><td>${esc(SOURCE_LABEL[c.source] || c.source)}</td></tr>
           <tr><td class="muted">Interesse</td><td>${esc(c.interest || '-')}</td></tr>
+          <tr><td class="muted">Nascimento</td><td>${birthInfo(c.birth_date)}</td></tr>
           <tr><td class="muted">Documento</td><td>${esc(c.document || '-')}</td></tr>
           ${c.business_name ? `<tr><td class="muted">Empresa</td><td>${esc(c.business_name)}</td></tr>` : ''}
           ${c.address ? `<tr><td class="muted">Endereço</td><td>${esc(c.address)}</td></tr>` : ''}
@@ -826,7 +846,7 @@ function nextEndBadge(date) {
 }
 
 async function renderClients(el, [tab = 'lista']) {
-  const tabs = [['lista', 'Clientes'], ...(canContracts() ? [['contratos', 'Contratos']] : []), ['documentos', 'Documentos']];
+  const tabs = [['lista', 'Clientes'], ...(canContracts() ? [['contratos', 'Contratos']] : []), ['documentos', 'Documentos'], ['aniversariantes', 'Aniversariantes']];
   if (!tabs.some((t) => t[0] === tab)) tab = 'lista';
   const summary = canContracts() ? await api('/api/clients/summary') : null;
   el.innerHTML = `
@@ -854,8 +874,46 @@ async function renderClients(el, [tab = 'lista']) {
   const body = $('#clients-body');
   if (tab === 'contratos') return renderContractsTab(body);
   if (tab === 'documentos') return renderDocumentsTab(body);
+  if (tab === 'aniversariantes') return renderBirthdaysTab(body);
   return renderClientsTab(body);
 }
+
+const MONTHS = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+
+// Aniversariantes do mês (leads e clientes), com atalho para mandar parabéns.
+async function renderBirthdaysTab(body) {
+  let month = Number(sessionGet('bday-month')) || Number(todayStr().slice(5, 7));
+  const draw = async () => {
+    const r = await api(`/api/birthdays?month=${month}`);
+    body.innerHTML = `
+      <div class="row wrap" style="margin-bottom:12px">
+        <button type="button" class="sm" id="bd-prev" aria-label="Mês anterior">←</button>
+        <strong style="min-width:120px;text-align:center;text-transform:capitalize">${MONTHS[month - 1]}</strong>
+        <button type="button" class="sm" id="bd-next" aria-label="Próximo mês">→</button>
+        <span class="spacer"></span>
+        <a class="small" href="#/followup">Mandar parabéns automático: crie um follow-up com o gatilho "No dia do aniversário"</a>
+      </div>
+      ${r.list.length ? `<div class="table-wrap"><table>
+        <tr><th>Dia</th><th>Nome</th><th>Faz</th><th>WhatsApp</th><th>Etapa</th><th></th></tr>
+        ${r.list.map((c) => `<tr>
+          <td class="nowrap"><strong>${String(c.day).padStart(2, '0')}/${String(month).padStart(2, '0')}</strong> ${c.today ? '<span class="badge green">🎂 hoje</span>' : c.days_until <= 7 ? `<span class="badge amber">em ${c.days_until} dia${c.days_until > 1 ? 's' : ''}</span>` : ''}</td>
+          <td><a href="#" data-contact="${c.id}">${esc(c.name || phoneFmt(c.phone))}</a></td>
+          <td>${c.turns ? `${c.turns} anos` : '<span class="muted">-</span>'}</td>
+          <td class="nowrap small">${phoneFmt(c.phone) || '-'}</td>
+          <td>${stageBadge(c.stage)}</td>
+          <td class="nowrap">${c.phone ? `<button class="sm ${c.today ? 'primary' : ''}" data-congrats="${c.id}" data-name="${esc(firstNameOf(c.name))}">🎉 Mandar parabéns</button>` : ''}</td></tr>`).join('')}
+      </table></div>` : `<div class="empty">Ninguém faz aniversário em ${MONTHS[month - 1]}.<br><span class="small muted">Preencha a data de nascimento na ficha dos contatos (ou importe de uma planilha) para eles aparecerem aqui.</span></div>`}`;
+    $('#bd-prev', body).onclick = () => { month = month === 1 ? 12 : month - 1; sessionSet('bday-month', month); draw(); };
+    $('#bd-next', body).onclick = () => { month = month === 12 ? 1 : month + 1; sessionSet('bday-month', month); draw(); };
+    $$('[data-contact]', body).forEach((a) => { a.onclick = (e) => { e.preventDefault(); openContact(Number(a.dataset.contact), draw); }; });
+    $$('[data-congrats]', body).forEach((b) => { b.onclick = () => {
+      sessionSet(`prefill:${b.dataset.congrats}`, `Feliz aniversário${b.dataset.name ? `, ${b.dataset.name}` : ''}! 🎉 Toda a equipe da ${state.me.company.name} deseja um dia incrível pra você!`);
+      location.hash = `#/inbox/${b.dataset.congrats}`;
+    }; });
+  };
+  await draw();
+}
+const firstNameOf = (name) => String(name || '').trim().split(/\s+/)[0] || '';
 
 async function renderClientsTab(body) {
   body.innerHTML = `<div class="row" style="margin-bottom:12px"><input id="cl-q" placeholder="Buscar por nome, telefone, e-mail, CPF/CNPJ…" style="max-width:360px"></div><div id="cl-list"></div>`;
@@ -1573,11 +1631,11 @@ async function waConnectBox(box, { onConnected } = {}) {
 // ---------------------------------------------------------------------------
 async function exportContacts() {
   const contacts = await api('/api/contacts?limit=100000');
-  const cols = [['Nome', 'name'], ['Telefone', 'phone'], ['E-mail', 'email'], ['Empresa', 'business_name'], ['Etapa', 'stage'],
+  const cols = [['Nome', 'name'], ['Telefone', 'phone'], ['E-mail', 'email'], ['Nascimento', 'birth_date'], ['Empresa', 'business_name'], ['Etapa', 'stage'],
     ['Origem', 'source'], ['Interesse', 'interest'], ['Etiquetas', 'tags'], ['Valor', 'value_cents'], ['Observações', 'notes'], ['Criado em', 'created_at']];
   const cell = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const value = (c, k) => (k === 'stage' ? stageLabel(c.stage) : k === 'source' ? (SOURCE_LABEL[c.source] || c.source)
-    : k === 'value_cents' ? (c.value_cents ? reais(c.value_cents) : '') : k === 'phone' ? (c.phone ? `+${c.phone}` : '') : c[k]);
+    : k === 'value_cents' ? (c.value_cents ? reais(c.value_cents) : '') : k === 'phone' ? (c.phone ? `+${c.phone}` : '') : k === 'birth_date' ? birthText(c.birth_date) : c[k]);
   const csv = [cols.map(([h]) => cell(h)).join(';'), ...contacts.map((c) => cols.map(([, k]) => cell(value(c, k))).join(';'))].join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
