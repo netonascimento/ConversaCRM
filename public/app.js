@@ -2563,6 +2563,9 @@ async function renderUsers(el, tabs) {
         <p class="muted" style="margin:0">Plano <strong>${esc(plan?.label || '')}</strong>: ${activeCount} de ${maxUsers} usuários ativos${plan?.max_leads ? ` · ${plan.leads_used} de ${plan.max_leads} leads` : ' · leads ilimitados'}.</p>
         <span class="spacer"></span><button class="primary" id="new-user" ${activeCount >= maxUsers ? 'disabled title="Limite de usuários do plano atingido"' : ''}>+ Novo usuário</button>
       </div>
+      ${plan?.next_users ? (activeCount >= maxUsers
+    ? `<div class="banner" style="margin-bottom:12px">Você chegou ao limite de ${maxUsers === 1 ? '1 usuário' : `${maxUsers} usuários`} do plano ${esc(plan.label)}. No plano <strong>${esc(plan.next_users.label)}</strong> são até ${plan.next_users.max_users} usuários. <a href="#/assinar/${esc(plan.next_users.id)}">Liberar o ${esc(plan.next_users.label)}</a></div>`
+    : `<p class="small muted" style="margin:0 0 12px">Precisa de mais usuários? No plano ${esc(plan.next_users.label)} são até ${plan.next_users.max_users}. <a href="#/assinar/${esc(plan.next_users.id)}">Ver plano</a></p>`) : ''}
       <div class="table-wrap"><table>
         <tr><th>Nome</th><th>Perfil</th><th>Último acesso</th><th>Situação</th></tr>
         ${users.map((u) => `<tr class="clickable" data-id="${u.id}"><td><strong>${esc(u.name)}</strong><div class="small muted">${esc(u.email)}</div></td>

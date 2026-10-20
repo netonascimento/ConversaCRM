@@ -137,6 +137,13 @@ export function registerApi(router) {
         id: company.plan, label: PLANS[company.plan]?.label || company.plan || 'Personalizado',
         max_users: company.max_users, max_leads: company.max_leads, leads_remaining: leadsRemaining(company.id),
         leads_used: get('SELECT COUNT(*) AS n FROM contacts WHERE company_id = ?', company.id).n,
+        // Plano mais barato acima do atual que permite mais usuários (para o convite na aba Usuários).
+        next_users: (() => {
+          const price = PLANS[company.plan]?.price_cents ?? 0;
+          const [id, p] = Object.entries(PLANS).filter(([, x]) => x.price_cents > price && x.max_users > company.max_users)
+            .sort(([, a], [, b]) => a.price_cents - b.price_cents)[0] || [];
+          return id ? { id, label: p.label, max_users: p.max_users } : null;
+        })(),
       },
       sales_whatsapp: config.salesWhatsapp,
       ai_configured: Boolean(anthropicKeyFor(company)),

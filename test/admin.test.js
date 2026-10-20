@@ -141,6 +141,8 @@ test('teste grátis: cadastro pela página inicial com limite de 30 leads', asyn
   const meta = (await u('/api/meta')).data;
   assert.equal(meta.plan.id, 'gratis');
   assert.equal(meta.plan.max_leads, 30);
+  // Convite na aba Usuários: o próximo plano com mais usuários.
+  assert.deepEqual(meta.plan.next_users, { id: 'essencial', label: 'Essencial', max_users: 2 });
   for (let i = 0; i < 30; i++) assert.equal((await u('/api/contacts', { method: 'POST', body: { name: `L${i}`, phone: `119000000${String(i).padStart(2, '0')}` } })).status, 200);
   const blocked = await u('/api/contacts', { method: 'POST', body: { name: 'L11', phone: '11900000099' } });
   assert.equal(blocked.status, 403);
