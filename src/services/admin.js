@@ -57,6 +57,7 @@ export function companyDetail(companyId) {
   return {
     ...rest,
     whatsapp_provider: settings.whatsapp.provider,
+    whatsapp_extra_numbers: main.get('SELECT COUNT(*) AS n FROM whatsapp_numbers WHERE company_id = ?', companyId).n,
     billing_provider: settings.billing.provider,
     ai_objective: settings.ai.objective,
     ai_platform_key: Boolean(company.ai_platform_key),
@@ -208,6 +209,7 @@ export function deleteCompany(companyId) {
   main.run('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE company_id = ?)', companyId);
   main.run('DELETE FROM users WHERE company_id = ?', companyId);
   main.run('DELETE FROM ai_usage WHERE company_id = ?', companyId);
+  main.run('DELETE FROM whatsapp_numbers WHERE company_id = ?', companyId);
   main.run('DELETE FROM companies WHERE id = ?', companyId);
   return true;
 }

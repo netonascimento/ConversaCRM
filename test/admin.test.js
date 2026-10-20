@@ -874,7 +874,7 @@ test('WhatsApp por QR Code gerenciado: conecta sem campos técnicos, recebe o av
     assert.deepEqual(r, { state: 'connecting', qr: 'data:image/png;base64,QRCODE' });
     const create = calls.find((c) => c.url.endsWith('/instance/create'));
     assert.equal(create.body.integration, 'WHATSAPP-BAILEYS');
-    assert.match(create.body.instanceName, /^conversacrm-/);
+    assert.match(create.body.instanceName, /^crm-\d+$/);
     assert.equal(create.key, 'chave-global');
     const hook = calls.find((c) => c.url.includes('/webhook/set/')).body.webhook;
     assert.deepEqual(hook.events, ['MESSAGES_UPSERT', 'CONNECTION_UPDATE']);
@@ -994,4 +994,96 @@ test('ficha única com data de nascimento: aniversariantes do mês e parabéns a
   const all = (await u('/api/contacts')).data;
   assert.equal(all.find((x) => x.name === 'Importado').birth_date, '1988-09-05');
   assert.equal(all.find((x) => x.name === 'Data ruim').birth_date, null);
+});
+
+test('vários números de WhatsApp: limite por plano, resposta pelo número da conversa, chave própria e isolamento', async () => {
+  const { config } = await import('../src/config.js');
+  const { setEvolutionFetch } = await import('../src/services/whatsapp-connect.js');
+  const sends = [];
+  setEvolutionFetch(async (url, init = {}) => {
+    const path = new URL(url).pathname;
+    if (path.startsWith('/message/sendText/')) sends.push(decodeURIComponent(path.split('/').pop()));
+    const data = path === '/instance/create' ? { hash: `tok-${path}` } : path.startsWith('/instance/connectionState') ? { instance: { state: 'open' } }
+      : path.startsWith('/instance/connect') ? { base64: 'data:image/png;base64,QR' } : path.startsWith('/message/sendText') ? { key: { id: `m${sends.length}` } } : { ok: true };
+    return { ok: true, status: 200, json: async () => data };
+  });
+  config.evolutionUrl = 'https://evo.conversacrm.test';
+  config.evolutionApiKey = 'chave-global';
+  try {
+    const a = await adminSession();
+    // Essencial: 1 número só.
+    const ess = browser();
+    await ess('/api/auth/register', { method: 'POST', body: { companyName: 'Upsilon', name: 'Uli', email: 'uli@upsilon.com', password: 'senhaforte1' } });
+    const essId = (await ess('/api/auth/me')).data.company.id;
+    await a(`/api/admin/companies/${essId}/courtesy`, { method: 'POST', body: { plan: 'essencial', reason: 'teste' } });
+    assert.equal((await ess('/api/whatsapp/numbers')).data.limit, 1);
+    const blocked = await ess('/api/whatsapp/numbers', { method: 'POST', body: { label: 'Financeiro' } });
+    assert.equal(blocked.status, 400);
+    assert.match(blocked.data.error, /Profissional/);
+    assert.equal((await ess('/api/meta')).data.whatsapp_numbers, null, 'com um número só, nada muda nas telas');
+
+    // Profissional: principal + 2 extras.
+    const u = browser();
+    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Phi', name: 'Fi', email: 'fi@phi.com', password: 'senhaforte1' } });
+    const id = (await u('/api/auth/me')).data.company.id;
+    await a(`/api/admin/companies/${id}/courtesy`, { method: 'POST', body: { plan: 'profissional', reason: 'teste' } });
+    await u('/api/whatsapp/connect', { method: 'POST' });
+    const meta0 = (await u('/api/meta')).data;
+    const principalHook = new URL(meta0.webhooks.evolution);
+    await fetch(base + principalHook.pathname + principalHook.search, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'connection.update', data: { state: 'open' } }) });
+    const fin = (await u('/api/whatsapp/numbers', { method: 'POST', body: { label: 'Financeiro' } })).data;
+    await u('/api/whatsapp/numbers', { method: 'POST', body: { label: 'Suporte' } });
+    assert.equal((await u('/api/whatsapp/numbers', { method: 'POST', body: { label: 'Quarto' } })).status, 400, 'até 3 números');
+    const r = (await u('/api/whatsapp/connect', { method: 'POST', body: { number_id: fin.id } })).data;
+    assert.equal(r.state, 'open');
+    const ov = (await u('/api/whatsapp/numbers')).data;
+    assert.deepEqual([ov.limit, ov.extras.length, ov.extras[0].label, ov.extras[0].state], [3, 2, 'Financeiro', 'open']);
+    assert.ok(!JSON.stringify(ov).includes('tok-'), 'chaves nunca vão para a tela');
+
+    // Mensagem chega pelo Financeiro (chave própria do número); chave errada é recusada.
+    const finHook = `${principalHook.pathname}?token=${encodeURIComponent((await import('../src/services/whatsapp-connect.js')).getNumber(id, fin.id).webhook_token)}&n=${fin.id}`;
+    const bad = await fetch(`${base}${principalHook.pathname}?token=${principalHook.searchParams.get('token')}&n=${fin.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    assert.equal(bad.status, 401, 'chave do principal não vale para o número extra');
+    const inbound = (phone, mid) => ({ event: 'messages.upsert', data: { key: { remoteJid: `${phone}@s.whatsapp.net`, fromMe: false, id: mid }, pushName: 'Cli', message: { conversation: 'Oi' } } });
+    await fetch(base + finHook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inbound('5511911110001', 'a1')) });
+    await fetch(base + principalHook.pathname + principalHook.search, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(inbound('5511911110002', 'a2')) });
+    const convs = (await u('/api/conversations')).data;
+    const cFin = convs.find((c) => c.phone === '5511911110001');
+    const cPri = convs.find((c) => c.phone === '5511911110002');
+    assert.deepEqual([cFin.channel_id, cPri.channel_id], [fin.id, null]);
+    assert.deepEqual((await u(`/api/conversations?number=${fin.id}`)).data.map((c) => c.id), [cFin.id]);
+    assert.ok((await u('/api/conversations?number=principal')).data.some((c) => c.id === cPri.id));
+    assert.equal((await u('/api/meta')).data.whatsapp_numbers.length, 3);
+
+    // Resposta sai pelo número por onde o cliente falou.
+    sends.length = 0;
+    const m1 = (await u(`/api/conversations/${cFin.id}/messages`, { method: 'POST', body: { body: 'Olá do financeiro' } })).data;
+    const m2 = (await u(`/api/conversations/${cPri.id}/messages`, { method: 'POST', body: { body: 'Olá do principal' } })).data;
+    assert.deepEqual([m1.channel_id, m2.channel_id], [fin.id, null]);
+    assert.match(sends[0], new RegExp(`-n${fin.id}$`));
+    assert.doesNotMatch(sends[1], /-n\d+$/);
+    // Primeira mensagem para quem nunca falou: pelo principal.
+    const novo = (await u('/api/contacts', { method: 'POST', body: { name: 'Prospect', phone: '11911110003' } })).data;
+    assert.equal((await u(`/api/conversations/${novo.id}/messages`, { method: 'POST', body: { body: 'Oi!' } })).data.channel_id, null);
+
+    // Remover o Financeiro: as conversas ficam; a próxima resposta sai pelo principal.
+    await u(`/api/whatsapp/numbers/${fin.id}`, { method: 'DELETE' });
+    assert.equal((await u(`/api/conversations/${cFin.id}/messages`, { method: 'POST', body: { body: 'Seguimos por aqui' } })).data.channel_id, null);
+    assert.equal((await fetch(base + finHook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).status, 401);
+
+    // Isolamento: outra empresa não vê nem mexe nos números desta.
+    const other = (await ess('/api/whatsapp/numbers')).data;
+    assert.equal(other.extras.length, 0);
+    assert.equal((await ess(`/api/whatsapp/numbers/${ov.extras[1].id}`, { method: 'DELETE' })).data.ok, false);
+    assert.equal((await u('/api/whatsapp/numbers')).data.extras.length, 1);
+
+    // Rebaixamento: o extra que sobrou continua recebendo, mas não dá para acrescentar outro.
+    await a(`/api/admin/companies/${id}/courtesy`, { method: 'POST', body: { plan: 'essencial', reason: 'rebaixado' } });
+    const after = (await u('/api/whatsapp/numbers')).data;
+    assert.deepEqual([after.limit, after.extras.length], [1, 1]);
+    assert.equal((await u('/api/whatsapp/numbers', { method: 'POST', body: { label: 'Outro' } })).status, 400);
+  } finally {
+    config.evolutionUrl = '';
+    config.evolutionApiKey = '';
+  }
 });

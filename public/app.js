@@ -448,6 +448,10 @@ async function renderInbox(el, [selected]) {
   // Profissional só vê os próprios clientes; dono e atendentes dividem as conversas por responsável.
   const canAssign = state.me.user.role !== 'professional';
   let scope = canAssign ? (sessionGet('inbox-scope') ?? '') : '';
+  // Mais de um número de WhatsApp: filtro e etiqueta do número. Com um número só, nada aparece.
+  const numbers = state.meta.whatsapp_numbers;
+  const numLabel = (id) => numbers?.find((n) => (n.id ?? null) === (id ?? null))?.label || 'Principal';
+  let numberFilter = numbers ? (sessionGet('inbox-number') ?? '') : '';
   el.innerHTML = `
     <div class="page-head">
       <div><h1>Atendimento</h1><p class="muted">${aiLocked() ? 'Conversas do WhatsApp, atendidas pela sua equipe' : 'Conversas do WhatsApp com resposta automática da IA'}</p></div>
@@ -458,6 +462,7 @@ async function renderInbox(el, [selected]) {
     <div class="card inbox ${selected ? 'has-chat' : ''}" id="inbox">
       <div class="conv-list"><div class="conv-search"><input id="conv-q" placeholder="Buscar conversa…">
         ${canAssign ? `<div class="segmented" id="conv-scope" style="margin-top:8px;width:100%">${[['', 'Todas'], ['mine', 'Minhas'], ['unassigned', 'Sem responsável']].map(([v, l]) => `<button type="button" data-scope="${v}" class="${scope === v ? 'active' : ''}" style="flex:1">${l}</button>`).join('')}</div>` : ''}
+        ${numbers ? `<select id="conv-number" style="margin-top:8px" aria-label="Filtrar por número de WhatsApp">${[['', '📱 Todos os números'], ...numbers.map((n) => [n.id ? String(n.id) : 'principal', `📱 ${n.label}`])].map(([v, l]) => `<option value="${v}" ${numberFilter === v ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
       </div><div id="convs"></div></div>
       <div class="chat" id="chat"><div class="empty">Selecione uma conversa</div></div>
     </div>`;
@@ -469,6 +474,7 @@ async function renderInbox(el, [selected]) {
     const params = new URLSearchParams();
     if (q) params.set('q', q);
     if (scope) params.set('scope', scope);
+    if (numberFilter) params.set('number', numberFilter);
     const convs = await api(`/api/conversations${params.size ? `?${params}` : ''}`);
     const box = $('#convs');
     if (!box) return;
@@ -479,7 +485,7 @@ async function renderInbox(el, [selected]) {
           <div class="row"><strong>${esc(c.name || phoneFmt(c.phone))}</strong><span class="spacer"></span><span class="small muted">${ago(c.last_at)}</span></div>
           <div class="row"><span class="preview">${c.last_direction === 'out' ? (c.last_author === 'ai' ? '🤖 ' : '✓ ') : ''}${esc(c.last_body)}</span>
             ${c.unread && c.id !== current ? '<span class="badge count">•</span>' : ''}${!c.ai_enabled ? '<span class="badge amber">humano</span>' : ''}</div>
-          ${canAssign ? `<div class="small muted">${c.assigned_name ? `👤 ${esc(c.assigned_user_id === state.me.user.id ? 'Você' : c.assigned_name)}` : 'Sem responsável'}</div>` : ''}
+          ${canAssign || numbers ? `<div class="small muted">${canAssign ? (c.assigned_name ? `👤 ${esc(c.assigned_user_id === state.me.user.id ? 'Você' : c.assigned_name)}` : 'Sem responsável') : ''}${numbers ? `${canAssign ? ' · ' : ''}📱 ${esc(numLabel(c.channel_id))}` : ''}</div>` : ''}
         </div>
       </div>`).join('') || `<div class="empty">${scope === 'mine' ? 'Nenhuma conversa com você.' : scope === 'unassigned' ? 'Todas as conversas têm responsável.' : 'Nenhuma conversa ainda.<br>Use "Simular cliente" para testar.'}</div>`;
     $$('.conv', box).forEach((c) => { c.onclick = () => { location.hash = `#/inbox/${c.dataset.id}`; }; });
@@ -487,7 +493,7 @@ async function renderInbox(el, [selected]) {
 
   function bubble(m) {
     return `<div class="bubble ${m.direction} ${m.status === 'failed' ? 'failed' : ''}">${esc(m.body)}
-      <div class="meta">${m.direction === 'out' ? `${m.author === 'human' && m.user_name ? `👤 ${esc(m.user_name)}` : AUTHOR_LABEL[m.author] || ''} · ` : ''}${fmt(m.created_at, { hour: '2-digit', minute: '2-digit' })}${m.status === 'failed' ? ` · ❌ ${esc(m.error || 'falhou')}` : ''}</div></div>`;
+      <div class="meta">${numbers ? `📱 ${esc(numLabel(m.channel_id))} · ` : ''}${m.direction === 'out' ? `${m.author === 'human' && m.user_name ? `👤 ${esc(m.user_name)}` : AUTHOR_LABEL[m.author] || ''} · ` : ''}${fmt(m.created_at, { hour: '2-digit', minute: '2-digit' })}${m.status === 'failed' ? ` · ❌ ${esc(m.error || 'falhou')}` : ''}</div></div>`;
   }
 
   async function openChat(id) {
@@ -497,7 +503,7 @@ async function renderInbox(el, [selected]) {
       <div class="chat-head">
         <button class="sm ghost" id="back" title="Voltar">←</button>
         <div class="avatar">${esc(initials(contact.name || contact.phone))}</div>
-        <div><strong>${esc(contact.name || phoneFmt(contact.phone))}</strong><div class="small muted">${phoneFmt(contact.phone)} · ${stageBadge(contact.stage)}</div></div>
+        <div><strong>${esc(contact.name || phoneFmt(contact.phone))}</strong><div class="small muted">${phoneFmt(contact.phone)} · ${stageBadge(contact.stage)}${numbers ? ` · 📱 via ${esc(numLabel([...messages].reverse().find((m) => m.direction === 'in')?.channel_id))}` : ''}</div></div>
         <span class="spacer"></span>
         ${canAssign ? `<select id="assignee" class="sm" style="width:auto" aria-label="Responsável pela conversa" title="Responsável pela conversa">
           <option value="">Sem responsável</option>
@@ -576,6 +582,11 @@ async function renderInbox(el, [selected]) {
 
   $('#conv-q').oninput = () => loadConvs().catch(() => {});
   if (/[?&]simular=1/.test(location.hash)) { history.replaceState(null, '', '#/inbox'); openSimulator(); }
+  $('#conv-number')?.addEventListener('change', (e) => {
+    numberFilter = e.target.value;
+    sessionSet('inbox-number', numberFilter);
+    loadConvs().catch(() => {});
+  });
   $$('#conv-scope button').forEach((b) => {
     b.onclick = () => {
       scope = b.dataset.scope;
@@ -1561,23 +1572,79 @@ async function wizardDone(el) {
 }
 
 
+// Número principal + números extras (conforme o plano). Com limite de 1 número, a tela é a de sempre.
+async function whatsappNumbers(principalBox, extrasBox) {
+  const ov = await api('/api/whatsapp/numbers').catch(() => ({ limit: 1, extras: [] }));
+  const multi = ov.limit > 1 || ov.extras.length > 0;
+  waConnectBox(principalBox, multi ? { title: 'Número principal', connectedTitle: '✓ Número principal conectado' } : {});
+  drawExtraNumbers(extrasBox, ov);
+}
+
+async function drawExtraNumbers(extrasBox, ov) {
+  ov ||= await api('/api/whatsapp/numbers').catch(() => ({ limit: 1, extras: [] }));
+  const multi = ov.limit > 1 || ov.extras.length > 0;
+  if (!multi) {
+    extrasBox.innerHTML = '<p class="small muted" style="margin:0">Precisa de mais números (ex.: Comercial e Financeiro)? <a href="#/assinar">Disponível no plano Profissional</a>, com até 3 números.</p>';
+    return;
+  }
+  const used = 1 + ov.extras.length;
+  const over = used > ov.limit;
+  extrasBox.innerHTML = `<div class="card">
+    <div class="card-head"><h3>Outros números</h3><span class="spacer"></span><span class="small muted">${used} de ${ov.limit} números</span></div>
+    <p class="small muted" style="margin:6px 0 12px">Ex.: Comercial e Financeiro, no mesmo CRM. Cada conversa é respondida pelo número por onde o cliente falou.</p>
+    ${over ? `<div class="banner" style="margin-bottom:12px">O seu plano permite ${ov.limit} número${ov.limit > 1 ? 's' : ''} de WhatsApp. Os extras continuam recebendo mensagens, mas remova os que não usa ou <a href="#/assinar">mude de plano</a>.</div>` : ''}
+    ${ov.extras.map((n) => `<div class="wa-extra" style="margin-bottom:12px">
+      <div class="row" style="margin-bottom:6px"><strong>📱 ${esc(n.label)}</strong><span class="spacer"></span><button type="button" class="sm ghost danger" data-rm-number="${n.id}" data-label="${esc(n.label)}">Remover número</button></div>
+      <div data-number-box="${n.id}"></div></div>`).join('')}
+    ${!over && used < ov.limit ? `<div class="row" id="wa-add-number" style="margin-top:4px">
+        <input id="wa-new-label" maxlength="40" placeholder="Nome do número (ex.: Financeiro)" aria-label="Nome do novo número">
+        <button type="button" class="primary" id="wa-add-btn" style="flex:none">+ Adicionar número</button></div>` : ''}
+  </div>`;
+  ov.extras.forEach((n) => waConnectBox($(`[data-number-box="${n.id}"]`, extrasBox), { numberId: n.id, title: `Conectar o número "${n.label}"`, connectedTitle: `✓ ${n.label} conectado` }));
+  // Fica dentro do formulário das Configurações: sem <form> próprio (formulário dentro de formulário
+  // não existe no HTML), com botão e Enter tratados aqui, para não salvar as Configurações por engano.
+  const label = $('#wa-new-label', extrasBox);
+  const add = async () => {
+    if (!label.value.trim()) { label.focus(); return toast('Dê um nome ao número (ex.: Financeiro).', 'error'); }
+    try {
+      await api('/api/whatsapp/numbers', { method: 'POST', body: { label: label.value } });
+      toast('Número adicionado. Agora conecte pelo QR Code.');
+      state.meta = await api('/api/meta');
+      drawExtraNumbers(extrasBox);
+    } catch (err) { fail(err); }
+  };
+  $('#wa-add-btn', extrasBox)?.addEventListener('click', add);
+  label?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } });
+  $$('[data-rm-number]', extrasBox).forEach((b) => { b.onclick = async () => {
+    if (!confirm(`Remover o número "${b.dataset.label}"? Ele é desconectado; as conversas continuam no CRM e as próximas respostas saem pelo número principal.`)) return;
+    try {
+      await api(`/api/whatsapp/numbers/${b.dataset.rmNumber}`, { method: 'DELETE' });
+      toast('Número removido');
+      state.meta = await api('/api/meta');
+      drawExtraNumbers(extrasBox);
+    } catch (err) { fail(err); }
+  }; });
+}
+
 // WhatsApp por QR Code gerenciado pelo Conversa CRM: botão → QR Code na tela → "✓ Conectado".
-async function waConnectBox(box, { onConnected } = {}) {
+async function waConnectBox(box, { onConnected, numberId = null, title = 'Conecte o seu WhatsApp', connectedTitle = '✓ WhatsApp conectado' } = {}) {
   let stopped = false;
+  const q = numberId ? `?number_id=${numberId}` : '';
+  const body = numberId ? { number_id: numberId } : undefined;
   const done = () => { stopped = true; };
   const drawConnected = () => {
-    box.innerHTML = `<div class="card wa-box"><h3>✓ WhatsApp conectado</h3>
+    box.innerHTML = `<div class="card wa-box"><h3>${esc(connectedTitle)}</h3>
       <p class="small muted" style="margin:6px 0 12px">As mensagens dos seus clientes chegam no Atendimento. Para trocar de número, desconecte e conecte o outro.</p>
       <button type="button" class="sm" id="wa-off">Desconectar</button></div>`;
     $('#wa-off', box).onclick = async () => {
       if (!confirm('Desconectar o WhatsApp? As mensagens deixam de chegar até você conectar de novo.')) return;
-      await api('/api/whatsapp/disconnect', { method: 'POST' }).catch(fail);
-      state.meta.whatsapp_provider = 'simulator';
+      await api('/api/whatsapp/disconnect', { method: 'POST', body }).catch(fail);
+      if (!numberId) state.meta.whatsapp_provider = 'simulator';
       drawIdle();
     };
   };
   const drawIdle = (msg = '') => {
-    box.innerHTML = `<div class="card wa-box"><h3>Conecte o seu WhatsApp</h3>
+    box.innerHTML = `<div class="card wa-box"><h3>${esc(title)}</h3>
       <p class="small muted" style="margin:6px 0 12px">Use o número que você já tem. Leva menos de 1 minuto e você continua usando o WhatsApp no celular.</p>${msg}
       <button type="button" class="primary" id="wa-on">Conectar meu WhatsApp</button></div>`;
     $('#wa-on', box).onclick = start;
@@ -1597,22 +1664,22 @@ async function waConnectBox(box, { onConnected } = {}) {
     const b = $('#wa-on', box);
     if (b) { b.disabled = true; b.textContent = 'Gerando o QR Code…'; }
     try {
-      const r = await api('/api/whatsapp/connect', { method: 'POST' });
+      const r = await api('/api/whatsapp/connect', { method: 'POST', body });
       if (r.state === 'open') { drawConnected(); onConnected?.(); return; }
       drawQr(r.qr);
       let ticks = 0;
       const timer = setInterval(async () => {
         if (stopped || !document.body.contains(box)) return clearInterval(timer);
         ticks++;
-        const st = await api('/api/whatsapp/state').catch(() => ({}));
+        const st = await api(`/api/whatsapp/state${q}`).catch(() => ({}));
         if (st.state === 'open') {
           clearInterval(timer);
-          state.meta.whatsapp_provider = 'evolution';
+          if (!numberId) state.meta.whatsapp_provider = 'evolution';
           drawConnected();
           toast('WhatsApp conectado! 🎉');
           onConnected?.();
         } else if (ticks % 10 === 0) {
-          const again = await api('/api/whatsapp/connect', { method: 'POST' }).catch(() => null); // QR Code novo a cada ~30s
+          const again = await api('/api/whatsapp/connect', { method: 'POST', body }).catch(() => null); // QR Code novo a cada ~30s
           if (again?.qr && !stopped) drawQr(again.qr);
         }
       }, 3000);
@@ -1621,7 +1688,7 @@ async function waConnectBox(box, { onConnected } = {}) {
       drawIdle(`<p class="small" style="color:var(--danger)">${esc(err.message)}</p>`);
     }
   };
-  const st = await api('/api/whatsapp/state').catch(() => ({ state: 'none' }));
+  const st = await api(`/api/whatsapp/state${q}`).catch(() => ({ state: 'none' }));
   if (st.state === 'open') drawConnected(); else drawIdle();
   return done;
 }
@@ -2319,7 +2386,7 @@ async function renderSettings(el, [tab = 'empresa']) {
         <div class="field"><label>Dias bloqueados (feriados)</label><input name="scheduling.blocked_dates" value="${esc(s.scheduling.blocked_dates.join(', '))}" placeholder="2026-12-25, 2027-01-01"></div>
       </div>`,
     whatsapp: `
-      ${meta.whatsapp_managed ? '<div id="wa-managed" style="margin-bottom:14px"></div><details><summary class="small" style="cursor:pointer;margin-bottom:12px">Configuração manual (avançado: servidor próprio ou API oficial da Meta)</summary>' : ''}
+      ${meta.whatsapp_managed ? '<div id="wa-managed" style="margin-bottom:14px"></div><div id="wa-extras" style="margin-bottom:14px"></div><details><summary class="small" style="cursor:pointer;margin-bottom:12px">Configuração manual (avançado: servidor próprio ou API oficial da Meta)</summary>' : ''}
       <div class="field"><label>Provedor</label><select name="whatsapp.provider">
         <option value="simulator">Simulador (testes, sem número)</option>
         <option value="evolution" ${s.whatsapp.provider === 'evolution' ? 'selected' : ''}>Evolution API (conecta por QR Code)</option>
@@ -2388,7 +2455,7 @@ async function renderSettings(el, [tab = 'empresa']) {
       <form id="settings-form">${panels[tab]}<div class="modal-foot"><button class="primary">Salvar configurações</button></div></form>
     </div>`;
   $$('[data-tab]').forEach((b) => { b.onclick = () => { location.hash = `#/config/${b.dataset.tab}`; }; });
-  if (tab === 'whatsapp' && meta.whatsapp_managed) waConnectBox($('#wa-managed'));
+  if (tab === 'whatsapp' && meta.whatsapp_managed) whatsappNumbers($('#wa-managed'), $('#wa-extras'));
   const renderIntake = () => {
     const box = $('#intake');
     if (!box) return;

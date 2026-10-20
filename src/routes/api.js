@@ -15,7 +15,7 @@ import { subscriptionState } from '../services/subscriptions.js';
 import { audit } from '../services/admin.js';
 import { PRESETS } from '../services/presets.js';
 import { sendMessage, handleInbound, coldBlocked, COLD_DAILY_LIMIT, coldSentToday } from '../services/messaging.js';
-import { managedEnabled, startConnection, connectionState, disconnect as disconnectWhatsapp } from '../services/whatsapp-connect.js';
+import { managedEnabled, startConnection, connectionState, disconnect as disconnectWhatsapp, numbersOverview, addNumber, removeNumber, listNumbers } from '../services/whatsapp-connect.js';
 import { replyNow } from '../services/ai.js';
 import { assignContact, assignableUsers, userNames, releaseAssignments } from '../services/assignment.js';
 import { onboarding, markOnboarding } from '../services/onboarding.js';
@@ -144,6 +144,11 @@ export function registerApi(router) {
       onboarding: req.user.role === 'owner' ? onboarding(company.id) : null,
       whatsapp_managed: managedEnabled(),
       whatsapp_state: company.settings.whatsapp.connection_state || null,
+      // Só aparece com mais de um número: com um número só, nenhuma tela muda.
+      whatsapp_numbers: (() => {
+        const extras = listNumbers(company.id);
+        return extras.length ? [{ id: null, label: 'Principal' }, ...extras.map((n) => ({ id: n.id, label: n.label, state: n.connection_state }))] : null;
+      })(),
       prospecting_limit: company.settings.whatsapp.provider === 'evolution' ? { limit: COLD_DAILY_LIMIT, used: coldSentToday(company) } : null,
       subscription: { method: company.billing_method, paid_until: company.paid_until, ...subscriptionState(company) },
       team: assignableUsers(company.id),
@@ -181,9 +186,14 @@ export function registerApi(router) {
 
   // WhatsApp por QR Code gerenciado pelo Conversa CRM (o cliente só lê o QR Code no celular).
   const waError = (e) => new HttpError(502, e.message);
-  router.post('/api/whatsapp/connect', auth, ownerOnly, async (req) => { try { return await startConnection(req.companyId); } catch (e) { throw waError(e); } });
-  router.get('/api/whatsapp/state', auth, ownerOnly, async (req) => { try { return await connectionState(req.companyId); } catch (e) { throw waError(e); } });
-  router.post('/api/whatsapp/disconnect', auth, ownerOnly, async (req) => disconnectWhatsapp(req.companyId));
+  // number_id vazio = número principal (como sempre foi); com número = um dos números extras.
+  const numberId = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
+  router.post('/api/whatsapp/connect', auth, ownerOnly, async (req, res, { body }) => { try { return await startConnection(req.companyId, numberId(body.number_id)); } catch (e) { throw waError(e); } });
+  router.get('/api/whatsapp/state', auth, ownerOnly, async (req, res, { query }) => { try { return await connectionState(req.companyId, numberId(query.number_id)); } catch (e) { throw waError(e); } });
+  router.post('/api/whatsapp/disconnect', auth, ownerOnly, async (req, res, { body }) => disconnectWhatsapp(req.companyId, numberId(body.number_id)));
+  router.get('/api/whatsapp/numbers', auth, ownerOnly, (req) => numbersOverview(req.companyId));
+  router.post('/api/whatsapp/numbers', auth, ownerOnly, (req, res, { body }) => { try { return addNumber(req.companyId, body.label); } catch (e) { throw new HttpError(400, e.message); } });
+  router.delete('/api/whatsapp/numbers/:id', auth, ownerOnly, async (req, res, { params }) => ({ ok: await removeNumber(req.companyId, Number(params.id)) }));
   router.post('/api/onboarding/dismiss', auth, ownerOnly, (req, res, { body }) => {
     markOnboarding(req.companyId, { dismissed: body.dismissed !== false });
     return onboarding(req.companyId);
@@ -418,10 +428,14 @@ export function registerApi(router) {
     if (query.q) { where.push('(c.name LIKE ? OR c.phone LIKE ?)'); params.push(`%${query.q}%`, `%${query.q}%`); }
     if (query.scope === 'mine') { where.push('c.assigned_user_id = ?'); params.push(req.user.id); }
     if (query.scope === 'unassigned') where.push('c.assigned_user_id IS NULL');
+    // Número por onde o cliente falou por último (vazio = principal).
+    const lastChannel = "(SELECT channel_id FROM messages WHERE contact_id = c.id AND direction = 'in' ORDER BY id DESC LIMIT 1)";
+    if (query.number === 'principal') where.push(`${lastChannel} IS NULL`);
+    else if (query.number) { where.push(`${lastChannel} = ?`); params.push(Number(query.number)); }
     const names = userNames(req.companyId);
     return all(
       `SELECT c.id, c.name, c.phone, c.stage, c.ai_enabled, c.unread, c.assigned_user_id, m.body AS last_body, m.direction AS last_direction,
-              m.author AS last_author, m.created_at AS last_at
+              m.author AS last_author, m.created_at AS last_at, ${lastChannel} AS channel_id
        FROM contacts c JOIN messages m ON m.id = (SELECT MAX(id) FROM messages WHERE contact_id = c.id)
        WHERE ${where.join(' AND ')} ORDER BY m.id DESC LIMIT 200`, ...params,
     ).filter((c) => visible(req, c.id)).map((c) => ({ ...c, assigned_name: names[c.assigned_user_id] || null }));

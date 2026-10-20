@@ -5,7 +5,7 @@ import { findOrCreateByPhone, getContact, firstName, changeStage, PlanLimitError
 import { stopEnrollments } from './followup.js';
 import { scheduleAiReply } from './ai.js';
 import { autoAssign } from './assignment.js';
-import { evolutionFetch } from './whatsapp-connect.js';
+import { evolutionFetch, channelConfig } from './whatsapp-connect.js';
 import { config } from '../config.js';
 import { todayIn, zonedToUtc } from './time.js';
 
@@ -14,10 +14,13 @@ import { todayIn, zonedToUtc } from './time.js';
 export const COLD_DAILY_LIMIT = 20;
 export class ColdLimitError extends Error {}
 const isCold = (contactId) => !get("SELECT 1 AS x FROM messages WHERE contact_id = ? AND (direction = 'in' OR cold = 1) LIMIT 1", contactId);
-export function coldSentToday(company) {
+/** Primeiras mensagens enviadas hoje por um número (null = principal). */
+export function coldSentToday(company, channelId = null) {
   const start = zonedToUtc(todayIn(company.timezone), '00:00', company.timezone).toISOString();
-  return get("SELECT COUNT(*) AS n FROM messages WHERE company_id = ? AND cold = 1 AND created_at >= ?", company.id, start).n;
+  return get('SELECT COUNT(*) AS n FROM messages WHERE company_id = ? AND cold = 1 AND created_at >= ? AND channel_id IS ?', company.id, start, channelId).n;
 }
+/** Número pelo qual o cliente falou por último (null = principal). */
+const lastInboundChannel = (contactId) => get("SELECT channel_id FROM messages WHERE contact_id = ? AND direction = 'in' ORDER BY id DESC LIMIT 1", contactId)?.channel_id ?? null;
 /** Esta mensagem é uma primeira mensagem de prospecção que passaria do limite do dia? */
 export function coldBlocked(company, contactId, author) {
   if (company.settings.whatsapp.provider !== 'evolution' || !['followup', 'human'].includes(author) || !isCold(contactId)) return false;
@@ -94,15 +97,17 @@ export async function sendMessage(companyId, contactId, body, author = 'human', 
   const company = getCompany(companyId);
   const contact = getContact(companyId, contactId);
   if (!contact) throw new Error('Contato não encontrado');
-  const cold = company.settings.whatsapp.provider === 'evolution' && ['followup', 'human'].includes(author) && isCold(contactId);
-  if (cold && coldSentToday(company) >= COLD_DAILY_LIMIT) {
+  // Resposta sai pelo número por onde o cliente falou por último; primeira mensagem, pelo principal.
+  const firstContact = isCold(contactId);
+  const { wa, channelId } = channelConfig(company, firstContact ? null : lastInboundChannel(contactId));
+  const cold = wa.provider === 'evolution' && ['followup', 'human'].includes(author) && firstContact;
+  if (cold && coldSentToday(company, channelId) >= COLD_DAILY_LIMIT) {
     throw new ColdLimitError(`Limite de ${COLD_DAILY_LIMIT} primeiras mensagens por dia para quem ainda não falou com você (proteção contra bloqueio do número). Continua amanhã.`);
   }
   const { id } = run(
-    'INSERT INTO messages (company_id, contact_id, direction, author, body, status, user_id, user_name, cold) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    companyId, contactId, 'out', author, body, 'sending', user?.id || null, user?.name || null, cold ? 1 : 0,
+    'INSERT INTO messages (company_id, contact_id, direction, author, body, status, user_id, user_name, cold, channel_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    companyId, contactId, 'out', author, body, 'sending', user?.id || null, user?.name || null, cold ? 1 : 0, channelId,
   );
-  const wa = company.settings.whatsapp;
   try {
     if (!contact.phone && wa.provider !== 'simulator') throw new Error('Contato sem telefone');
     const providerId = await deliver(wa, contact, body);
@@ -123,7 +128,7 @@ export async function sendMessage(companyId, contactId, body, author = 'human', 
  * Processa uma mensagem recebida de um cliente (de qualquer provedor ou do simulador).
  * Retorna null se for duplicada.
  */
-export function handleInbound(companyId, { phone, name, text, providerId = null }, { autoReply = true } = {}) {
+export function handleInbound(companyId, { phone, name, text, providerId = null }, { autoReply = true, channelId = null } = {}) {
   if (!text || !phone) return null;
   let found;
   try {
@@ -138,9 +143,9 @@ export function handleInbound(companyId, { phone, name, text, providerId = null 
   }
   const { contact, created } = found;
   const r = run(
-    `INSERT OR IGNORE INTO messages (company_id, contact_id, direction, author, body, status, provider_id)
-     VALUES (?, ?, 'in', 'contact', ?, 'received', ?)`,
-    companyId, contact.id, text, providerId,
+    `INSERT OR IGNORE INTO messages (company_id, contact_id, direction, author, body, status, provider_id, channel_id)
+     VALUES (?, ?, 'in', 'contact', ?, 'received', ?, ?)`,
+    companyId, contact.id, text, providerId, channelId,
   );
   if (!r.changes) return null;
   run('UPDATE contacts SET last_inbound_at = ?, updated_at = ?, unread = unread + 1 WHERE id = ?', now(), now(), contact.id);

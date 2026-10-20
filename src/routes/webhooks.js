@@ -3,7 +3,7 @@ import { get, main, withCompanyDb } from '../db.js';
 import { HttpError } from '../http.js';
 import { getCompany } from '../services/company.js';
 import { handleInbound, parseMetaWebhook, verifyMetaSignature, parseEvolutionWebhook } from '../services/messaging.js';
-import { applyState } from '../services/whatsapp-connect.js';
+import { applyState, getNumber } from '../services/whatsapp-connect.js';
 import { markPaid, fetchMercadoPagoPayment } from '../services/billing.js';
 import { config } from '../config.js';
 import { verifyStripeSignature, handleStripeEvent } from '../services/stripe.js';
@@ -61,12 +61,20 @@ export function registerWebhooks(router) {
   router.post('/webhooks/whatsapp/evolution/:companyId', (req, res, { params, body, query }) => {
     const company = companyOr404(params.companyId);
     const given = query.token || req.headers['x-webhook-token'];
-    const secret = company.settings.whatsapp.evolution_webhook_secret;
-    if (!safeEqual(given, company.webhook_token) && !(secret && safeEqual(given, secret))) throw new HttpError(401, 'Token inválido');
+    // Número extra (?n=…): tem a chave própria. Sem ?n: o número principal, como sempre foi.
+    let channelId = null;
+    if (query.n) {
+      const number = getNumber(company.id, Number(query.n));
+      if (!number || !safeEqual(given, number.webhook_token)) throw new HttpError(401, 'Token inválido');
+      channelId = number.id;
+    } else {
+      const secret = company.settings.whatsapp.evolution_webhook_secret;
+      if (!safeEqual(given, company.webhook_token) && !(secret && safeEqual(given, secret))) throw new HttpError(401, 'Token inválido');
+    }
     // Conectou ou desconectou o celular (QR Code gerenciado pelo Conversa CRM).
     const event = String(body?.event || '').toLowerCase().replace('_', '.');
-    if (event === 'connection.update' && body.data?.state) applyState(company.id, body.data.state);
-    if (active(company)) withCompanyDb(company.id, () => { for (const msg of parseEvolutionWebhook(body)) handleInbound(company.id, msg); });
+    if (event === 'connection.update' && body.data?.state) applyState(company.id, body.data.state, channelId);
+    if (active(company)) withCompanyDb(company.id, () => { for (const msg of parseEvolutionWebhook(body)) handleInbound(company.id, msg, { channelId }); });
     return { ok: true };
   });
 

@@ -426,7 +426,7 @@ async function openCompany(id) {
           <tr><td class="muted">Mensagens</td><td>${num(u.messages_30d)} (${num(u.ai_messages_30d)} da IA)</td></tr>
           <tr><td class="muted">Agendamentos criados</td><td>${num(u.appointments_30d)}</td></tr>
           <tr><td class="muted">Recebido pela empresa</td><td>${money(u.revenue_30d_cents)}</td></tr>
-          <tr><td class="muted">WhatsApp</td><td>${esc({ simulator: 'não conectado', evolution: 'QR Code (Evolution)', meta: 'API oficial' }[c.whatsapp_provider] || c.whatsapp_provider)}</td></tr>
+          <tr><td class="muted">WhatsApp</td><td>${esc({ simulator: 'não conectado', evolution: 'QR Code (Evolution)', meta: 'API oficial' }[c.whatsapp_provider] || c.whatsapp_provider)}${c.whatsapp_extra_numbers ? ` + ${c.whatsapp_extra_numbers} número(s) extra` : ''}</td></tr>
           <tr><td class="muted">Último acesso</td><td>${fmt(u.last_login_at)}</td></tr>
         </table>
         ${c.storage !== 'dedicated' ? `<div class="hint" style="margin-top:12px">Precisa de isolamento físico (ex.: política de sigilo do cliente)?</div><button class="sm" id="ded" style="margin-top:6px">Mover para banco separado</button>` : '<p class="hint" style="margin-top:12px">Os dados desta empresa ficam num arquivo de banco só dela.</p>'}

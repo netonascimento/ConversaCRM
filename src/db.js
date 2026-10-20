@@ -278,6 +278,18 @@ CREATE TABLE IF NOT EXISTS document_files (
   document_id INTEGER PRIMARY KEY REFERENCES documents(id) ON DELETE CASCADE,
   data BLOB NOT NULL
 );
+-- Números de WhatsApp extras da empresa (o número principal continua em companies.settings.whatsapp).
+CREATE TABLE IF NOT EXISTS whatsapp_numbers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  label TEXT NOT NULL,
+  evolution_instance TEXT,
+  evolution_api_key TEXT,
+  connection_state TEXT NOT NULL DEFAULT 'close',
+  webhook_token TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_whatsapp_numbers_company ON whatsapp_numbers(company_id);
 -- Mensalidades que as empresas pagam à plataforma (Pix confirmado pelo admin ou cartão no Stripe).
 CREATE TABLE IF NOT EXISTS subscription_payments (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -340,6 +352,7 @@ const COLUMNS = [
   ['messages', 'user_id', 'INTEGER'],
   ['messages', 'user_name', 'TEXT'],
   ['messages', 'cold', 'INTEGER NOT NULL DEFAULT 0'],
+  ['messages', 'channel_id', 'INTEGER'],
   ['users', 'active', 'INTEGER NOT NULL DEFAULT 1'],
   ['users', 'professional_id', 'INTEGER'],
   ['users', 'last_login_at', 'TEXT'],
