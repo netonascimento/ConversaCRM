@@ -124,8 +124,8 @@ O modo define **quais ferramentas a IA recebe**, não só o texto das instruçõ
 Requisitos: **Node.js 22.13 ou superior** (usa o SQLite embutido no Node, sem banco externo).
 
 ```bash
-git clone https://github.com/netonascimento/Conversa CRM.git
-cd Conversa CRM
+git clone https://github.com/netonascimento/ConversaCRM.git
+cd ConversaCRM
 npm install
 npm run seed     # opcional: cria uma empresa de demonstração com dados
 npm start        # http://localhost:3000 (sistema em /app, administração em /admin)
