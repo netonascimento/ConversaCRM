@@ -7,12 +7,25 @@ import { registerWebhooks } from './routes/webhooks.js';
 import { registerAdmin, ensureAdminFromEnv } from './routes/admin.js';
 import { withCompanyDb } from './db.js';
 import { startScheduler } from './services/scheduler.js';
+import { managedEnabled } from './services/whatsapp-connect.js';
+import { stripeMode } from './services/stripe.js';
 
 const router = new Router();
 registerApi(router);
 registerWebhooks(router);
 registerAdmin(router);
-router.get('/health', () => ({ ok: true }));
+// Saúde do sistema: diz só se cada integração está ligada, nunca os valores.
+router.get('/health', () => ({
+  ok: true,
+  whatsapp_qr: managedEnabled(),
+  stripe: stripeMode(),
+  stripe_webhook: Boolean(config.stripeWebhookSecret),
+}));
+
+// Um erro inesperado numa tarefa de fundo (agendador, envio, IA) não derruba o servidor inteiro:
+// fica no log para investigar e o sistema segue atendendo.
+process.on('unhandledRejection', (err) => console.error('[erro não tratado]', err));
+process.on('uncaughtException', (err) => console.error('[exceção não tratada]', err));
 
 const PUBLIC = path.join(ROOT, 'public');
 

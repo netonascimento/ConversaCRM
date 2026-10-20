@@ -15,12 +15,21 @@ const base = () => config.evolutionUrl.replace(/\/$/, '');
 export const instanceName = (company) => `conversacrm-${String(company.public_id).toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
 
 async function evo(path, { method = 'GET', body } = {}) {
-  const res = await fetchImpl(`${base()}${path}`, {
-    method,
-    headers: { apikey: config.evolutionApiKey, 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetchImpl(`${base()}${path}`, {
+      method,
+      headers: { apikey: config.evolutionApiKey, 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch (err) {
+    // Fora do ar, endereço errado ou demorou demais: fica no log com o motivo (nunca a chave).
+    console.error(`[whatsapp] ${method} ${path}: sem resposta do servidor de conexão (${err.name === 'TimeoutError' ? 'demorou mais de 20s' : err.message})`);
+    throw new Error('O servidor do WhatsApp não respondeu. Tente de novo em alguns minutos.');
+  }
   const data = await res.json().catch(() => ({}));
+  if (!res.ok) console.error(`[whatsapp] ${method} ${path}: HTTP ${res.status} ${JSON.stringify(data).slice(0, 300)}`);
   return { ok: res.ok, status: res.status, data };
 }
 
