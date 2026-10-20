@@ -1469,38 +1469,16 @@ function wzWhatsapp(body, cfg) {
     waConnectBox($('#wa-managed', body), { onConnected: () => { const n = $('#wz-next'); if (n) n.textContent = 'Concluir ✓'; } });
     return async () => true;
   }
+  // Sem o servidor de conexão da plataforma: nada técnico para o cliente; segue com o simulador.
   const w = cfg.settings.whatsapp;
-  const webhook = state.meta.webhooks?.evolution || '';
-  body.innerHTML = `
-    ${w.provider !== 'simulator' ? `<div class="banner" style="margin-bottom:14px">✓ WhatsApp já conectado (${w.provider === 'meta' ? 'API oficial' : 'QR Code'}).</div>` : ''}
-    <div class="wizard-choice">
-      <label class="card wizard-option"><input type="radio" name="wz-wa" value="later" ${w.provider === 'simulator' ? 'checked' : ''}>
-        <strong>Conectar depois</strong><span class="small muted">Continue testando com o simulador. Você conecta quando quiser em Configurações → WhatsApp.</span></label>
-      <label class="card wizard-option"><input type="radio" name="wz-wa" value="evolution" ${w.provider === 'evolution' ? 'checked' : ''}>
-        <strong>Conectar meu número por QR Code</strong><span class="small muted">Use o número que você já tem. Precisa dos dados do servidor de conexão (Evolution API).</span></label>
-    </div>
-    <div id="wz-evo" class="hidden" style="margin-top:14px">
-      <div class="fields">
-        <div class="field"><label for="wz-eurl">Endereço do servidor</label><input id="wz-eurl" value="${esc(w.evolution_url)}" placeholder="https://evolution.seudominio.com"></div>
-        <div class="field"><label for="wz-einst">Nome da instância</label><input id="wz-einst" value="${esc(w.evolution_instance)}"></div>
-        <div class="field"><label for="wz-ekey">Chave (API key)</label><input id="wz-ekey" value="${esc(w.evolution_api_key)}"></div>
-      </div>
-      <p class="hint">No servidor de conexão, aponte o webhook (evento MESSAGES_UPSERT) para:</p><div class="code">${esc(webhook)}</div>
-      <p class="hint">Não tem esses dados? Fale com a gente em <a href="mailto:contato@conversacrm.online">contato@conversacrm.online</a> que ajudamos a conectar.</p>
-    </div>`;
-  const evo = $('#wz-evo', body);
-  const sync = () => evo.classList.toggle('hidden', $('[name="wz-wa"]:checked', body)?.value !== 'evolution');
-  $$('[name="wz-wa"]', body).forEach((r) => { r.onchange = sync; });
-  sync();
-  return async () => {
-    if ($('[name="wz-wa"]:checked', body)?.value !== 'evolution') return true;
-    const url = $('#wz-eurl', body).value.trim();
-    const instance = $('#wz-einst', body).value.trim();
-    const key = $('#wz-ekey', body).value.trim();
-    if (!url || !instance || !key) { toast('Preencha os três dados de conexão, ou escolha "Conectar depois".', 'error'); return false; }
-    await api('/api/settings', { method: 'PUT', body: { settings: { whatsapp: { provider: 'evolution', evolution_url: url, evolution_instance: instance, evolution_api_key: key } } } });
-    return true;
-  };
+  body.innerHTML = w.provider !== 'simulator'
+    ? `<div class="banner">✓ WhatsApp já conectado (${w.provider === 'meta' ? 'API oficial' : 'QR Code'}).</div>`
+    : `<div class="card wa-box">
+        <h3>A conexão por QR Code está sendo liberada para a sua conta</h3>
+        <p class="small muted" style="margin:6px 0 0">Por enquanto, continue usando o simulador para conhecer o sistema. Assim que liberar, é só voltar aqui (ou em Configurações → WhatsApp) e ler o QR Code com o celular.
+        Quer acelerar? Fale com a gente em <a href="mailto:contato@conversacrm.online">contato@conversacrm.online</a>.</p>
+      </div>`;
+  return async () => true;
 }
 
 async function wizardDone(el) {
