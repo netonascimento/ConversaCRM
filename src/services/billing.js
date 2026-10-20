@@ -44,7 +44,7 @@ async function asaasRequest(billing, method, pathname, body) {
   const base = billing.asaas_sandbox ? 'https://api-sandbox.asaas.com/v3' : 'https://api.asaas.com/v3';
   const res = await fetch(base + pathname, {
     method,
-    headers: { access_token: billing.asaas_api_key, 'Content-Type': 'application/json', 'User-Agent': 'Falaki' },
+    headers: { access_token: billing.asaas_api_key, 'Content-Type': 'application/json', 'User-Agent': 'Conversa CRM' },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));

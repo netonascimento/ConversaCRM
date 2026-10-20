@@ -1,4 +1,4 @@
-# Falaki CRM
+# Conversa CRM
 
 Sistema integrado para qualquer empresa **prospectar, atender, vender, agendar e cobrar**, tudo no mesmo lugar e conectado ao WhatsApp:
 
@@ -20,7 +20,7 @@ Serve para **vender qualquer coisa**: você cadastra seus produtos/serviços e d
 
 ## Plataforma para várias empresas
 
-O Falaki roda como serviço (SaaS): um único servidor atende várias empresas, cada uma com seus usuários, dados, WhatsApp e integrações.
+O Conversa CRM roda como serviço (SaaS): um único servidor atende várias empresas, cada uma com seus usuários, dados, WhatsApp e integrações.
 
 - **Página inicial** (`/`): apresentação do produto e planos. O botão de teste grátis cria a conta da empresa no plano gratuito.
 - **Sistema** (`/app`): onde cada empresa trabalha.
@@ -74,8 +74,8 @@ Cada empresa escolhe como conectar:
 ## Google Agenda
 
 Cada profissional (ou a empresa, quando não há profissionais) clica em **Agenda → Google Agenda → Conectar** e autoriza uma vez. A partir daí:
-- todo agendamento criado, remarcado ou cancelado no Falaki (pela equipe ou pela IA) aparece sozinho no Google Agenda, com nome e WhatsApp do cliente;
-- compromissos marcados direto no Google bloqueiam aqueles horários no Falaki (eventos marcados como "disponível" não bloqueiam), e a IA não oferece o horário;
+- todo agendamento criado, remarcado ou cancelado no Conversa CRM (pela equipe ou pela IA) aparece sozinho no Google Agenda, com nome e WhatsApp do cliente;
+- compromissos marcados direto no Google bloqueiam aqueles horários no Conversa CRM (eventos marcados como "disponível" não bloqueiam), e a IA não oferece o horário;
 - os horários do Google são relidos a cada 10 minutos (ou na hora, pelo botão "Atualizar agora"), e envios que falharem são repetidos automaticamente.
 
 **Configuração (uma vez, pelo dono da plataforma):**
@@ -93,7 +93,7 @@ Em **CRM → Importar**, a empresa traz os clientes de:
 - **texto colado** direto da planilha (copiar e colar);
 - **contatos do celular**: arquivo `.vcf` exportado do Google Contatos ou do iCloud, ou o CSV do Google Contatos.
 
-O Falaki reconhece as colunas sozinho (nome, telefone/celular/WhatsApp, e-mail, empresa, CPF/CNPJ, etiquetas, valor…), mostra uma prévia para conferir e:
+O Conversa CRM reconhece as colunas sozinho (nome, telefone/celular/WhatsApp, e-mail, empresa, CPF/CNPJ, etiquetas, valor…), mostra uma prévia para conferir e:
 - não duplica contatos com o mesmo telefone ou e-mail (e pode completar os dados que faltarem nos que já existem);
 - permite escolher a etapa do funil, uma etiqueta para a importação e uma sequência de follow-up;
 - respeita o limite de leads do plano.
@@ -124,14 +124,14 @@ O modo define **quais ferramentas a IA recebe**, não só o texto das instruçõ
 Requisitos: **Node.js 22.13 ou superior** (usa o SQLite embutido no Node, sem banco externo).
 
 ```bash
-git clone https://github.com/netonascimento/Falaki.git
-cd Falaki
+git clone https://github.com/netonascimento/Conversa CRM.git
+cd Conversa CRM
 npm install
 npm run seed     # opcional: cria uma empresa de demonstração com dados
 npm start        # http://localhost:3000 (sistema em /app, administração em /admin)
 ```
 
-Login da demonstração: `demo@falaki.me` / `demo1234`. Para um escritório de advocacia de exemplo (3 advogados, triagem, agenda com confirmação): `npm run seed:advocacia` e entre com `advocacia@falaki.me` / `demo1234`. Ou clique em **Cadastre sua empresa** para criar uma conta do zero.
+Login da demonstração: `demo@conversacrm.online` / `demo1234`. Para um escritório de advocacia de exemplo (3 advogados, triagem, agenda com confirmação): `npm run seed:advocacia` e entre com `advocacia@conversacrm.online` / `demo1234`. Ou clique em **Cadastre sua empresa** para criar uma conta do zero.
 
 Para testar sem conectar um número de WhatsApp, use o botão **📱 Simular cliente** na tela de Atendimento: a mensagem entra no CRM e a IA responde como responderia no WhatsApp de verdade.
 
@@ -149,9 +149,9 @@ Copie `.env.example` para `.env`. Todas são opcionais; as chaves também podem 
 | `ALLOW_SIGNUP` | `false` para desligar o teste grátis pela página inicial (só o administrador cria empresas) |
 | `SALES_WHATSAPP` | WhatsApp de vendas: os botões dos planos pagos abrem uma conversa com ele |
 | `STRIPE_SECRET_KEY` (ou `STRIPE_API_KEY`) / `STRIPE_WEBHOOK_SECRET` | Assinatura no cartão e Pix pelo Stripe, e a verificação do webhook `/webhooks/stripe` |
-| `EVOLUTION_URL` / `EVOLUTION_API_KEY` | Servidor Evolution API da plataforma: cada empresa conecta o WhatsApp só lendo um QR Code (o Falaki cria a conexão e o aviso de mensagens sozinho). Pelo QR Code, a prospecção manda no máximo 20 primeiras mensagens por dia |
+| `EVOLUTION_URL` / `EVOLUTION_API_KEY` | Servidor Evolution API da plataforma: cada empresa conecta o WhatsApp só lendo um QR Code (o Conversa CRM cria a conexão e o aviso de mensagens sozinho). Pelo QR Code, a prospecção manda no máximo 20 primeiras mensagens por dia |
 | `PLATFORM_PIX_KEY` / `PLATFORM_PIX_NAME` / `PLATFORM_PIX_CITY` | Pix manual da assinatura (opcional, só sem Stripe) |
-| `SALES_EMAIL` | E-mail que recebe os comprovantes (padrão `contato@falaki.me`) |
+| `SALES_EMAIL` | E-mail que recebe os comprovantes (padrão `contato@conversacrm.online`) |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Cria o primeiro administrador ao iniciar |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Credenciais OAuth do Google Cloud para sincronizar o Google Agenda |
 | `DB_PATH` | Caminho do banco SQLite (padrão `data/falaki.db`; se só existir o antigo `data/fechou.db`, ele continua sendo usado) |
@@ -211,7 +211,7 @@ test/                  testes (npm test)
 
 ## Demonstração no navegador
 
-`npm run build:demo` gera `dist/falaki-demo.html`: um único arquivo que roda o próprio código do Falaki no navegador (o SQLite vai compilado para WebAssembly), com duas empresas de exemplo (clínica odontológica e escritório de advocacia) e um seletor para alternar entre elas. O link com `#advocacia` no final abre direto no escritório. Serve para mostrar o sistema a clientes sem instalar nada.
+`npm run build:demo` gera `dist/conversacrm-demo.html`: um único arquivo que roda o próprio código do Conversa CRM no navegador (o SQLite vai compilado para WebAssembly), com duas empresas de exemplo (clínica odontológica e escritório de advocacia) e um seletor para alternar entre elas. O link com `#advocacia` no final abre direto no escritório. Serve para mostrar o sistema a clientes sem instalar nada.
 
 ## Testes
 
@@ -226,4 +226,4 @@ Cobrem fuso horário, Pix (CRC conferido com o exemplo do Banco Central), agenda
 - Rode atrás de HTTPS (Nginx, Caddy ou a plataforma de hospedagem) e defina `PUBLIC_URL`.
 - Faça backup do arquivo do banco (`data/falaki.db`).
 - Desative cadastros públicos com `ALLOW_SIGNUP=false` se for criar as contas dos clientes manualmente.
-- Há um `Dockerfile` pronto: `docker build -t falaki . && docker run -p 3000:3000 -v falaki-data:/app/data falaki`.
+- Há um `Dockerfile` pronto: `docker build -t conversacrm . && docker run -p 3000:3000 -v conversacrm-data:/app/data conversacrm`.

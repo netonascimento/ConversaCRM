@@ -1,5 +1,5 @@
 # Node 22.13+ (SQLite embutido). O banco fica em /app/data: monte ali um disco persistente
-# (no Railway: Volume com mount path /app/data; no Docker: -v falaki-data:/app/data).
+# (no Railway: Volume com mount path /app/data; no Docker: -v conversacrm-data:/app/data).
 FROM node:22.13-alpine
 WORKDIR /app
 COPY package*.json ./

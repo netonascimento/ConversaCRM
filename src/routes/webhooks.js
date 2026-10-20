@@ -63,7 +63,7 @@ export function registerWebhooks(router) {
     const given = query.token || req.headers['x-webhook-token'];
     const secret = company.settings.whatsapp.evolution_webhook_secret;
     if (!safeEqual(given, company.webhook_token) && !(secret && safeEqual(given, secret))) throw new HttpError(401, 'Token inválido');
-    // Conectou ou desconectou o celular (QR Code gerenciado pelo Falaki).
+    // Conectou ou desconectou o celular (QR Code gerenciado pelo Conversa CRM).
     const event = String(body?.event || '').toLowerCase().replace('_', '.');
     if (event === 'connection.update' && body.data?.state) applyState(company.id, body.data.state);
     if (active(company)) withCompanyDb(company.id, () => { for (const msg of parseEvolutionWebhook(body)) handleInbound(company.id, msg); });

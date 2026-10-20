@@ -2,7 +2,7 @@ import { get } from '../db.js';
 import { getCompany, saveSettings } from './company.js';
 import { aiAllowed } from './plans.js';
 
-// "Primeiros passos": o que falta para o Falaki atender sozinho. Cada passo é marcado pelo que a
+// "Primeiros passos": o que falta para o Conversa CRM atender sozinho. Cada passo é marcado pelo que a
 // empresa já configurou de verdade (não por clique), e o painel some quando tudo estiver pronto.
 export function onboarding(companyId) {
   const company = getCompany(companyId);
@@ -31,8 +31,8 @@ export function onboarding(companyId) {
     {
       id: 'teste', title: 'Simule um cliente',
       text: aiAllowed(company)
-        ? 'Ainda não precisa do WhatsApp: aqui você faz de conta que é um cliente e vê a IA responder, agendar e cobrar. É um teste dentro do Falaki; nenhuma mensagem é enviada.'
-        : 'Ainda não precisa do WhatsApp: aqui você faz de conta que é um cliente e responde como a sua equipe. É um teste dentro do Falaki; nenhuma mensagem é enviada.',
+        ? 'Ainda não precisa do WhatsApp: aqui você faz de conta que é um cliente e vê a IA responder, agendar e cobrar. É um teste dentro do Conversa CRM; nenhuma mensagem é enviada.'
+        : 'Ainda não precisa do WhatsApp: aqui você faz de conta que é um cliente e responde como a sua equipe. É um teste dentro do Conversa CRM; nenhuma mensagem é enviada.',
       action: 'Simular um cliente', href: '#/comecar/4',
       done: one("SELECT COUNT(*) AS n FROM messages WHERE company_id = ? AND direction = 'in'"),
     },

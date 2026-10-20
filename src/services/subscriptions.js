@@ -2,7 +2,7 @@ import { main, now } from '../db.js';
 import { PLANS } from './plans.js';
 import { todayIn, addDays } from './time.js';
 
-// Assinatura das empresas na plataforma (o que elas pagam ao Falaki).
+// Assinatura das empresas na plataforma (o que elas pagam ao Conversa CRM).
 // billing_method: 'pix' (o admin confirma cada mês) ou 'cartao' (Stripe cobra sozinho).
 // paid_until: até quando o mês pago vale. subscription_status: ativa | atrasada | cancelada.
 

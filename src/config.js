@@ -26,9 +26,9 @@ export const config = {
   salesWhatsapp: (process.env.SALES_WHATSAPP || '').replace(/\D/g, ''),
   // Pix da plataforma para a assinatura (botão Comprar do teste grátis) e e-mail para o comprovante.
   platformPixKey: (process.env.PLATFORM_PIX_KEY || '').trim(),
-  platformPixName: process.env.PLATFORM_PIX_NAME || 'Falaki',
+  platformPixName: process.env.PLATFORM_PIX_NAME || 'Conversa CRM',
   platformPixCity: process.env.PLATFORM_PIX_CITY || 'Sao Paulo',
-  salesEmail: process.env.SALES_EMAIL || 'contato@falaki.me',
+  salesEmail: process.env.SALES_EMAIL || 'contato@conversacrm.online',
   // Stripe (cartão e Pix). STRIPE_SECRET_KEY tem prioridade; senão, rodando em localhost usa a chave de
   // teste (STRIPE_TEST_API_KEY) e, publicado, a de produção (STRIPE_API_KEY).
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || (/^http:\/\/(localhost|127\.0\.0\.1)/.test(process.env.PUBLIC_URL || 'http://localhost')

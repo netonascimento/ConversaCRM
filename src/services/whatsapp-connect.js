@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { getCompany, saveSettings } from './company.js';
 
-// WhatsApp por QR Code gerenciado pelo Falaki: a plataforma roda um servidor Evolution API
+// WhatsApp por QR Code gerenciado pelo Conversa CRM: a plataforma roda um servidor Evolution API
 // (EVOLUTION_URL + EVOLUTION_API_KEY) e cria a conexão de cada empresa sozinha. O cliente só
 // lê o QR Code no celular; endereço, instância e chaves nunca aparecem para ele.
 
@@ -12,7 +12,7 @@ export const evolutionFetch = (...args) => fetchImpl(...args);
 
 export const managedEnabled = () => Boolean(config.evolutionUrl && config.evolutionApiKey);
 const base = () => config.evolutionUrl.replace(/\/$/, '');
-export const instanceName = (company) => `falaki-${String(company.public_id).toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
+export const instanceName = (company) => `conversacrm-${String(company.public_id).toLowerCase().replace(/[^a-z0-9-]/g, '')}`;
 
 async function evo(path, { method = 'GET', body } = {}) {
   const res = await fetchImpl(`${base()}${path}`, {

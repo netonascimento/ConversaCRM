@@ -55,7 +55,7 @@ export function createServer() {
 if (process.argv[1] && path.resolve(process.argv[1]) === path.join(ROOT, 'src', 'server.js')) {
   ensureAdminFromEnv();
   createServer().listen(config.port, () => {
-    console.log(`Falaki rodando em ${config.publicUrl} (porta ${config.port})`);
+    console.log(`Conversa CRM rodando em ${config.publicUrl} (porta ${config.port})`);
     if (!config.disableScheduler) startScheduler(config.schedulerIntervalMs);
   });
 }

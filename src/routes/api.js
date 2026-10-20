@@ -178,7 +178,7 @@ export function registerApi(router) {
   });
   router.get('/api/onboarding', auth, ownerOnly, (req) => onboarding(req.companyId));
 
-  // WhatsApp por QR Code gerenciado pelo Falaki (o cliente só lê o QR Code no celular).
+  // WhatsApp por QR Code gerenciado pelo Conversa CRM (o cliente só lê o QR Code no celular).
   const waError = (e) => new HttpError(502, e.message);
   router.post('/api/whatsapp/connect', auth, ownerOnly, async (req) => { try { return await startConnection(req.companyId); } catch (e) { throw waError(e); } });
   router.get('/api/whatsapp/state', auth, ownerOnly, async (req) => { try { return await connectionState(req.companyId); } catch (e) { throw waError(e); } });

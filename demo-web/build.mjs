@@ -24,7 +24,7 @@ const landing = fs.readFileSync(V + 'landing.html', 'utf8').replace('</body>', `
 document.addEventListener('click', function (e) {
   var a = e.target.closest && e.target.closest('a'); if (!a) return;
   var h = a.getAttribute('href') || '';
-  if (h.indexOf('/app') === 0) { e.preventDefault(); parent.postMessage({ falaki: 'open-app', hash: h.slice(4) }, '*'); }
+  if (h.indexOf('/app') === 0) { e.preventDefault(); parent.postMessage({ conversaCrm: 'open-app', hash: h.slice(4) }, '*'); }
 }, true);
 </script></body>`);
 const js = fs.readFileSync(here + '../dist/bundle.js', 'utf8').replace(/<\/script/gi, '<\\/script');
@@ -40,14 +40,14 @@ const extra = `
 #demo-switch + .sidebar-foot { margin-top: 8px; }
 #vf-loading { min-height: 100vh; display: grid; place-items: center; color: var(--muted); font-size: 15px; }
 `;
-const html = `<title>Falaki</title>
+const html = `<title>Conversa CRM</title>
 <style>${css}${extra}</style>
-<iframe id="landing-frame" title="Falaki — página inicial" hidden></iframe>
+<iframe id="landing-frame" title="Conversa CRM — página inicial" hidden></iframe>
 <script>document.getElementById('landing-frame').srcdoc = ${JSON.stringify(landing).replace(/<\/script/gi, '<\\/script')};</script>
-<div id="app"><div id="vf-loading">Carregando o Falaki…</div></div>
+<div id="app"><div id="vf-loading">Carregando o Conversa CRM…</div></div>
 <div id="modal-root"></div>
 <div id="toast-root"></div>
 <script type="module">${js}</script>
 `;
-fs.writeFileSync(here + '../dist/falaki-demo.html', html);
+fs.writeFileSync(here + '../dist/conversacrm-demo.html', html);
 console.log('ok', (html.length / 1024).toFixed(0) + ' KB');

@@ -1,4 +1,4 @@
-// Falaki — painel do administrador da plataforma (cadastro de empresas, usuários e planos)
+// Conversa CRM — painel do administrador da plataforma (cadastro de empresas, usuários e planos)
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -69,7 +69,7 @@ function renderLogin() {
   $('#app').innerHTML = `
     <div class="auth"><div>
       <div class="card">
-        <div class="brand" style="color:var(--green-dark);padding:0 0 12px">Falaki</div>
+        <div class="brand" style="color:var(--green-dark);padding:0 0 12px">Conversa CRM</div>
         <h1>Administração</h1>
         <p class="muted">Acesso restrito ao responsável pela plataforma.</p>
         <form id="login" class="stack" style="margin-top:16px">
@@ -98,10 +98,10 @@ const PAGES = [
 
 function renderLayout() {
   $('#app').innerHTML = `
-    <div class="mobile-top"><button id="menu-btn" aria-label="Menu">☰</button><strong>Falaki · Admin</strong></div>
+    <div class="mobile-top"><button id="menu-btn" aria-label="Menu">☰</button><strong>Conversa CRM · Admin</strong></div>
     <div class="layout">
       <aside class="sidebar" id="sidebar">
-        <div class="brand">Falaki <span class="badge" style="margin-left:4px">admin</span></div>
+        <div class="brand">Conversa CRM <span class="badge" style="margin-left:4px">admin</span></div>
         <nav class="nav">${PAGES.map(([id, label]) => `<a href="#/${id}" data-page="${id}"><span>${label}</span></a>`).join('')}</nav>
         <div class="sidebar-foot">
           <div><strong style="color:#fff">${esc(state.me.admin.name)}</strong></div>
@@ -203,7 +203,7 @@ async function renderFinance(el) {
   }[f.stripe_mode];
   const row = (x, extra = '') => `<tr class="clickable" data-id="${x.id}"><td><strong>${esc(x.name)}</strong></td><td>${esc(planLabel(x.plan))}</td>${extra}<td class="right nowrap">${money(x.amount_cents)}</td></tr>`;
   el.innerHTML = `
-    <div class="page-head"><div><h1>Financeiro</h1><p class="muted">Mensalidades que as empresas pagam ao Falaki</p></div>
+    <div class="page-head"><div><h1>Financeiro</h1><p class="muted">Mensalidades que as empresas pagam ao Conversa CRM</p></div>
       <span class="spacer"></span><span class="small">${stripeNote}</span></div>
     <div class="grid kpis">
       <div class="card kpi good"><div class="label">Recebido no mês</div><div class="value">${money(r.this_month_cents)}</div><div class="sub">mês passado: ${money(r.prev_month_cents)}</div></div>
@@ -250,7 +250,7 @@ async function renderFinance(el) {
 async function renderOverview(el) {
   const o = await api('/api/admin/overview');
   el.innerHTML = `
-    <div class="page-head"><div><h1>Visão geral</h1><p class="muted">Todas as empresas que usam o Falaki</p></div>
+    <div class="page-head"><div><h1>Visão geral</h1><p class="muted">Todas as empresas que usam o Conversa CRM</p></div>
       <span class="spacer"></span><button class="primary" id="new-company">+ Nova empresa</button></div>
     <div class="grid kpis">
       <div class="card kpi ${o.upgrade_requests ? 'bad' : ''}"><div class="label">Aguardando Pix</div><div class="value">${num(o.upgrade_requests)}</div><div class="sub">pedidos de assinatura para conferir</div></div>
@@ -374,7 +374,7 @@ function companyForm() {
 }
 
 function showCredentials(company, email, password) {
-  const text = `Acesso ao Falaki — ${company}\nEndereço: ${location.origin}/app\nE-mail: ${email}\nSenha: ${password}`;
+  const text = `Acesso ao Conversa CRM — ${company}\nEndereço: ${location.origin}/app\nE-mail: ${email}\nSenha: ${password}`;
   const box = openModal(`${modalHead('Acesso criado')}
     <p>Envie estes dados para o cliente:</p>
     <pre class="pix" style="white-space:pre-wrap">${esc(text)}</pre>
@@ -518,7 +518,7 @@ async function openCompany(id) {
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `falaki-${c.name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `conversacrm-${c.name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g, '-')}-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(a.href);
     } catch (err) { fail(err); }

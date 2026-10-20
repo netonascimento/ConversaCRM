@@ -22,5 +22,5 @@ export const UPGRADE_PLAN = 'essencial';
 export const aiAllowed = (company) => PLANS[company?.plan]?.ai !== false;
 export const planOf = (id) => PLANS[id] || null;
 /** Identificador do Pix da assinatura: aponta qual empresa pagou. */
-export const upgradeTxid = (company) => `FALAKI${String(company.public_id).replace(/[^A-Za-z0-9]/g, '')}`.slice(0, 25);
+export const upgradeTxid = (company) => `CONVERSA${String(company.public_id).replace(/[^A-Za-z0-9]/g, '')}`.slice(0, 25);
 export const publicPlans = () => Object.entries(PLANS).map(([id, p]) => ({ id, ...p }));

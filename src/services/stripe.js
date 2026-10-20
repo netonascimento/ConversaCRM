@@ -6,7 +6,7 @@ import { applyPlan, recordPayment, confirmPixPayment } from './subscriptions.js'
 import { zonedParts } from './time.js';
 
 // Assinatura por cartão no Stripe (Checkout + Billing + Customer Portal), sem SDK: a API é
-// chamada direto. O cartão é digitado na página do Stripe e nunca passa pelo Falaki.
+// chamada direto. O cartão é digitado na página do Stripe e nunca passa pelo Conversa CRM.
 
 let fetchImpl = (...args) => fetch(...args);
 // Permite simular o Stripe nos testes.
@@ -59,7 +59,7 @@ export async function createCheckout(company, user, planId) {
       quantity: 1,
       price_data: {
         currency: 'brl', unit_amount: plan.price_cents, recurring: { interval: 'month' },
-        product_data: { name: `Falaki — plano ${plan.label}` },
+        product_data: { name: `Conversa CRM — plano ${plan.label}` },
       },
     }],
     metadata: meta,
@@ -87,7 +87,7 @@ export async function createPixCheckout(company, user, planId) {
     payment_method_types: ['pix'],
     ...(company.stripe_customer_id ? { customer: company.stripe_customer_id } : { customer_email: user.email }),
     client_reference_id: company.id,
-    line_items: [{ quantity: 1, price_data: { currency: 'brl', unit_amount: plan.price_cents, product_data: { name: `Falaki — plano ${plan.label} (1 mês)` } } }],
+    line_items: [{ quantity: 1, price_data: { currency: 'brl', unit_amount: plan.price_cents, product_data: { name: `Conversa CRM — plano ${plan.label} (1 mês)` } } }],
     metadata: meta,
     payment_intent_data: { metadata: meta },
     success_url: `${config.publicUrl}/app#/assinar?pix=ok`,
@@ -110,7 +110,7 @@ export async function changeCardPlan(company, planId) {
   if (!item) throw new Error('Assinatura sem item no Stripe');
   // Produto com o nome do plano novo, para as próximas faturas mostrarem o plano certo
   // (o produto criado pela página de pagamento não pode ser renomeado).
-  const product = (await stripe('products', { name: `Falaki — plano ${plan.label}`, metadata: { plan: planId } })).id;
+  const product = (await stripe('products', { name: `Conversa CRM — plano ${plan.label}`, metadata: { plan: planId } })).id;
   await stripe(`subscriptions/${company.stripe_subscription_id}`, {
     items: [{ id: item.id, price_data: { currency: 'brl', unit_amount: plan.price_cents, recurring: { interval: 'month' }, product } }],
     proration_behavior: 'always_invoice',

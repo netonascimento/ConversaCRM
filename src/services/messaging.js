@@ -52,7 +52,7 @@ async function sendViaMeta(wa, contact, body) {
 }
 
 async function sendViaEvolution(wa, contact, body) {
-  // Conexão gerenciada pelo Falaki: usa o servidor e a chave da plataforma.
+  // Conexão gerenciada pelo Conversa CRM: usa o servidor e a chave da plataforma.
   const apiKey = wa.evolution_api_key || (wa.evolution_managed ? config.evolutionApiKey : '');
   if (!wa.evolution_url || !apiKey || !wa.evolution_instance) throw new Error('Evolution API não configurada');
   const res = await evolutionFetch(`${wa.evolution_url.replace(/\/$/, '')}/message/sendText/${encodeURIComponent(wa.evolution_instance)}`, {

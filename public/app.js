@@ -1,4 +1,4 @@
-// Falaki — painel web (SPA sem dependências)
+// Conversa CRM — painel web (SPA sem dependências)
 import { parseDelimited, parseVCard, guessMapping, toContacts, FIELDS } from './import.js';
 
 // ---------------------------------------------------------------------------
@@ -139,11 +139,11 @@ async function renderAuth(mode = 'login') {
   const title = buying ? `Assinar o ${buying.label}` : mode === 'login' ? 'Entrar' : 'Teste grátis';
   const intro = buying
     ? `${money(buying.price_cents)}/mês, com IA. ${mode === 'login' ? 'Entre na sua conta' : 'Crie a conta da sua empresa'} e pague por Pix na próxima tela.`
-    : mode === 'login' ? 'Fala aqui. Fecha aqui.' : 'Crie a conta da sua empresa: 1 usuário e até 30 clientes, sem cartão. A IA fica disponível nos planos pagos.';
+    : mode === 'login' ? 'Toda conversa vira cliente.' : 'Crie a conta da sua empresa: 1 usuário e até 30 clientes, sem cartão. A IA fica disponível nos planos pagos.';
   $('#app').innerHTML = `
     <div class="auth"><div>
       <div class="card">
-        <div class="brand" style="color:var(--green-dark);padding:0 0 12px"><div class="brand-logo">${icon('agenda').replace('currentColor', '#fff')}</div>Falaki</div>
+        <div class="brand" style="color:var(--green-dark);padding:0 0 12px"><div class="brand-logo">${icon('agenda').replace('currentColor', '#fff')}</div>Conversa CRM</div>
         <h1>${esc(title)}</h1>
         <p class="muted">${esc(intro)}</p>
         <form id="auth-form" class="stack" style="margin-top:16px">
@@ -158,7 +158,7 @@ async function renderAuth(mode = 'login') {
         <p class="small muted" style="margin-top:14px;text-align:center">
           ${mode === 'login' ? (cfg.allow_signup ? `Ainda não usa? <a href="#cadastro" data-mode="register">${buying ? 'Criar conta' : 'Teste grátis'}</a>` : '') : 'Já tem conta? <a href="#" data-mode="login">Entrar</a>'}
         </p>
-        <p class="small muted" style="text-align:center"><a href="/">Conheça o Falaki</a></p>
+        <p class="small muted" style="text-align:center"><a href="/">Conheça o Conversa CRM</a></p>
       </div>
       <p class="features">✓ IA no WhatsApp 24h &nbsp; ✓ Agenda &nbsp; ✓ CRM &nbsp; ✓ Follow-up &nbsp; ✓ Cobrança Pix &nbsp; ✓ Google Maps &nbsp; ✓ Dashboard</p>
     </div></div>`;
@@ -206,10 +206,10 @@ function every(ms, fn) { state.timers.push(setInterval(fn, ms)); }
 
 function renderLayout() {
   $('#app').innerHTML = `
-    <div class="mobile-top"><button id="menu-btn" aria-label="Abrir menu">☰</button><strong>Falaki</strong></div>
+    <div class="mobile-top"><button id="menu-btn" aria-label="Abrir menu">☰</button><strong>Conversa CRM</strong></div>
     <div class="layout">
       <aside class="sidebar" id="sidebar">
-        <div class="brand"><div class="brand-logo">${icon('agenda')}</div>Falaki</div>
+        <div class="brand"><div class="brand-logo">${icon('agenda')}</div>Conversa CRM</div>
         <nav class="nav">${allowedPages().map(([id, label]) => `<a href="#/${id}" data-page="${id}">${icon(id)}<span>${label}</span>${id === 'inbox' ? '<span class="badge count hidden" id="unread-badge"></span>' : id === 'tarefas' ? '<span class="badge count hidden" id="tasks-badge"></span>' : ''}</a>`).join('')}</nav>
         <div class="sidebar-foot">
           <div><strong style="color:#fff">${esc(state.me.company.name)}</strong></div>
@@ -251,7 +251,7 @@ function planBanner() {
   if (sub?.state === 'atrasada') return `<div class="banner">O cartão da assinatura foi recusado. <a href="#/assinar">Atualizar o cartão</a> para não perder o plano.</div>`;
   if (plan.max_leads === null || plan.max_leads === undefined) return '';
   const left = plan.leads_remaining;
-  const contact = state.meta.sales_whatsapp ? ` <a href="https://wa.me/${esc(state.meta.sales_whatsapp)}?text=${encodeURIComponent(`Olá! Quero mudar de plano no Falaki (${state.me.company.name}).`)}" target="_blank" rel="noopener">Mudar de plano</a>` : ' <a href="#/assinar">Mudar de plano</a>';
+  const contact = state.meta.sales_whatsapp ? ` <a href="https://wa.me/${esc(state.meta.sales_whatsapp)}?text=${encodeURIComponent(`Olá! Quero mudar de plano no Conversa CRM (${state.me.company.name}).`)}" target="_blank" rel="noopener">Mudar de plano</a>` : ' <a href="#/assinar">Mudar de plano</a>';
   if (left === 0) return `<div class="banner">Você usou os ${plan.max_leads} leads do plano ${esc(plan.label)}. Novos contatos não entram no CRM até você mudar de plano. ${aiLocked() ? '<a href="#/assinar">Assinar</a>' : contact}</div>`;
   if (aiLocked()) return `<div class="banner">Teste grátis: ${plan.leads_used} de ${plan.max_leads} leads usados, sem IA. <a href="#/assinar">🔒 Desbloquear a IA</a></div>`;
   return `<div class="banner">Plano ${esc(plan.label)}: ${plan.leads_used} de ${plan.max_leads} leads usados.${contact}</div>`;
@@ -264,7 +264,7 @@ async function refreshOnboardingPill() {
   if (!o) return;
   const changed = o.done_count !== state.meta.onboarding.done_count || o.complete;
   state.meta.onboarding = o;
-  if (o.complete) { $('#onboard-pill')?.remove(); toast('Tudo pronto! O Falaki já pode atender seus clientes. 🎉'); return; }
+  if (o.complete) { $('#onboard-pill')?.remove(); toast('Tudo pronto! O Conversa CRM já pode atender seus clientes. 🎉'); return; }
   const pill = $('#onboard-pill');
   if (pill && changed) pill.innerHTML = `Primeiros passos · ${o.done_count} de ${o.total}<div class="onboard-bar"><span style="width:${o.percent}%"></span></div>`;
 }
@@ -353,7 +353,7 @@ function barChart(series, key, { color = 'var(--green-700)', format = (v) => v }
 function onboardingCard(o) {
   return `<div class="card" style="margin-bottom:14px" id="onboarding">
     <div class="card-head"><h2>Primeiros passos</h2><span class="spacer"></span><span class="small muted">${o.done_count} de ${o.total}</span></div>
-    <p class="muted" style="margin:6px 0 0">Seu Falaki está <strong>${o.percent}% pronto</strong>. ${o.done_count === 0 ? 'São 5 passos rápidos para ele atender sozinho.' : o.total - o.done_count === 1 ? 'Falta só um passo!' : `Faltam ${o.total - o.done_count} passos.`}</p>
+    <p class="muted" style="margin:6px 0 0">Seu Conversa CRM está <strong>${o.percent}% pronto</strong>. ${o.done_count === 0 ? 'São 5 passos rápidos para ele atender sozinho.' : o.total - o.done_count === 1 ? 'Falta só um passo!' : `Faltam ${o.total - o.done_count} passos.`}</p>
     <div class="onboard-bar" role="progressbar" aria-valuenow="${o.percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${o.percent}%"></span></div>
     ${o.steps.map((x, i) => {
       const cls = x.done ? 'done' : x.id === o.next ? 'next' : 'later';
@@ -1127,7 +1127,7 @@ async function renderPaywall(el, [planId] = []) {
   const leadsText = (n) => (n === null || n === undefined ? 'leads ilimitados' : `até ${n} leads`);
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>${info.ai_locked ? '🔒 Desbloqueie a IA do Falaki' : 'Assinatura'}</h1>
+      <div><h1>${info.ai_locked ? '🔒 Desbloqueie a IA do Conversa CRM' : 'Assinatura'}</h1>
         <p class="muted">${info.ai_locked ? 'No teste grátis tudo que usa IA fica bloqueado. Escolha um plano para a atendente virtual começar a trabalhar.' : 'Mude de plano quando precisar de mais usuários ou leads.'}</p></div>
     </div>
     ${subscriptionCard(info)}
@@ -1232,7 +1232,7 @@ function checkout(info, plan) {
     return;
   }
   const company = state.me.company.name;
-  const subject = `Comprovante Falaki — ${company} — plano ${plan.label}`;
+  const subject = `Comprovante Conversa CRM — ${company} — plano ${plan.label}`;
   const bodyText = `Olá! Segue o comprovante do Pix de ${money(plan.price_cents)} do plano ${plan.label}.\n\nEmpresa: ${company}\nE-mail de acesso: ${state.me.user.email}\nIdentificador do Pix: ${info.txid}\n`;
   const mailto = `mailto:${info.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(bodyText)}`;
   box.innerHTML = `<div class="card">
@@ -1486,7 +1486,7 @@ function wzWhatsapp(body, cfg) {
         <div class="field"><label for="wz-ekey">Chave (API key)</label><input id="wz-ekey" value="${esc(w.evolution_api_key)}"></div>
       </div>
       <p class="hint">No servidor de conexão, aponte o webhook (evento MESSAGES_UPSERT) para:</p><div class="code">${esc(webhook)}</div>
-      <p class="hint">Não tem esses dados? Fale com a gente em <a href="mailto:contato@falaki.me">contato@falaki.me</a> que ajudamos a conectar.</p>
+      <p class="hint">Não tem esses dados? Fale com a gente em <a href="mailto:contato@conversacrm.online">contato@conversacrm.online</a> que ajudamos a conectar.</p>
     </div>`;
   const evo = $('#wz-evo', body);
   const sync = () => evo.classList.toggle('hidden', $('[name="wz-wa"]:checked', body)?.value !== 'evolution');
@@ -1514,7 +1514,7 @@ async function wizardDone(el) {
         <div style="font-size:42px">${pending.length ? '👏' : '🎉'}</div>
         <h1>${pending.length ? 'Quase lá!' : 'Tudo pronto!'}</h1>
         ${!ob.steps.find((x) => x.id === 'whatsapp')?.done ? '' : '<p class="small" style="margin:0 0 8px">📱 <strong>Teste de verdade:</strong> mande um "oi" de outro celular para o número da empresa e veja a conversa chegar no Atendimento.</p>'}
-        <p class="muted">${pending.length ? `Seu Falaki está ${ob.percent}% pronto. Falta${pending.length > 1 ? 'm' : ''}: ${pending.map((x) => esc(x.title.charAt(0).toLowerCase() + x.title.slice(1))).join(', ')}.` : 'O Falaki já pode atender os seus clientes.'}</p>
+        <p class="muted">${pending.length ? `Seu Conversa CRM está ${ob.percent}% pronto. Falta${pending.length > 1 ? 'm' : ''}: ${pending.map((x) => esc(x.title.charAt(0).toLowerCase() + x.title.slice(1))).join(', ')}.` : 'O Conversa CRM já pode atender os seus clientes.'}</p>
         <div class="row wrap" style="justify-content:center;margin-top:18px;gap:10px">
           ${pending.length ? `<a class="btn" href="#/comecar/${ob.steps.indexOf(pending[0]) + 1}">Terminar agora</a>` : ''}
           <a class="btn primary" href="#/inbox">Ir para o Atendimento →</a>
@@ -1525,7 +1525,7 @@ async function wizardDone(el) {
 }
 
 
-// WhatsApp por QR Code gerenciado pelo Falaki: botão → QR Code na tela → "✓ Conectado".
+// WhatsApp por QR Code gerenciado pelo Conversa CRM: botão → QR Code na tela → "✓ Conectado".
 async function waConnectBox(box, { onConnected } = {}) {
   let stopped = false;
   const done = () => { stopped = true; };
@@ -1887,7 +1887,7 @@ async function googleCalendarModal(pros) {
     : role === 'owner' ? [{ id: null, name: 'Agenda da empresa' }] : [];
   const conn = (id) => st.connections.find((c) => (c.professional_id ?? null) === id);
   const box = openModal(`${modalHead('Google Agenda')}
-    <p class="muted" style="margin-top:0">Conecte uma vez e pronto: cada agendamento feito no Falaki (pela equipe ou pela IA) aparece sozinho no Google Agenda, e o que for marcado direto no Google bloqueia o horário aqui. Ninguém precisa cadastrar nada duas vezes.</p>
+    <p class="muted" style="margin-top:0">Conecte uma vez e pronto: cada agendamento feito no Conversa CRM (pela equipe ou pela IA) aparece sozinho no Google Agenda, e o que for marcado direto no Google bloqueia o horário aqui. Ninguém precisa cadastrar nada duas vezes.</p>
     ${!st.configured ? '<div class="banner">A conexão com o Google ainda não foi ativada nesta plataforma. Peça ao administrador para configurar as credenciais do Google Cloud.</div>' : ''}
     ${targets.length ? `<div class="table-wrap"><table>
       <tr><th>Agenda</th><th>Conta Google</th><th></th></tr>
@@ -1919,7 +1919,7 @@ function appointmentDetail(a) {
     <p><strong>${fmt(a.start_at, { dateStyle: 'full', timeStyle: 'short' })}</strong> até ${fmt(a.end_at, { timeStyle: 'short' })}</p>
     <p class="muted">${a.contact_name ? `Cliente: ${esc(a.contact_name)} · ${phoneFmt(a.contact_phone)}` : 'Sem cliente vinculado'}${a.created_by === 'ai' ? ' · agendado pela IA 🤖' : ''}</p>
     ${a.professional_name ? `<p>Profissional: <strong>${esc(a.professional_name)}</strong></p>` : ''}
-    ${a.google_event_id ? '<p class="small muted">✓ Sincronizado com o Google Agenda</p>' : a.google_sync === 'erro' ? '<p class="small" style="color:var(--danger)">Não foi possível enviar ao Google Agenda; o Falaki tenta de novo automaticamente.</p>' : ''}
+    ${a.google_event_id ? '<p class="small muted">✓ Sincronizado com o Google Agenda</p>' : a.google_sync === 'erro' ? '<p class="small" style="color:var(--danger)">Não foi possível enviar ao Google Agenda; o Conversa CRM tenta de novo automaticamente.</p>' : ''}
     ${a.notes ? `<p>${esc(a.notes)}</p>` : ''}
     <label>Status</label>
     ${a.status === 'solicitado' ? `<div class="banner">Horário reservado pela IA e <strong>aguardando sua confirmação</strong>. Ao confirmar ou recusar, o cliente é avisado pelo WhatsApp.</div>
@@ -2263,7 +2263,7 @@ async function renderSettings(el, [tab = 'empresa']) {
       <div class="fields">${input('ai', 'agent_name', 'Nome da atendente', { hint: 'Como ela se apresenta aos clientes.' })}${input('ai', 'model', 'Modelo Claude', { placeholder: 'claude-opus-5-5', hint: 'Deixe vazio para usar o padrão.' })}</div>
       <div class="card" style="margin:6px 0 14px"><h3>Chave da IA (Anthropic) ${aiLocked() ? '<span class="badge">🔒 bloqueada no teste grátis</span>' : meta.ai_configured ? '<span class="badge green">conectada</span>' : '<span class="badge amber">sem chave</span>'}</h3>
         ${aiLocked() ? `<p class="hint">A IA faz parte dos planos pagos.</p>${lockBtn()}` : meta.ai_key_source === 'platform'
-          ? '<p class="hint">A IA desta conta usa a chave do Falaki, configurada pela nossa equipe. Você não precisa fazer nada.</p>'
+          ? '<p class="hint">A IA desta conta usa a chave do Conversa CRM, configurada pela nossa equipe. Você não precisa fazer nada.</p>'
           : `<p class="hint">Crie sua chave em console.anthropic.com. O consumo da IA é cobrado pela Anthropic direto na sua conta. Sem chave, a IA usa respostas automáticas simples.</p>${input('integrations', 'anthropic_api_key', 'API key', { placeholder: 'sk-ant-...' })}`}</div>
       <div class="card" style="margin-bottom:14px"><h3>Google Maps (prospecção) ${meta.places_configured ? '<span class="badge green">conectada</span>' : ''}</h3>
         <p class="hint">Só se você usar a Prospecção com uma chave própria. Ative a "Places API (New)" no Google Cloud e crie uma chave de API.</p>${input('integrations', 'google_places_key', 'API key')}</div>
@@ -2520,5 +2520,5 @@ async function renderProfessionals(el, tabs) {
   $$('tr[data-id]').forEach((tr) => { tr.onclick = () => open(pros.find((p) => String(p.id) === tr.dataset.id)); });
 }
 
-window.falaki = { boot }; // usado pela demonstração para trocar de empresa
+window.conversaCrm = { boot }; // usado pela demonstração para trocar de empresa
 boot();

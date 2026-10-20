@@ -48,14 +48,14 @@ function fakeGoogle({ busy = [] } = {}) {
 async function connect(cid, professionalId) {
   const url = new URL(google.startConnect(cid, { professionalId }));
   assert.equal(url.hostname, 'accounts.google.com');
-  assert.equal(url.searchParams.get('redirect_uri'), 'https://app.falaki.test/api/google/callback');
+  assert.equal(url.searchParams.get('redirect_uri'), 'https://app.conversacrm.test/api/google/callback');
   assert.match(url.searchParams.get('scope'), /calendar\.events/);
   const row = google.consumeState(url.searchParams.get('state'));
   assert.throws(() => google.consumeState(url.searchParams.get('state')), /expirado/, 'o link de conexão só vale uma vez');
   return google.finishConnect(row, 'codigo-de-autorizacao');
 }
 
-test('agendamentos do Falaki viram eventos no Google: criar, remarcar e cancelar', async () => {
+test('agendamentos do Conversa CRM viram eventos no Google: criar, remarcar e cancelar', async () => {
   const g = fakeGoogle();
   const cid = makeCompany();
   const ana = saveProfessional(cid, { name: 'Dra. Ana' });
@@ -83,11 +83,11 @@ test('agendamentos do Falaki viram eventos no Google: criar, remarcar e cancelar
 
   updateAppointment(cid, appt.id, { status: 'cancelado' });
   await new Promise((r) => setTimeout(r, 20));
-  assert.equal(g.events.has(row.google_event_id), false, 'cancelado no Falaki some do Google');
+  assert.equal(g.events.has(row.google_event_id), false, 'cancelado no Conversa CRM some do Google');
   assert.ok(g.calls.some((x) => x.startsWith('PATCH')));
 });
 
-test('compromissos marcados direto no Google bloqueiam o horário no Falaki', async () => {
+test('compromissos marcados direto no Google bloqueiam o horário no Conversa CRM', async () => {
   const cid = makeCompany();
   const ana = saveProfessional(cid, { name: 'Dra. Ana' });
   const bia = saveProfessional(cid, { name: 'Dra. Bia' });
@@ -104,7 +104,7 @@ test('compromissos marcados direto no Google bloqueiam o horário no Falaki', as
   assert.deepEqual(proAt('10:00'), ['Dra. Bia'], 'Ana está ocupada no Google às 10h');
   assert.deepEqual(proAt('11:00'), ['Dra. Bia']);
   assert.deepEqual(proAt('15:00').sort(), ['Dra. Ana', 'Dra. Bia'], 'evento "disponível" não bloqueia');
-  assert.deepEqual(proAt('16:00').sort(), ['Dra. Ana', 'Dra. Bia'], 'evento do próprio Falaki não conta duas vezes');
+  assert.deepEqual(proAt('16:00').sort(), ['Dra. Ana', 'Dra. Bia'], 'evento do próprio Conversa CRM não conta duas vezes');
   assert.ok(bia);
 
   // Folga de dia inteiro no Google.

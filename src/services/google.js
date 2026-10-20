@@ -5,8 +5,8 @@ import { zonedToUtc } from './time.js';
 
 // Sincronização com o Google Agenda.
 // - Cada profissional (ou a empresa, quando não há profissionais) conecta a conta Google uma vez.
-// - Agendamentos do Falaki viram eventos no Google (criar, remarcar e cancelar).
-// - Eventos marcados direto no Google bloqueiam esses horários no Falaki (a IA não oferece).
+// - Agendamentos do Conversa CRM viram eventos no Google (criar, remarcar e cancelar).
+// - Eventos marcados direto no Google bloqueiam esses horários no Conversa CRM (a IA não oferece).
 
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -59,7 +59,7 @@ export function consumeState(state) {
 /** Deve rodar no banco da empresa (withCompanyDb). */
 export async function finishConnect(stateRow, code) {
   const tokens = await tokenRequest({ code, grant_type: 'authorization_code', redirect_uri: redirectUri() });
-  if (!tokens.refresh_token) throw new GoogleError('O Google não liberou acesso permanente. Remova o acesso do Falaki na sua conta Google e conecte de novo.');
+  if (!tokens.refresh_token) throw new GoogleError('O Google não liberou acesso permanente. Remova o acesso do Conversa CRM na sua conta Google e conecte de novo.');
   const info = await fetch(USERINFO_URL, { headers: { Authorization: `Bearer ${tokens.access_token}` } }).then((r) => r.json()).catch(() => ({}));
   const { company_id: companyId, professional_id: professionalId } = stateRow;
   const old = connectionFor(companyId, professionalId);
@@ -135,7 +135,7 @@ async function gapi(conn, method, path, body) {
 
 const calendarPath = (conn) => `/calendars/${encodeURIComponent(conn.calendar_id || 'primary')}`;
 
-// ---- Falaki -> Google ----------------------------------------------------------------------
+// ---- Conversa CRM -> Google ----------------------------------------------------------------------
 
 function eventFor(appt, company) {
   const lines = [
@@ -143,9 +143,9 @@ function eventFor(appt, company) {
     appt.contact_phone && `WhatsApp: +${appt.contact_phone}`,
     appt.product_name && `Serviço: ${appt.product_name}`,
     appt.notes && `Observações: ${appt.notes}`,
-    appt.status === 'solicitado' && 'Aguardando confirmação no Falaki.',
+    appt.status === 'solicitado' && 'Aguardando confirmação no Conversa CRM.',
     '',
-    'Agendado pelo Falaki.',
+    'Agendado pelo Conversa CRM.',
   ].filter((l) => l !== false && l !== null && l !== undefined);
   return {
     summary: `${appt.status === 'solicitado' ? '⏳ ' : ''}${appt.title}`,
@@ -204,7 +204,7 @@ export function queueAppointmentSync(companyId, apptId) {
   syncAppointment(companyId, apptId).catch(() => {});
 }
 
-/** Antes de apagar um agendamento do Falaki, apaga o evento no Google. */
+/** Antes de apagar um agendamento do Conversa CRM, apaga o evento no Google. */
 export async function removeAppointmentEvent(companyId, apptId) {
   const appt = get('SELECT * FROM appointments WHERE id = ? AND company_id = ?', apptId, companyId);
   if (!appt?.google_event_id) return;
@@ -213,7 +213,7 @@ export async function removeAppointmentEvent(companyId, apptId) {
   await gapi(conn, 'DELETE', `${calendarPath(conn)}/events/${encodeURIComponent(appt.google_event_id)}`).catch(() => {});
 }
 
-// ---- Google -> Falaki (horários ocupados) --------------------------------------------------
+// ---- Google -> Conversa CRM (horários ocupados) --------------------------------------------------
 
 export async function refreshBusy(conn) {
   const company = getCompany(conn.company_id);
@@ -226,7 +226,7 @@ export async function refreshBusy(conn) {
   const busy = [];
   for (const ev of data?.items || []) {
     if (ev.status === 'cancelled' || ev.transparency === 'transparent') continue;
-    // Evento criado pelo próprio Falaki (a marca "fechou" é de quando o sistema tinha o nome antigo).
+    // Evento criado pelo próprio Conversa CRM (a marca "fechou" é de quando o sistema tinha o nome antigo).
     if (ev.extendedProperties?.private?.falaki === '1' || ev.extendedProperties?.private?.fechou === '1') continue;
     const start = ev.start?.dateTime ? Date.parse(ev.start.dateTime) : ev.start?.date ? zonedToUtc(ev.start.date, '00:00', company.timezone).getTime() : null;
     const end = ev.end?.dateTime ? Date.parse(ev.end.dateTime) : ev.end?.date ? zonedToUtc(ev.end.date, '00:00', company.timezone).getTime() : null;

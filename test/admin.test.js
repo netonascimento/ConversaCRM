@@ -508,13 +508,13 @@ test('teste grátis: IA bloqueada no servidor e assinatura por Pix com identific
     // Paywall: Pix de cada plano pago, com a chave da plataforma e o identificador da empresa.
     const up = (await u('/api/upgrade')).data;
     assert.deepEqual(up.plans.map((p) => [p.id, p.price_cents]), [['essencial', 10000], ['profissional', 24900]]);
-    assert.match(up.txid, /^FALAKI[A-Za-z0-9]+$/);
+    assert.match(up.txid, /^CONVERSA[A-Za-z0-9]+$/);
     const essencial = up.plans.find((p) => p.id === 'essencial').pix_code;
     assert.ok(essencial.includes('123e4567-e89b-42d3-a456-426614174000'));
     assert.ok(essencial.includes('5406100.00'));
     assert.ok(up.plans.find((p) => p.id === 'profissional').pix_code.includes('5406249.00'));
     assert.ok(essencial.includes(up.txid));
-    assert.equal(up.email, 'contato@falaki.me');
+    assert.equal(up.email, 'contato@conversacrm.online');
 
     // "Já enviei o comprovante" aparece no histórico do admin.
     await u('/api/upgrade/notify', { method: 'POST', body: { plan: 'profissional' } });
@@ -760,7 +760,7 @@ test('Stripe: quem assina no cartão muda de plano na mesma assinatura, com dife
     assert.equal(update.get('items[0][price_data][product]'), 'prod_pro');
     assert.equal(update.get('proration_behavior'), 'always_invoice');
     assert.equal(update.get('metadata[plan]'), 'profissional');
-    assert.equal(calls.find((c) => c.url.endsWith('/products')).body.get('name'), 'Falaki — plano Profissional');
+    assert.equal(calls.find((c) => c.url.endsWith('/products')).body.get('name'), 'Conversa CRM — plano Profissional');
     const meta = (await u('/api/meta')).data;
     assert.deepEqual([meta.plan.id, meta.plan.max_users, meta.plan.max_leads], ['profissional', 10, null]);
     assert.equal((await u('/api/upgrade/change', { method: 'POST', body: { plan: 'profissional' } })).status, 400, 'mesmo plano');
@@ -861,7 +861,7 @@ test('WhatsApp por QR Code gerenciado: conecta sem campos técnicos, recebe o av
           : path.startsWith('/message/sendText') ? { key: { id: `msg${calls.length}` } } : { ok: true };
     return { ok: true, status: 200, json: async () => data };
   });
-  config.evolutionUrl = 'https://evo.falaki.test';
+  config.evolutionUrl = 'https://evo.conversacrm.test';
   config.evolutionApiKey = 'chave-global';
   try {
     const u = browser();
@@ -874,7 +874,7 @@ test('WhatsApp por QR Code gerenciado: conecta sem campos técnicos, recebe o av
     assert.deepEqual(r, { state: 'connecting', qr: 'data:image/png;base64,QRCODE' });
     const create = calls.find((c) => c.url.endsWith('/instance/create'));
     assert.equal(create.body.integration, 'WHATSAPP-BAILEYS');
-    assert.match(create.body.instanceName, /^falaki-/);
+    assert.match(create.body.instanceName, /^conversacrm-/);
     assert.equal(create.key, 'chave-global');
     const hook = calls.find((c) => c.url.includes('/webhook/set/')).body.webhook;
     assert.deepEqual(hook.events, ['MESSAGES_UPSERT', 'CONNECTION_UPDATE']);
@@ -910,7 +910,7 @@ test('WhatsApp por QR Code gerenciado: conecta sem campos técnicos, recebe o av
     // Celular desconectou: aviso para o dono.
     await fetch(base + hookPath, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'connection.update', data: { state: 'close' } }) });
     assert.equal((await u('/api/meta')).data.whatsapp_state, 'close');
-    // Desconectar pelo Falaki volta para o simulador.
+    // Desconectar pelo Conversa CRM volta para o simulador.
     await u('/api/whatsapp/disconnect', { method: 'POST' });
     assert.equal((await u('/api/meta')).data.whatsapp_provider, 'simulator');
   } finally {
@@ -927,7 +927,7 @@ test('limite de prospecção: follow-up que passa das 20 do dia fica para amanh�
   const { run, get } = await import('../src/db.js');
   const { setEvolutionFetch } = await import('../src/services/whatsapp-connect.js');
   setEvolutionFetch(async () => ({ ok: true, status: 200, json: async () => ({ key: { id: 'x' } }) }));
-  const cid = makeCompany({ whatsapp: { provider: 'evolution', evolution_url: 'https://evo.falaki.test', evolution_instance: 'i', evolution_api_key: 'k' } });
+  const cid = makeCompany({ whatsapp: { provider: 'evolution', evolution_url: 'https://evo.conversacrm.test', evolution_instance: 'i', evolution_api_key: 'k' } });
   // 20 primeiras mensagens já enviadas hoje.
   for (let i = 0; i < 20; i++) {
     const c = createContact(cid, { name: `Já ${i}`, phone: `1194000${String(i).padStart(4, '0')}` });
@@ -940,7 +940,9 @@ test('limite de prospecção: follow-up que passa das 20 do dia fica para amanh�
   const e = get('SELECT * FROM enrollments WHERE id = ?', eid);
   assert.equal(e.status, 'ativo');
   assert.equal(e.step_index, 0, 'o passo não foi consumido');
-  assert.ok(Date.parse(e.next_run_at) > Date.now() + 3600000, 'reagendado para amanhã');
+  const { todayIn, addDays, zonedToUtc } = await import('../src/services/time.js');
+  const tomorrow = zonedToUtc(addDays(todayIn('America/Sao_Paulo'), 1), '00:00', 'America/Sao_Paulo').getTime();
+  assert.ok(Date.parse(e.next_run_at) >= tomorrow, 'reagendado para o dia seguinte, no fuso da empresa');
   assert.equal(get("SELECT COUNT(*) AS n FROM messages WHERE contact_id = ? AND direction = 'out'", novo.id).n, 0);
   saveSettings(cid, { whatsapp: { provider: 'simulator' } });
 });

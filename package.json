@@ -1,7 +1,7 @@
 {
-  "name": "falaki-crm",
+  "name": "conversa-crm",
   "version": "1.0.0",
-  "description": "Falaki: prospecção, atendimento com IA no WhatsApp, agenda, CRM, follow-up, cobrança e dashboard num só sistema",
+  "description": "Conversa CRM: prospecção, atendimento com IA no WhatsApp, agenda, CRM, follow-up, cobrança e dashboard num só sistema",
   "type": "module",
   "main": "src/server.js",
   "scripts": {

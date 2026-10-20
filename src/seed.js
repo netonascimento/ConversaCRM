@@ -12,7 +12,7 @@ import { pixPayload } from './services/billing.js';
 import { createContract } from './services/contracts.js';
 import { zonedToUtc, todayIn, addDays } from './services/time.js';
 
-const EMAIL = process.env.SEED_EMAIL || 'demo@falaki.me';
+const EMAIL = process.env.SEED_EMAIL || 'demo@conversacrm.online';
 const PASSWORD = process.env.SEED_PASSWORD || 'demo1234';
 
 export function seedDemo() {
@@ -138,7 +138,7 @@ export function seedDemo() {
   return companyId;
 }
 
-const LAW_EMAIL = 'advocacia@falaki.me';
+const LAW_EMAIL = 'advocacia@conversacrm.online';
 
 export async function seedLawFirm({ email = LAW_EMAIL, password = PASSWORD } = {}) {
   if (main.get('SELECT id FROM users WHERE email = ?', email)) {

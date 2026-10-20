@@ -1,4 +1,4 @@
-# Falaki CRM
+# Conversa CRM
 
 Plataforma SaaS (multiempresa) de atendimento com IA no WhatsApp, agenda, CRM, follow-up, cobrança, prospecção e dashboard. Interface e textos em português do Brasil.
 
@@ -8,7 +8,7 @@ Plataforma SaaS (multiempresa) de atendimento com IA no WhatsApp, agenda, CRM, f
 - `npm install`, `npm run seed` (clínica de exemplo) ou `npm run seed:advocacia`, `npm start` → http://localhost:3000
   - `/` landing, `/app` sistema, `/admin` painel do administrador (`npm run admin:create -- email senha "Nome"`).
 - `npm test` roda todos os testes (`node --test`, banco em memória). Rode antes de cada push; o GitHub Actions roda também.
-- `npm run build:demo` gera `dist/falaki-demo.html`, que roda o sistema inteiro no navegador (SQLite em WebAssembly).
+- `npm run build:demo` gera `dist/conversacrm-demo.html`, que roda o sistema inteiro no navegador (SQLite em WebAssembly).
 
 ## Estrutura
 
