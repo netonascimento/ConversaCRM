@@ -14,7 +14,8 @@ import { stripeEnabled, createCheckout, createPixCheckout, createPortal, changeC
 import { subscriptionState } from '../services/subscriptions.js';
 import { audit } from '../services/admin.js';
 import { PRESETS } from '../services/presets.js';
-import { sendMessage, handleInbound } from '../services/messaging.js';
+import { sendMessage, handleInbound, coldBlocked, COLD_DAILY_LIMIT, coldSentToday } from '../services/messaging.js';
+import { managedEnabled, startConnection, connectionState, disconnect as disconnectWhatsapp } from '../services/whatsapp-connect.js';
 import { replyNow } from '../services/ai.js';
 import { assignContact, assignableUsers, userNames, releaseAssignments } from '../services/assignment.js';
 import { onboarding, markOnboarding } from '../services/onboarding.js';
@@ -140,6 +141,9 @@ export function registerApi(router) {
       ai_key_source: aiKeySource(company),
       ai_locked: !aiAllowed(company),
       onboarding: req.user.role === 'owner' ? onboarding(company.id) : null,
+      whatsapp_managed: managedEnabled(),
+      whatsapp_state: company.settings.whatsapp.connection_state || null,
+      prospecting_limit: company.settings.whatsapp.provider === 'evolution' ? { limit: COLD_DAILY_LIMIT, used: coldSentToday(company) } : null,
       subscription: { method: company.billing_method, paid_until: company.paid_until, ...subscriptionState(company) },
       team: assignableUsers(company.id),
       contract_periods: PERIODS,
@@ -173,6 +177,12 @@ export function registerApi(router) {
     return { name: c.name, timezone: c.timezone, settings: maskSettings(c.settings) };
   });
   router.get('/api/onboarding', auth, ownerOnly, (req) => onboarding(req.companyId));
+
+  // WhatsApp por QR Code gerenciado pelo Falaki (o cliente só lê o QR Code no celular).
+  const waError = (e) => new HttpError(502, e.message);
+  router.post('/api/whatsapp/connect', auth, ownerOnly, async (req) => { try { return await startConnection(req.companyId); } catch (e) { throw waError(e); } });
+  router.get('/api/whatsapp/state', auth, ownerOnly, async (req) => { try { return await connectionState(req.companyId); } catch (e) { throw waError(e); } });
+  router.post('/api/whatsapp/disconnect', auth, ownerOnly, async (req) => disconnectWhatsapp(req.companyId));
   router.post('/api/onboarding/dismiss', auth, ownerOnly, (req, res, { body }) => {
     markOnboarding(req.companyId, { dismissed: body.dismissed !== false });
     return onboarding(req.companyId);
@@ -420,6 +430,9 @@ export function registerApi(router) {
   router.post('/api/conversations/:id/messages', auth, contactGuard, async (req, res, { params, body }) => {
     need(getContact(req.companyId, params.id), 'Contato');
     if (!body.body?.trim()) throw new HttpError(400, 'Mensagem vazia');
+    if (coldBlocked(getCompany(req.companyId), Number(params.id), 'human')) {
+      throw new HttpError(429, `Limite de ${COLD_DAILY_LIMIT} primeiras mensagens por dia para quem ainda não falou com você (protege o seu número de bloqueio no WhatsApp). Continua amanhã.`);
+    }
     // Quando alguém da equipe responde, a IA sai da conversa para não atropelar o humano.
     if (run('UPDATE contacts SET ai_enabled = 0 WHERE id = ? AND ai_enabled = 1', params.id).changes) {
       logActivity(req.companyId, Number(params.id), 'ia', `${req.user.name} assumiu a conversa`);

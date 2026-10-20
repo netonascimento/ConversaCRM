@@ -35,6 +35,9 @@ export const config = {
     ? process.env.STRIPE_TEST_API_KEY || process.env.STRIPE_API_KEY
     : process.env.STRIPE_API_KEY || process.env.STRIPE_TEST_API_KEY) || '',
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  // Servidor Evolution API da plataforma: com ele, cada empresa conecta o WhatsApp só lendo um QR Code.
+  evolutionUrl: (process.env.EVOLUTION_URL || '').trim(),
+  evolutionApiKey: (process.env.EVOLUTION_API_KEY || '').trim(),
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   aiModel: process.env.AI_MODEL || 'claude-opus-5-5',
   googlePlacesKey: process.env.GOOGLE_PLACES_API_KEY || '',

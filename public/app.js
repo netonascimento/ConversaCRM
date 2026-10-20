@@ -245,6 +245,9 @@ function planBanner() {
     const days = Math.round((Date.parse(`${sub.courtesy_until}T12:00:00Z`) - Date.parse(`${todayStr()}T12:00:00Z`)) / 86400000);
     if (days <= 5) return `<div class="banner">🎁 Seu acesso de cortesia ao plano ${esc(plan.label)} termina ${days <= 0 ? 'hoje' : `em ${fmtDay(sub.courtesy_until)}`}. <a href="#/assinar">Assine para continuar com a IA</a></div>`;
   }
+  if (state.meta.whatsapp_managed && state.meta.whatsapp_provider === 'evolution' && state.meta.whatsapp_state === 'close') {
+    return '<div class="banner">⚠️ <strong>Seu WhatsApp desconectou.</strong> As mensagens dos clientes não estão chegando. <a href="#/config/whatsapp">Conectar de novo</a></div>';
+  }
   if (sub?.state === 'atrasada') return `<div class="banner">O cartão da assinatura foi recusado. <a href="#/assinar">Atualizar o cartão</a> para não perder o plano.</div>`;
   if (plan.max_leads === null || plan.max_leads === undefined) return '';
   const left = plan.leads_remaining;
@@ -1459,6 +1462,13 @@ function wzTest(body) {
 
 // 5. WhatsApp: conectar agora ou depois
 function wzWhatsapp(body, cfg) {
+  // Com o servidor da plataforma: só o QR Code, sem nenhum campo técnico.
+  if (state.meta.whatsapp_managed) {
+    body.innerHTML = `<div id="wa-managed"></div>
+      <p class="hint" style="margin-top:10px">Para proteger o seu número de bloqueio, a prospecção manda no máximo 20 primeiras mensagens por dia para quem ainda não falou com você. Responder clientes não tem limite.</p>`;
+    waConnectBox($('#wa-managed', body), { onConnected: () => { const n = $('#wz-next'); if (n) n.textContent = 'Concluir ✓'; } });
+    return async () => true;
+  }
   const w = cfg.settings.whatsapp;
   const webhook = state.meta.webhooks?.evolution || '';
   body.innerHTML = `
@@ -1512,6 +1522,72 @@ async function wizardDone(el) {
         </div>
       </div>
     </div>`;
+}
+
+
+// WhatsApp por QR Code gerenciado pelo Falaki: botão → QR Code na tela → "✓ Conectado".
+async function waConnectBox(box, { onConnected } = {}) {
+  let stopped = false;
+  const done = () => { stopped = true; };
+  const drawConnected = () => {
+    box.innerHTML = `<div class="card wa-box"><h3>✓ WhatsApp conectado</h3>
+      <p class="small muted" style="margin:6px 0 12px">As mensagens dos seus clientes chegam no Atendimento. Para trocar de número, desconecte e conecte o outro.</p>
+      <button type="button" class="sm" id="wa-off">Desconectar</button></div>`;
+    $('#wa-off', box).onclick = async () => {
+      if (!confirm('Desconectar o WhatsApp? As mensagens deixam de chegar até você conectar de novo.')) return;
+      await api('/api/whatsapp/disconnect', { method: 'POST' }).catch(fail);
+      state.meta.whatsapp_provider = 'simulator';
+      drawIdle();
+    };
+  };
+  const drawIdle = (msg = '') => {
+    box.innerHTML = `<div class="card wa-box"><h3>Conecte o seu WhatsApp</h3>
+      <p class="small muted" style="margin:6px 0 12px">Use o número que você já tem. Leva menos de 1 minuto e você continua usando o WhatsApp no celular.</p>${msg}
+      <button type="button" class="primary" id="wa-on">Conectar meu WhatsApp</button></div>`;
+    $('#wa-on', box).onclick = start;
+  };
+  const drawQr = (qr) => {
+    box.innerHTML = `<div class="card wa-box"><div class="wa-qr">
+      <img src="${esc(qr)}" alt="QR Code para conectar o WhatsApp" width="240" height="240">
+      <div><h3>Leia o código com o celular</h3>
+        <ol class="small" style="padding-left:18px;margin:8px 0">
+          <li>Abra o <strong>WhatsApp</strong> no celular da empresa.</li>
+          <li>Toque em <strong>⋮</strong> (Android) ou em <strong>Configurações</strong> (iPhone) e depois em <strong>Aparelhos conectados</strong>.</li>
+          <li>Toque em <strong>Conectar um aparelho</strong> e aponte a câmera para este código.</li>
+        </ol>
+        <p class="small muted">⏳ Esperando a leitura… O código se renova sozinho.</p></div></div></div>`;
+  };
+  const start = async () => {
+    const b = $('#wa-on', box);
+    if (b) { b.disabled = true; b.textContent = 'Gerando o QR Code…'; }
+    try {
+      const r = await api('/api/whatsapp/connect', { method: 'POST' });
+      if (r.state === 'open') { drawConnected(); onConnected?.(); return; }
+      drawQr(r.qr);
+      let ticks = 0;
+      const timer = setInterval(async () => {
+        if (stopped || !document.body.contains(box)) return clearInterval(timer);
+        ticks++;
+        const st = await api('/api/whatsapp/state').catch(() => ({}));
+        if (st.state === 'open') {
+          clearInterval(timer);
+          state.meta.whatsapp_provider = 'evolution';
+          drawConnected();
+          toast('WhatsApp conectado! 🎉');
+          onConnected?.();
+        } else if (ticks % 10 === 0) {
+          const again = await api('/api/whatsapp/connect', { method: 'POST' }).catch(() => null); // QR Code novo a cada ~30s
+          if (again?.qr && !stopped) drawQr(again.qr);
+        }
+      }, 3000);
+      state.timers.push(timer);
+    } catch (err) {
+      drawIdle(`<p class="small" style="color:var(--danger)">${esc(err.message)}</p>`);
+    }
+  };
+  const st = await api('/api/whatsapp/state').catch(() => ({ state: 'none' }));
+  if (st.state === 'open') drawConnected(); else drawIdle();
+  return done;
 }
 
 // ---------------------------------------------------------------------------
@@ -2060,7 +2136,8 @@ async function renderProspecting(el, [searchId]) {
   const [searches, seqs] = await Promise.all([api('/api/prospecting/searches'), api('/api/sequences')]);
   const current = searchId ? await api(`/api/prospecting/searches/${searchId}`) : null;
   el.innerHTML = `
-    <div class="page-head"><div><h1>Prospecção Google Maps</h1><p class="muted">Encontre empresas locais, importe para o CRM e inicie a abordagem automática</p></div></div>
+    <div class="page-head"><div><h1>Prospecção Google Maps</h1><p class="muted">Encontre empresas locais, importe para o CRM e inicie a abordagem automática</p></div>
+      ${state.meta.prospecting_limit ? `<span class="spacer"></span><span class="badge ${state.meta.prospecting_limit.used >= state.meta.prospecting_limit.limit ? 'amber' : 'outline'}" title="Proteção contra bloqueio do número no WhatsApp por QR Code">Hoje: ${state.meta.prospecting_limit.used} de ${state.meta.prospecting_limit.limit} primeiras mensagens</span>` : ''}</div>
     ${!state.meta.places_configured ? '<div class="banner">Configure a chave da <strong>Google Places API</strong> em <a href="#/config/avancado">Configurações → Avançado</a> para buscar empresas.</div>' : ''}
     <div class="card">
       <form id="search-form" class="row wrap">
@@ -2206,6 +2283,7 @@ async function renderSettings(el, [tab = 'empresa']) {
         <div class="field"><label>Dias bloqueados (feriados)</label><input name="scheduling.blocked_dates" value="${esc(s.scheduling.blocked_dates.join(', '))}" placeholder="2026-12-25, 2027-01-01"></div>
       </div>`,
     whatsapp: `
+      ${meta.whatsapp_managed ? '<div id="wa-managed" style="margin-bottom:14px"></div><details><summary class="small" style="cursor:pointer;margin-bottom:12px">Configuração manual (avançado: servidor próprio ou API oficial da Meta)</summary>' : ''}
       <div class="field"><label>Provedor</label><select name="whatsapp.provider">
         <option value="simulator">Simulador (testes, sem número)</option>
         <option value="evolution" ${s.whatsapp.provider === 'evolution' ? 'selected' : ''}>Evolution API (conecta por QR Code)</option>
@@ -2217,7 +2295,8 @@ async function renderSettings(el, [tab = 'empresa']) {
       <div class="card"><h3>WhatsApp Cloud API (Meta)</h3><p class="hint">URL de callback do webhook (assine o campo "messages"):</p>${hook(meta.webhooks.meta)}
         <div class="fields" style="margin-top:12px">${input('whatsapp', 'meta_phone_number_id', 'Phone number ID')}${input('whatsapp', 'meta_token', 'Access token permanente')}
         ${input('whatsapp', 'meta_verify_token', 'Verify token (você escolhe)')}${input('whatsapp', 'meta_app_secret', 'App secret (valida a assinatura)')}
-        ${input('whatsapp', 'meta_template_name', 'Template aprovado para iniciar conversa', { hint: 'Usado fora da janela de 24h (follow-up, prospecção). Deve ter 1 variável no corpo: o nome.' })}${input('whatsapp', 'meta_template_lang', 'Idioma do template')}</div></div>`,
+        ${input('whatsapp', 'meta_template_name', 'Template aprovado para iniciar conversa', { hint: 'Usado fora da janela de 24h (follow-up, prospecção). Deve ter 1 variável no corpo: o nome.' })}${input('whatsapp', 'meta_template_lang', 'Idioma do template')}</div></div>
+      ${meta.whatsapp_managed ? '</details>' : ''}`,
     cobranca: `
       <div class="field"><label>Como receber</label><select name="billing.provider">
         <option value="pix_manual">Pix com minha chave (copia e cola, baixa manual)</option>
@@ -2273,6 +2352,7 @@ async function renderSettings(el, [tab = 'empresa']) {
       <form id="settings-form">${panels[tab]}<div class="modal-foot"><button class="primary">Salvar configurações</button></div></form>
     </div>`;
   $$('[data-tab]').forEach((b) => { b.onclick = () => { location.hash = `#/config/${b.dataset.tab}`; }; });
+  if (tab === 'whatsapp' && meta.whatsapp_managed) waConnectBox($('#wa-managed'));
   const renderIntake = () => {
     const box = $('#intake');
     if (!box) return;

@@ -846,3 +846,101 @@ test('primeiros passos: cada passo é marcado pelo que a empresa configurou de v
   const listed = (await u('/api/clients')).data.find((x) => x.id === c.id);
   assert.ok(listed && listed.won_at, 'aparece em Clientes com a data em que virou cliente');
 });
+
+test('WhatsApp por QR Code gerenciado: conecta sem campos técnicos, recebe o aviso de conexão e limita 20 primeiras mensagens por dia', async () => {
+  const { config } = await import('../src/config.js');
+  const { setEvolutionFetch } = await import('../src/services/whatsapp-connect.js');
+  const calls = [];
+  let state = 'connecting';
+  setEvolutionFetch(async (url, init = {}) => {
+    calls.push({ url, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : null, key: init.headers?.apikey });
+    const path = new URL(url).pathname;
+    const data = path === '/instance/create' ? { instance: { instanceName: 'x' }, hash: 'token-da-instancia' }
+      : path.startsWith('/instance/connectionState') ? { instance: { state } }
+        : path.startsWith('/instance/connect') ? { base64: 'data:image/png;base64,QRCODE' }
+          : path.startsWith('/message/sendText') ? { key: { id: `msg${calls.length}` } } : { ok: true };
+    return { ok: true, status: 200, json: async () => data };
+  });
+  config.evolutionUrl = 'https://evo.falaki.test';
+  config.evolutionApiKey = 'chave-global';
+  try {
+    const u = browser();
+    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Sigma', name: 'Sil', email: 'sil@sigma.com', password: 'senhaforte1' } });
+    const meta = (await u('/api/meta')).data;
+    assert.equal(meta.whatsapp_managed, true);
+
+    // Conectar: cria a instância, liga o aviso de mensagens e devolve o QR Code.
+    const r = (await u('/api/whatsapp/connect', { method: 'POST' })).data;
+    assert.deepEqual(r, { state: 'connecting', qr: 'data:image/png;base64,QRCODE' });
+    const create = calls.find((c) => c.url.endsWith('/instance/create'));
+    assert.equal(create.body.integration, 'WHATSAPP-BAILEYS');
+    assert.match(create.body.instanceName, /^falaki-/);
+    assert.equal(create.key, 'chave-global');
+    const hook = calls.find((c) => c.url.includes('/webhook/set/')).body.webhook;
+    assert.deepEqual(hook.events, ['MESSAGES_UPSERT', 'CONNECTION_UPDATE']);
+    assert.equal(hook.url, meta.webhooks.evolution);
+    // Nada técnico volta para o cliente: chave da instância fica mascarada.
+    assert.ok(!JSON.stringify((await u('/api/settings')).data).includes('token-da-instancia'));
+
+    // O celular leu o QR Code: o Evolution avisa e o WhatsApp vira o canal da empresa.
+    const hookPath = new URL(meta.webhooks.evolution).pathname + new URL(meta.webhooks.evolution).search;
+    await fetch(base + hookPath, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'connection.update', data: { state: 'open' } }) });
+    state = 'open';
+    const after = (await u('/api/meta')).data;
+    assert.equal(after.whatsapp_provider, 'evolution');
+    assert.equal((await u('/api/onboarding')).data.steps.find((s) => s.id === 'whatsapp').done, true);
+    assert.deepEqual((await u('/api/whatsapp/state')).data, { state: 'open' });
+
+    // Prospecção: até 20 primeiras mensagens por dia para quem nunca falou com a empresa.
+    const ids = [];
+    for (let i = 0; i < 21; i++) ids.push((await u('/api/contacts', { method: 'POST', body: { name: `Prospect ${i}`, phone: `1193000${String(i).padStart(4, '0')}` } })).data.id);
+    for (let i = 0; i < 20; i++) assert.equal((await u(`/api/conversations/${ids[i]}/messages`, { method: 'POST', body: { body: 'Olá! Conhece o nosso serviço?' } })).status, 200);
+    const blocked = await u(`/api/conversations/${ids[20]}/messages`, { method: 'POST', body: { body: 'Olá!' } });
+    assert.equal(blocked.status, 429);
+    assert.match(blocked.data.error, /20 primeiras mensagens/);
+    // Segunda mensagem para quem já recebeu a primeira, e respostas a quem chamou, não contam.
+    assert.equal((await u(`/api/conversations/${ids[0]}/messages`, { method: 'POST', body: { body: 'Ainda tem interesse?' } })).status, 200);
+    await fetch(base + hookPath, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'messages.upsert', data: { key: { remoteJid: '5511977770000@s.whatsapp.net', fromMe: false, id: 'in1' }, pushName: 'Cliente', message: { conversation: 'Oi, quero um orçamento' } } }) });
+    const inbound = (await u('/api/conversations')).data.find((c) => c.phone === '5511977770000');
+    assert.equal((await u(`/api/conversations/${inbound.id}/messages`, { method: 'POST', body: { body: 'Claro! Me conta mais.' } })).status, 200);
+    assert.deepEqual((await u('/api/meta')).data.prospecting_limit, { limit: 20, used: 20 });
+    const send = calls.filter((c) => c.url.includes('/message/sendText/'));
+    assert.equal(send.at(-1).key, 'token-da-instancia');
+
+    // Celular desconectou: aviso para o dono.
+    await fetch(base + hookPath, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'connection.update', data: { state: 'close' } }) });
+    assert.equal((await u('/api/meta')).data.whatsapp_state, 'close');
+    // Desconectar pelo Falaki volta para o simulador.
+    await u('/api/whatsapp/disconnect', { method: 'POST' });
+    assert.equal((await u('/api/meta')).data.whatsapp_provider, 'simulator');
+  } finally {
+    config.evolutionUrl = '';
+    config.evolutionApiKey = '';
+  }
+});
+
+test('limite de prospecção: follow-up que passa das 20 do dia fica para amanhã, sem perder o passo', async () => {
+  const { makeCompany } = await import('./setup.js');
+  const { saveSettings } = await import('../src/services/company.js');
+  const { createContact } = await import('../src/services/crm.js');
+  const { enroll, processDueFollowups } = await import('../src/services/followup.js');
+  const { run, get } = await import('../src/db.js');
+  const { setEvolutionFetch } = await import('../src/services/whatsapp-connect.js');
+  setEvolutionFetch(async () => ({ ok: true, status: 200, json: async () => ({ key: { id: 'x' } }) }));
+  const cid = makeCompany({ whatsapp: { provider: 'evolution', evolution_url: 'https://evo.falaki.test', evolution_instance: 'i', evolution_api_key: 'k' } });
+  // 20 primeiras mensagens já enviadas hoje.
+  for (let i = 0; i < 20; i++) {
+    const c = createContact(cid, { name: `Já ${i}`, phone: `1194000${String(i).padStart(4, '0')}` });
+    run("INSERT INTO messages (company_id, contact_id, direction, author, body, cold) VALUES (?, ?, 'out', 'followup', 'oi', 1)", cid, c.id);
+  }
+  const { id: seq } = run('INSERT INTO sequences (company_id, name, steps) VALUES (?, ?, ?)', cid, 'Prospecção', JSON.stringify([{ delay_hours: 0, message: 'Oi {{nome}}!' }]));
+  const novo = createContact(cid, { name: 'Novo Prospect', phone: '11940009999' });
+  const eid = enroll(cid, seq, novo.id);
+  await processDueFollowups();
+  const e = get('SELECT * FROM enrollments WHERE id = ?', eid);
+  assert.equal(e.status, 'ativo');
+  assert.equal(e.step_index, 0, 'o passo não foi consumido');
+  assert.ok(Date.parse(e.next_run_at) > Date.now() + 3600000, 'reagendado para amanhã');
+  assert.equal(get("SELECT COUNT(*) AS n FROM messages WHERE contact_id = ? AND direction = 'out'", novo.id).n, 0);
+  saveSettings(cid, { whatsapp: { provider: 'simulator' } });
+});

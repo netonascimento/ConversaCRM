@@ -5,6 +5,24 @@ import { findOrCreateByPhone, getContact, firstName, changeStage, PlanLimitError
 import { stopEnrollments } from './followup.js';
 import { scheduleAiReply } from './ai.js';
 import { autoAssign } from './assignment.js';
+import { evolutionFetch } from './whatsapp-connect.js';
+import { config } from '../config.js';
+import { todayIn, zonedToUtc } from './time.js';
+
+// Pelo QR Code (conexão não oficial), mandar muitas primeiras mensagens para quem nunca falou
+// com a empresa pode bloquear o número. Limite por dia, no fuso da empresa.
+export const COLD_DAILY_LIMIT = 20;
+export class ColdLimitError extends Error {}
+const isCold = (contactId) => !get("SELECT 1 AS x FROM messages WHERE contact_id = ? AND (direction = 'in' OR cold = 1) LIMIT 1", contactId);
+export function coldSentToday(company) {
+  const start = zonedToUtc(todayIn(company.timezone), '00:00', company.timezone).toISOString();
+  return get("SELECT COUNT(*) AS n FROM messages WHERE company_id = ? AND cold = 1 AND created_at >= ?", company.id, start).n;
+}
+/** Esta mensagem é uma primeira mensagem de prospecção que passaria do limite do dia? */
+export function coldBlocked(company, contactId, author) {
+  if (company.settings.whatsapp.provider !== 'evolution' || !['followup', 'human'].includes(author) || !isCold(contactId)) return false;
+  return coldSentToday(company) >= COLD_DAILY_LIMIT;
+}
 import { aiAllowed } from './plans.js';
 
 // ---- Provedores de WhatsApp -------------------------------------------------
@@ -34,10 +52,12 @@ async function sendViaMeta(wa, contact, body) {
 }
 
 async function sendViaEvolution(wa, contact, body) {
-  if (!wa.evolution_url || !wa.evolution_api_key || !wa.evolution_instance) throw new Error('Evolution API não configurada');
-  const res = await fetch(`${wa.evolution_url.replace(/\/$/, '')}/message/sendText/${encodeURIComponent(wa.evolution_instance)}`, {
+  // Conexão gerenciada pelo Falaki: usa o servidor e a chave da plataforma.
+  const apiKey = wa.evolution_api_key || (wa.evolution_managed ? config.evolutionApiKey : '');
+  if (!wa.evolution_url || !apiKey || !wa.evolution_instance) throw new Error('Evolution API não configurada');
+  const res = await evolutionFetch(`${wa.evolution_url.replace(/\/$/, '')}/message/sendText/${encodeURIComponent(wa.evolution_instance)}`, {
     method: 'POST',
-    headers: { apikey: wa.evolution_api_key, 'Content-Type': 'application/json' },
+    headers: { apikey: apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({ number: contact.phone, text: body }),
   });
   const data = await res.json().catch(() => ({}));
@@ -74,9 +94,13 @@ export async function sendMessage(companyId, contactId, body, author = 'human', 
   const company = getCompany(companyId);
   const contact = getContact(companyId, contactId);
   if (!contact) throw new Error('Contato não encontrado');
+  const cold = company.settings.whatsapp.provider === 'evolution' && ['followup', 'human'].includes(author) && isCold(contactId);
+  if (cold && coldSentToday(company) >= COLD_DAILY_LIMIT) {
+    throw new ColdLimitError(`Limite de ${COLD_DAILY_LIMIT} primeiras mensagens por dia para quem ainda não falou com você (proteção contra bloqueio do número). Continua amanhã.`);
+  }
   const { id } = run(
-    'INSERT INTO messages (company_id, contact_id, direction, author, body, status, user_id, user_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    companyId, contactId, 'out', author, body, 'sending', user?.id || null, user?.name || null,
+    'INSERT INTO messages (company_id, contact_id, direction, author, body, status, user_id, user_name, cold) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    companyId, contactId, 'out', author, body, 'sending', user?.id || null, user?.name || null, cold ? 1 : 0,
   );
   const wa = company.settings.whatsapp;
   try {

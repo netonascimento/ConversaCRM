@@ -149,6 +149,7 @@ Copie `.env.example` para `.env`. Todas são opcionais; as chaves também podem 
 | `ALLOW_SIGNUP` | `false` para desligar o teste grátis pela página inicial (só o administrador cria empresas) |
 | `SALES_WHATSAPP` | WhatsApp de vendas: os botões dos planos pagos abrem uma conversa com ele |
 | `STRIPE_SECRET_KEY` (ou `STRIPE_API_KEY`) / `STRIPE_WEBHOOK_SECRET` | Assinatura no cartão e Pix pelo Stripe, e a verificação do webhook `/webhooks/stripe` |
+| `EVOLUTION_URL` / `EVOLUTION_API_KEY` | Servidor Evolution API da plataforma: cada empresa conecta o WhatsApp só lendo um QR Code (o Falaki cria a conexão e o aviso de mensagens sozinho). Pelo QR Code, a prospecção manda no máximo 20 primeiras mensagens por dia |
 | `PLATFORM_PIX_KEY` / `PLATFORM_PIX_NAME` / `PLATFORM_PIX_CITY` | Pix manual da assinatura (opcional, só sem Stripe) |
 | `SALES_EMAIL` | E-mail que recebe os comprovantes (padrão `contato@falaki.me`) |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Cria o primeiro administrador ao iniciar |

@@ -337,6 +337,7 @@ const COLUMNS = [
   ['contacts', 'assigned_at', 'TEXT'],
   ['messages', 'user_id', 'INTEGER'],
   ['messages', 'user_name', 'TEXT'],
+  ['messages', 'cold', 'INTEGER NOT NULL DEFAULT 0'],
   ['users', 'active', 'INTEGER NOT NULL DEFAULT 1'],
   ['users', 'professional_id', 'INTEGER'],
   ['users', 'last_login_at', 'TEXT'],

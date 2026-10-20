@@ -3,6 +3,7 @@ import { get, main, withCompanyDb } from '../db.js';
 import { HttpError } from '../http.js';
 import { getCompany } from '../services/company.js';
 import { handleInbound, parseMetaWebhook, verifyMetaSignature, parseEvolutionWebhook } from '../services/messaging.js';
+import { applyState } from '../services/whatsapp-connect.js';
 import { markPaid, fetchMercadoPagoPayment } from '../services/billing.js';
 import { config } from '../config.js';
 import { verifyStripeSignature, handleStripeEvent } from '../services/stripe.js';
@@ -62,6 +63,9 @@ export function registerWebhooks(router) {
     const given = query.token || req.headers['x-webhook-token'];
     const secret = company.settings.whatsapp.evolution_webhook_secret;
     if (!safeEqual(given, company.webhook_token) && !(secret && safeEqual(given, secret))) throw new HttpError(401, 'Token inválido');
+    // Conectou ou desconectou o celular (QR Code gerenciado pelo Falaki).
+    const event = String(body?.event || '').toLowerCase().replace('_', '.');
+    if (event === 'connection.update' && body.data?.state) applyState(company.id, body.data.state);
     if (active(company)) withCompanyDb(company.id, () => { for (const msg of parseEvolutionWebhook(body)) handleInbound(company.id, msg); });
     return { ok: true };
   });

@@ -1,9 +1,9 @@
 import { all, get, run, now } from '../db.js';
 import { getCompany } from './company.js';
 import { getContact, render, firstName, logActivity } from './crm.js';
-import { sendMessage } from './messaging.js';
+import { sendMessage, coldBlocked } from './messaging.js';
 import { writeFollowup } from './ai.js';
-import { nextBusinessTime } from './time.js';
+import { nextBusinessTime, todayIn, addDays, zonedToUtc } from './time.js';
 
 export const TRIGGERS = [
   { id: 'manual', label: 'Manual (eu escolho quem entra)' },
@@ -75,6 +75,12 @@ export async function processDueFollowups() {
     const sendAt = nextBusinessTime(new Date(), company.timezone, company.settings.business_hours);
     if (sendAt.getTime() > Date.now() + 1000) {
       run('UPDATE enrollments SET next_run_at = ? WHERE id = ?', sendAt.toISOString(), e.id);
+      continue;
+    }
+    // WhatsApp por QR Code: passou do limite diário de primeiras mensagens, fica para amanhã.
+    if (coldBlocked(company, e.contact_id, 'followup')) {
+      const tomorrow = nextBusinessTime(zonedToUtc(addDays(todayIn(company.timezone), 1), '00:00', company.timezone), company.timezone, company.settings.business_hours);
+      run('UPDATE enrollments SET next_run_at = ? WHERE id = ?', tomorrow.toISOString(), e.id);
       continue;
     }
     const step = seq.steps[e.step_index];
