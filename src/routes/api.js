@@ -157,6 +157,8 @@ export function registerApi(router) {
       document_types: ALLOWED_EXTENSIONS,
       document_max_bytes: MAX_DOCUMENT_BYTES,
       places_configured: Boolean(placesKeyFor(company)),
+      // Google Agenda só aparece quando a plataforma tiver as credenciais do Google Cloud.
+      google_calendar: googleConfigured(),
       prospecting_searches: searchQuota(company),
       whatsapp_provider: company.settings.whatsapp.provider,
       billing_provider: company.settings.billing.provider,

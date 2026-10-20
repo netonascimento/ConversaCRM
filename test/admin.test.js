@@ -170,6 +170,8 @@ test('buscas no Google Maps: teste grátis 3 para sempre, Essencial 30 e Profiss
   };
   try {
     assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 3, used: 0, period: 'total' });
+    // Sem credenciais do Google Cloud, a opção do Google Agenda nem aparece para o cliente.
+    assert.equal((await u('/api/meta')).data.google_calendar, Boolean(config.googleClientId && config.googleClientSecret));
     for (let i = 0; i < 3; i++) assert.equal((await u('/api/prospecting/search', { method: 'POST', body: { query: `pet shop ${i}` } })).status, 200);
     const blocked = await u('/api/prospecting/search', { method: 'POST', body: { query: 'pet shop 4' } });
     assert.equal(blocked.status, 400);

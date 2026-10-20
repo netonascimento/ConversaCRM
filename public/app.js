@@ -1949,7 +1949,7 @@ async function renderAgenda(el) {
       <button id="prev" aria-label="Semana anterior">←</button><button id="today">Hoje</button><button id="next" aria-label="Próxima semana">→</button>
       <strong>${fmtDay(days[0]).slice(0, 5)} – ${fmtDay(days[6])}</strong>
       ${activePros.length ? `<select id="pro-filter" style="width:auto"><option value="">Todos os profissionais</option>${activePros.map((p) => `<option value="${p.id}" ${p.id === proFilter ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : ''}
-      <button id="google-cal">Google Agenda</button>
+      ${state.meta.google_calendar ? '<button id="google-cal">Google Agenda</button>' : ''}
       <button class="primary" id="new-appt">+ Agendar</button>
     </div>
     ${activePros.length && !proFilter ? `<div class="row wrap small" style="margin-bottom:10px">${activePros.map((p) => `<span class="row" style="gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:${esc(p.color)}"></span>${esc(p.name)}${p.role ? ` <span class="muted">· ${esc(p.role)}</span>` : ''}</span>`).join('')}</div>` : ''}
@@ -1974,7 +1974,7 @@ async function renderAgenda(el) {
   $('#next').onclick = () => go(addDays(weekStart, 7));
   $('#today').onclick = () => { sessionStorage.removeItem('agenda-week'); route(); };
   $('#new-appt').onclick = () => appointmentForm({ professional_id: proFilter }, route);
-  $('#google-cal').onclick = () => googleCalendarModal(activePros);
+  if ($('#google-cal')) $('#google-cal').onclick = () => googleCalendarModal(activePros);
   const pf = $('#pro-filter');
   if (pf) pf.onchange = () => { sessionStorage.setItem('agenda-pro', pf.value); route(); };
   $$('.slot').forEach((s) => { s.onclick = () => appointmentForm({ date: s.parentElement.dataset.day, time: `${String(s.dataset.h).padStart(2, '0')}:00`, professional_id: proFilter }, route); });
