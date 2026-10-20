@@ -2,6 +2,16 @@ import { all, get, run } from '../db.js';
 import { getCompany, placesKeyFor } from './company.js';
 import { createContact, normalizePhone, logActivity } from './crm.js';
 import { triggerSequences, enroll } from './followup.js';
+import { maxSearches } from './plans.js';
+
+/** Buscas usadas e limite do plano (null = sem limite). No teste grátis são poucas, para sempre. */
+export function searchQuota(company) {
+  const max = maxSearches(company);
+  if (max == null) return null;
+  return { max, used: get('SELECT COUNT(*) AS n FROM prospect_searches WHERE company_id = ?', company.id).n };
+}
+// Busca em andamento por empresa: dois cliques ao mesmo tempo não passam do limite.
+const searching = new Set();
 
 const FIELD_MASK = [
   'places.id', 'places.displayName', 'places.formattedAddress', 'places.nationalPhoneNumber',
@@ -15,7 +25,18 @@ export async function searchPlaces(companyId, query, { maxResults = 60 } = {}) {
   const key = placesKeyFor(company);
   if (!key) throw new Error('Configure a chave da Google Places API em Configurações → Avançado');
   if (!query?.trim()) throw new Error('Informe o que buscar, ex.: "dentista em Campinas"');
+  const quota = searchQuota(company);
+  if (quota && quota.used >= quota.max) throw new Error(`Você já usou as ${quota.max} buscas do teste grátis. Assine um plano para continuar prospectando.`);
+  if (searching.has(companyId)) throw new Error('Já tem uma busca em andamento. Aguarde terminar.');
+  searching.add(companyId);
+  try {
+    return await runSearch(companyId, key, query, maxResults);
+  } finally {
+    searching.delete(companyId);
+  }
+}
 
+async function runSearch(companyId, key, query, maxResults) {
   const places = [];
   let pageToken;
   do {

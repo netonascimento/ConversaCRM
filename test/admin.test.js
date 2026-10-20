@@ -152,6 +152,41 @@ test('teste grátis: cadastro pela página inicial com limite de 30 leads', asyn
   assert.deepEqual(info.plans.map((p) => p.price_cents), [0, 10000, 24900]);
 });
 
+test('teste grátis: só 3 buscas no Google Maps, para sempre; plano pago busca à vontade', async () => {
+  resetLoginAttempts();
+  const u = browser();
+  assert.equal((await u('/api/auth/register', { method: 'POST', body: { companyName: 'Busca Free', name: 'Bia', email: 'bia@free.com', password: 'senhaforte1', segment: 'loja' } })).status, 200);
+  await u('/api/settings', { method: 'PUT', body: { settings: { integrations: { google_places_key: 'chave-places-teste' } } } });
+  const realFetch = globalThis.fetch;
+  let googleCalls = 0;
+  globalThis.fetch = (url, opts) => {
+    if (String(url).startsWith('https://places.googleapis.com/')) {
+      googleCalls++;
+      return Promise.resolve(new Response(JSON.stringify({ places: [{ id: `p${googleCalls}`, displayName: { text: 'Pet Shop' }, nationalPhoneNumber: '(11) 3333-0000' }] }), { status: 200 }));
+    }
+    return realFetch(url, opts);
+  };
+  try {
+    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 3, used: 0 });
+    for (let i = 0; i < 3; i++) assert.equal((await u('/api/prospecting/search', { method: 'POST', body: { query: `pet shop ${i}` } })).status, 200);
+    const blocked = await u('/api/prospecting/search', { method: 'POST', body: { query: 'pet shop 4' } });
+    assert.equal(blocked.status, 400);
+    assert.match(blocked.data.error, /3 buscas do teste grátis/);
+    assert.equal(googleCalls, 3); // a quarta nem chega ao Google
+    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 3, used: 3 });
+    assert.equal((await u('/api/prospecting/searches')).data.length, 3); // as anteriores continuam abertas
+
+    // Assinou: sem limite.
+    const a = await adminSession();
+    const company = (await a('/api/admin/companies')).data.find((c) => c.name === 'Busca Free');
+    assert.equal((await a(`/api/admin/companies/${company.id}`, { method: 'PUT', body: { plan: 'essencial' } })).status, 200);
+    assert.equal((await u('/api/meta')).data.prospecting_searches, null);
+    assert.equal((await u('/api/prospecting/search', { method: 'POST', body: { query: 'pet shop 4' } })).status, 200);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test('acesso de suporte: administrador entra como a empresa e fica registrado', async () => {
   const a = await adminSession();
   const c = (await a('/api/admin/companies', { method: 'POST', body: {

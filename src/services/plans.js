@@ -2,7 +2,7 @@
 // O administrador pode ajustar os limites de uma empresa específica no painel.
 export const PLANS = {
   gratis: {
-    label: 'Teste grátis', price_cents: 0, max_users: 1, max_leads: 30, ai: false, max_whatsapp: 1,
+    label: 'Teste grátis', price_cents: 0, max_users: 1, max_leads: 30, ai: false, max_whatsapp: 1, max_searches: 3,
     description: 'Para conhecer o sistema com seus próprios clientes.',
   },
   essencial: {
@@ -22,6 +22,8 @@ export const UPGRADE_PLAN = 'essencial';
 export const aiAllowed = (company) => PLANS[company?.plan]?.ai !== false;
 export const planOf = (id) => PLANS[id] || null;
 /** Quantos números de WhatsApp a empresa pode ter (o principal conta). Plano fora da tabela: 1. */
+/** Buscas no Google Maps que a empresa pode fazer no total (null = sem limite). */
+export const maxSearches = (company) => PLANS[company?.plan]?.max_searches ?? null;
 export const maxWhatsapp = (company) => PLANS[company?.plan]?.max_whatsapp ?? 1;
 /** Identificador do Pix da assinatura: aponta qual empresa pagou. */
 export const upgradeTxid = (company) => `CONVERSA${String(company.public_id).replace(/[^A-Za-z0-9]/g, '')}`.slice(0, 25);
