@@ -1,4 +1,5 @@
 import { all, run, forEachDatabase } from '../db.js';
+import { accessExpired } from './plans.js';
 import { getCompany } from './company.js';
 import { firstName } from './crm.js';
 import { sendMessage } from './messaging.js';
@@ -10,6 +11,7 @@ import { processContracts } from './contracts.js';
 import { processCourtesies } from './subscriptions.js';
 import { processBirthdays } from './birthdays.js';
 import { formatLocal } from './time.js';
+import { purgeAnalytics } from './analytics.js';
 
 /** Envia lembretes de agendamento (ex.: 24h antes). */
 export async function processAppointmentReminders() {
@@ -22,7 +24,7 @@ export async function processAppointmentReminders() {
   );
   for (const a of rows) {
     const company = getCompany(a.company_id);
-    if (company.status !== 'ativa') continue;
+    if (company.status !== 'ativa' || accessExpired(company)) continue; // teste encerrado: espera a assinatura
     const hoursBefore = company.settings.scheduling.reminder_hours_before;
     if (!hoursBefore || Date.parse(a.start_at) - Date.now() > hoursBefore * 3600000) continue;
     run('UPDATE appointments SET reminder_sent = 1 WHERE id = ?', a.id);
@@ -37,6 +39,7 @@ export async function processAppointmentReminders() {
 
 let timer = null;
 let busy = false;
+let lastPurge = 0;
 
 export async function tick() {
   if (busy) return;
@@ -45,6 +48,8 @@ export async function tick() {
     let followups = 0; let billing = 0; let reminders = 0; let overdue = 0; let contracts = 0;
     // Cortesias ficam no banco principal (empresas): uma vez por rodada, fora do laço por banco.
     const courtesies = processCourtesies();
+    // Medição: apaga o que tem mais de 180 dias (uma vez por hora basta).
+    if (Date.now() - lastPurge > 3600000) { lastPurge = Date.now(); purgeAnalytics(); }
     if (courtesies) console.log(`[agendador] cortesias encerradas: ${courtesies}`);
     await forEachDatabase(async () => {
       followups += await processDueFollowups();

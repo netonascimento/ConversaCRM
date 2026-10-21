@@ -20,7 +20,7 @@ export function searchQuota(company) {
   return { max: plan.max_searches, used, period: monthly ? 'month' : 'total' };
 }
 const quotaMessage = (company, q) => (q.period === 'month'
-  ? `Você já usou as ${q.max} buscas deste mês do plano ${PLANS[company.plan].label}. Elas renovam no dia 1º.${company.plan === 'essencial' ? ' No plano Profissional são 50 por mês.' : ''}`
+  ? `Você já usou as ${q.max} buscas deste mês do plano ${PLANS[company.plan].label}. Elas renovam no dia 1º.${{ basico: ' No plano Essencial são 30 por mês, e no Profissional, 50.', essencial: ' No plano Profissional são 50 por mês.' }[company.plan] || ''}`
   : `Você já usou as ${q.max} buscas do teste grátis. Assine um plano para continuar prospectando.`);
 // Busca em andamento por empresa: dois cliques ao mesmo tempo não passam do limite.
 const searching = new Set();

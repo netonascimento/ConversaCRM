@@ -9,6 +9,9 @@ import { PRESETS } from '../services/presets.js';
 import { publicPlans } from '../services/plans.js';
 import { releaseAssignments } from '../services/assignment.js';
 import { stripeMode } from '../services/stripe.js';
+import { intelligence } from '../services/analytics.js';
+import { adminReferrals } from '../services/referrals.js';
+import { listMei, meiFile, decideMei } from '../services/mei.js';
 import {
   audit, listAudit, listCompanies, companyDetail, updateCompany, setStatus, exportCompany,
   moveToDedicated, deleteCompany, platformOverview, activatePlan, financeOverview, setCourtesy, removeCourtesy,
@@ -43,6 +46,27 @@ export function registerAdmin(router) {
     main.run('DELETE FROM admin_sessions WHERE token = ?', req.admin.token);
     res.setHeader('Set-Cookie', adminCookie('', req));
     return { ok: true };
+  });
+  // Inteligência: meta de receita, funil, página inicial, uso do sistema e indicações.
+  router.get('/api/admin/intelligence', admin, (req, res, { query }) => intelligence([7, 30, 90].includes(Number(query.days)) ? Number(query.days) : 30));
+  router.get('/api/admin/referrals', admin, () => adminReferrals());
+  // Plano Básico grátis para MEI: certificado enviado pela empresa, conferido aqui.
+  router.get('/api/admin/mei', admin, () => listMei());
+  router.get('/api/admin/mei/:id/file', admin, (req, res, { params }) => {
+    const f = need(meiFile(Number(params.id)), 'Certificado');
+    res.writeHead(200, {
+      'Content-Type': f.mime, 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(f.file_name)}`,
+      'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; img-src 'self'; object-src 'self'; sandbox", 'Cache-Control': 'private, no-store',
+    });
+    res.end(Buffer.from(f.data));
+  });
+  router.post('/api/admin/mei/:id/decide', admin, (req, res, { params, body }) => {
+    try {
+      const out = need(decideMei(Number(params.id), { approve: body.approve === true, note: body.note }, actor(req)), 'Pedido');
+      const r = main.get('SELECT company_id FROM mei_requests WHERE id = ?', out.id);
+      audit(actor(req), out.status === 'aprovado' ? 'MEI aprovado (Básico grátis)' : 'MEI recusado', r.company_id, body.note || '');
+      return out;
+    } catch (e) { if (e instanceof HttpError) throw e; throw new HttpError(400, e.message); }
   });
   router.get('/api/admin/me', admin, (req) => ({
     admin: { id: req.admin.id, name: req.admin.name, email: req.admin.email },
@@ -102,7 +126,7 @@ export function registerAdmin(router) {
   router.delete('/api/admin/companies/:id/courtesy', admin, (req, res, { params }) => {
     need(companyName(Number(params.id)), 'Empresa');
     const out = removeCourtesy(Number(params.id));
-    audit(actor(req), 'cortesia encerrada', out.id, 'encerrada pelo administrador; voltou para o teste grátis');
+    audit(actor(req), 'cortesia encerrada', out.id, 'encerrada pelo administrador; conta só com leitura até assinar');
     return out;
   });
   router.post('/api/admin/companies/:id/suspend', admin, (req, res, { params }) => {

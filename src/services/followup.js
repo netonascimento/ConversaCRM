@@ -1,4 +1,5 @@
 import { all, get, run, now } from '../db.js';
+import { accessExpired } from './plans.js';
 import { getCompany } from './company.js';
 import { getContact, render, firstName, logActivity } from './crm.js';
 import { sendMessage, coldBlocked } from './messaging.js';
@@ -65,7 +66,7 @@ export async function processDueFollowups() {
   let sent = 0;
   for (const e of due) {
     const company = getCompany(e.company_id);
-    if (company.status !== 'ativa') continue;
+    if (company.status !== 'ativa' || accessExpired(company)) continue; // teste encerrado: espera a assinatura
     const seq = parseSequence(get('SELECT * FROM sequences WHERE id = ?', e.sequence_id));
     const contact = getContact(e.company_id, e.contact_id);
     if (!seq || !seq.active || !contact) {

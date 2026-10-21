@@ -134,27 +134,29 @@ test('perfis: limite de usuários do plano, atendente sem financeiro, profission
   assert.equal((await owner(`/api/users/${me.user.id}`, { method: 'PUT', body: { role: 'agent' } })).status, 400);
 });
 
-test('teste grátis: cadastro pela página inicial com limite de 30 leads', async () => {
+test('cadastro pela página inicial: teste de 7 dias do Básico, limite de 50 leads e preços novos', async () => {
+  const { todayIn, addDays } = await import('../src/services/time.js');
   resetLoginAttempts();
   const u = browser();
   assert.equal((await u('/api/auth/register', { method: 'POST', body: { companyName: 'Loja Free', name: 'Fê', email: 'fe@free.com', password: 'senhaforte1', segment: 'loja' } })).status, 200);
   const meta = (await u('/api/meta')).data;
-  assert.equal(meta.plan.id, 'gratis');
-  assert.equal(meta.plan.max_leads, 30);
+  assert.equal(meta.plan.id, 'basico');
+  assert.equal(meta.plan.max_leads, 50);
+  assert.deepEqual([meta.subscription.state, meta.subscription.courtesy_until, meta.expired], ['teste', addDays(todayIn('America/Sao_Paulo'), 7), false]);
   // Convite na aba Usuários: o próximo plano com mais usuários.
   assert.deepEqual(meta.plan.next_users, { id: 'essencial', label: 'Essencial', max_users: 2 });
-  for (let i = 0; i < 30; i++) assert.equal((await u('/api/contacts', { method: 'POST', body: { name: `L${i}`, phone: `119000000${String(i).padStart(2, '0')}` } })).status, 200);
+  for (let i = 0; i < 50; i++) assert.equal((await u('/api/contacts', { method: 'POST', body: { name: `L${i}`, phone: `119000000${String(i).padStart(2, '0')}` } })).status, 200);
   const blocked = await u('/api/contacts', { method: 'POST', body: { name: 'L11', phone: '11900000099' } });
   assert.equal(blocked.status, 403);
   assert.match(blocked.data.error, /Limite de leads/);
   // Número novo pelo WhatsApp também não entra.
   await u('/api/simulator/inbound', { method: 'POST', body: { phone: '11977770000', text: 'oi' } });
-  assert.equal((await u('/api/contacts')).data.length, 30);
+  assert.equal((await u('/api/contacts')).data.length, 50);
   const info = (await browser()('/api/public/info')).data;
-  assert.deepEqual(info.plans.map((p) => p.price_cents), [0, 10000, 24900]);
+  assert.deepEqual(info.plans.map((p) => [p.id, p.price_cents]), [['basico', 4990], ['essencial', 9990], ['profissional', 24990]], 'sem plano grátis à venda');
 });
 
-test('buscas no Google Maps: teste grátis 3 para sempre, Essencial 30 e Profissional 50 por mês', async () => {
+test('buscas no Google Maps: Básico 10, Essencial 30 e Profissional 50 por mês', async () => {
   resetLoginAttempts();
   const u = browser();
   assert.equal((await u('/api/auth/register', { method: 'POST', body: { companyName: 'Busca Free', name: 'Bia', email: 'bia@free.com', password: 'senhaforte1', segment: 'loja' } })).status, 200);
@@ -171,23 +173,23 @@ test('buscas no Google Maps: teste grátis 3 para sempre, Essencial 30 e Profiss
     return realFetch(url, opts);
   };
   try {
-    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 3, used: 0, period: 'total' });
+    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 10, used: 0, period: 'month' });
     // Sem credenciais do Google Cloud, a opção do Google Agenda nem aparece para o cliente.
     assert.equal((await u('/api/meta')).data.google_calendar, Boolean(config.googleClientId && config.googleClientSecret));
-    for (let i = 0; i < 3; i++) assert.equal((await u('/api/prospecting/search', { method: 'POST', body: { query: `pet shop ${i}` } })).status, 200);
-    const blocked = await u('/api/prospecting/search', { method: 'POST', body: { query: 'pet shop 4' } });
+    for (let i = 0; i < 10; i++) assert.equal((await u('/api/prospecting/search', { method: 'POST', body: { query: `pet shop ${i}` } })).status, 200);
+    const blocked = await u('/api/prospecting/search', { method: 'POST', body: { query: 'pet shop 11' } });
     assert.equal(blocked.status, 400);
-    assert.match(blocked.data.error, /3 buscas do teste grátis/);
-    assert.equal(googleCalls, 3); // a quarta nem chega ao Google
-    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 3, used: 3, period: 'total' });
-    assert.equal((await u('/api/prospecting/searches')).data.length, 3); // as anteriores continuam abertas
+    assert.match(blocked.data.error, /10 buscas deste mês do plano Básico.*Essencial são 30/);
+    assert.equal(googleCalls, 10); // a 11ª nem chega ao Google
+    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 10, used: 10, period: 'month' });
+    assert.equal((await u('/api/prospecting/searches')).data.length, 10); // as anteriores continuam abertas
 
-    // Assinou o Essencial: 30 por mês pela chave da plataforma (as do teste contam no mês em que foram feitas).
+    // Assinou o Essencial: 30 por mês pela chave da plataforma (as do Básico contam no mês em que foram feitas).
     const a = await adminSession();
     const company = (await a('/api/admin/companies')).data.find((c) => c.name === 'Busca Free');
     assert.equal((await a(`/api/admin/companies/${company.id}`, { method: 'PUT', body: { plan: 'essencial' } })).status, 200);
-    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 30, used: 3, period: 'month' });
-    for (let i = 3; i < 30; i++) assert.equal((await u('/api/prospecting/search', { method: 'POST', body: { query: `pet shop ${i}` } })).status, 200);
+    assert.deepEqual((await u('/api/meta')).data.prospecting_searches, { max: 30, used: 10, period: 'month' });
+    for (let i = 10; i < 30; i++) assert.equal((await u('/api/prospecting/search', { method: 'POST', body: { query: `pet shop ${i}` } })).status, 200);
     const monthBlocked = await u('/api/prospecting/search', { method: 'POST', body: { query: 'pet shop 31' } });
     assert.equal(monthBlocked.status, 400);
     assert.match(monthBlocked.data.error, /30 buscas deste mês.*renovam no dia 1º.*Profissional são 50/);
@@ -531,57 +533,70 @@ test('documentos: anexar, abrir, formatos aceitos, acesso por perfil e exclusão
   assert.equal(mainDb.prepare('SELECT COUNT(*) AS n FROM document_files WHERE document_id = ?').get(doc.id).n, 0);
 });
 
-test('teste grátis: IA bloqueada no servidor e assinatura por Pix com identificador da empresa', async () => {
+test('teste encerrado: só leitura (vê tudo, não edita), IA e envios parados; assinar destrava', async () => {
   const { config } = await import('../src/config.js');
   const { setClientFactory } = await import('../src/services/ai.js');
   const { all } = await import('../src/db.js');
+  const { processCourtesies } = await import('../src/services/subscriptions.js');
   const calls = [];
   setClientFactory(() => ({ beta: { messages: { create: async () => { calls.push(1); return { stop_reason: 'end_turn', content: [{ type: 'text', text: 'oi' }] }; } } } }));
   config.platformPixKey = '123e4567-e89b-42d3-a456-426614174000';
   config.platformPixName = 'Fulano de Tal';
   config.platformPixCity = 'SAO PAULO';
   try {
-    // Cadastro pela página inicial = teste grátis.
     const u = browser();
     assert.equal((await u('/api/auth/register', { method: 'POST', body: { companyName: 'Iota', name: 'Ivo', email: 'ivo@iota.com', password: 'senhaforte1' } })).status, 200);
-    await u('/api/settings', { method: 'PUT', body: { settings: { integrations: { anthropic_api_key: 'sk-propria' } } } });
+    const contact = (await u('/api/contacts', { method: 'POST', body: { name: 'Cliente Antigo', phone: '11933330009' } })).data;
+    // Passaram os 7 dias: o agendador encerra o teste.
+    const { id } = (await u('/api/auth/me')).data.company;
+    mainDb.prepare("UPDATE companies SET courtesy_until = '2000-01-01' WHERE id = ?").run(id);
+    processCourtesies();
     const meta = (await u('/api/meta')).data;
-    assert.equal(meta.ai_locked, true);
+    assert.deepEqual([meta.plan.id, meta.expired, meta.ai_locked, meta.subscription.state], ['gratis', true, true, 'gratis']);
 
-    // Mensagem chega: ninguém responde automaticamente (nem a resposta simples).
-    const r = (await u('/api/simulator/inbound', { method: 'POST', body: { phone: '11933330001', text: 'Quanto custa?' } })).data;
+    // Vê tudo…
+    assert.equal((await u('/api/contacts')).status, 200);
+    assert.equal((await u(`/api/contacts/${contact.id}`)).data.name, 'Cliente Antigo');
+    // …mas não edita, altera nem cadastra.
+    const blocked = await u('/api/contacts', { method: 'POST', body: { name: 'Novo', phone: '11933330010' } });
+    assert.equal(blocked.status, 402);
+    assert.match(blocked.data.error, /teste grátis terminou.*assinar/);
+    assert.equal((await u(`/api/contacts/${contact.id}`, { method: 'PUT', body: { name: 'Outro nome' } })).status, 402);
+    assert.equal((await u(`/api/contacts/${contact.id}`, { method: 'DELETE' })).status, 402);
+    assert.equal((await u('/api/settings', { method: 'PUT', body: { name: 'X' } })).status, 402);
+    assert.equal((await u(`/api/conversations/${contact.id}/messages`, { method: 'POST', body: { body: 'Olá!' } })).status, 402);
+    // Assinar, promoções e sair continuam liberados.
+    assert.equal((await u('/api/referral')).status, 200);
+    assert.equal((await u('/api/upgrade/notify', { method: 'POST', body: { plan: 'basico' } })).status, 200);
+
+    // Mensagem do cliente ainda chega (nada se perde), mas ninguém responde.
+    await u('/api/simulator/inbound', { method: 'POST', body: { phone: '11933330001', text: 'Quanto custa?' } }).catch(() => {});
+    const { handleInbound } = await import('../src/services/messaging.js');
+    const { withCompanyDb } = await import('../src/db.js');
+    const r = withCompanyDb(id, () => handleInbound(id, { phone: '11933330002', name: 'Cli', text: 'Oi', providerId: 'exp1' }));
     await new Promise((ok) => setTimeout(ok, 60));
     assert.equal(all("SELECT COUNT(*) AS n FROM messages WHERE contact_id = ? AND direction = 'out'", r.contact.id)[0].n, 0);
     assert.equal(calls.length, 0);
-    assert.equal((await u(`/api/conversations/${r.contact.id}/ai-reply`, { method: 'POST' })).status, 402);
-    assert.equal((await u(`/api/conversations/${r.contact.id}/ai`, { method: 'POST', body: { enabled: true } })).status, 402);
-    assert.equal((await u('/api/dashboard/insights', { method: 'POST', body: {} })).status, 402);
-    // Atendimento manual continua funcionando.
-    assert.equal((await u(`/api/conversations/${r.contact.id}/messages`, { method: 'POST', body: { body: 'Olá! Custa R$ 100.' } })).status, 200);
 
-    // Paywall: Pix de cada plano pago, com a chave da plataforma e o identificador da empresa.
+    // Paywall: Pix de cada plano, com a chave da plataforma e o identificador da empresa.
     const up = (await u('/api/upgrade')).data;
-    assert.deepEqual(up.plans.map((p) => [p.id, p.price_cents]), [['essencial', 10000], ['profissional', 24900]]);
+    assert.equal(up.expired, true);
+    assert.deepEqual(up.plans.map((p) => [p.id, p.price_cents]), [['basico', 4990], ['essencial', 9990], ['profissional', 24990]]);
     assert.match(up.txid, /^CONVERSA[A-Za-z0-9]+$/);
-    const essencial = up.plans.find((p) => p.id === 'essencial').pix_code;
-    assert.ok(essencial.includes('123e4567-e89b-42d3-a456-426614174000'));
-    assert.ok(essencial.includes('5406100.00'));
-    assert.ok(up.plans.find((p) => p.id === 'profissional').pix_code.includes('5406249.00'));
-    assert.ok(essencial.includes(up.txid));
-    assert.equal(up.email, 'contato@conversacrm.online');
-
-    // "Já enviei o comprovante" aparece no histórico do admin.
-    await u('/api/upgrade/notify', { method: 'POST', body: { plan: 'profissional' } });
+    const basico = up.plans.find((p) => p.id === 'basico').pix_code;
+    assert.ok(basico.includes('123e4567-e89b-42d3-a456-426614174000'));
+    assert.ok(basico.includes('540549.90'));
+    assert.ok(up.plans.find((p) => p.id === 'profissional').pix_code.includes('5406249.90'));
+    assert.ok(basico.includes(up.txid));
+    assert.equal(up.plans.find((p) => p.recommended).id, 'essencial');
     const a = await adminSession();
-    const log = (await a('/api/admin/audit')).data.find((x) => x.action === 'pedido de assinatura');
-    assert.match(log.details, /Profissional/);
+    const log = (await a('/api/admin/audit')).data.find((x) => x.action === 'pedido de assinatura' && x.company_id === id);
     assert.ok(log.details.includes(up.txid));
 
-    // Admin muda o plano: a IA destrava.
-    const id = (await a('/api/admin/companies')).data.find((x) => x.name === 'Iota').id;
-    await a(`/api/admin/companies/${id}`, { method: 'PUT', body: { plan: 'essencial' } });
-    assert.equal((await u('/api/meta')).data.ai_locked, false);
-    assert.equal((await u(`/api/conversations/${r.contact.id}/ai`, { method: 'POST', body: { enabled: true } })).status, 200);
+    // Assinou (admin confirmou o Pix): volta a editar e a IA destrava.
+    await a(`/api/admin/companies/${id}/activate-plan`, { method: 'POST', body: { plan: 'essencial' } });
+    assert.deepEqual([(await u('/api/meta')).data.expired, (await u('/api/meta')).data.ai_locked], [false, false]);
+    assert.equal((await u('/api/contacts', { method: 'POST', body: { name: 'Novo', phone: '11933330010' } })).status, 200);
   } finally {
     config.platformPixKey = '';
     setClientFactory(() => null);
@@ -597,7 +612,7 @@ test('pedido de assinatura: aparece como "aguardando Pix" e o admin ativa o plan
   const overview = (await a('/api/admin/overview')).data;
   assert.ok(overview.upgrade_requests >= 1);
   const listed = overview.list.find((x) => x.name === 'Kappa');
-  assert.equal(listed.plan, 'gratis');
+  assert.equal(listed.plan, 'basico');
   assert.equal(listed.upgrade_plan, 'profissional');
   assert.equal(overview.list[0].upgrade_plan !== null, true, 'pedidos em aberto aparecem primeiro');
 
@@ -640,7 +655,7 @@ test('Stripe: assinatura no cartão ativa, renova, recusa e encerra pelo webhook
     const b = sent[0].body;
     assert.equal(sent[0].auth, 'Bearer sk_test_123');
     assert.equal(b.get('mode'), 'subscription');
-    assert.equal(b.get('line_items[0][price_data][unit_amount]'), '10000');
+    assert.equal(b.get('line_items[0][price_data][unit_amount]'), '9990');
     assert.equal(b.get('line_items[0][price_data][currency]'), 'brl');
     assert.equal(b.get('line_items[0][price_data][recurring][interval]'), 'month');
     assert.equal(b.get('subscription_data[metadata][company_id]'), String(companyId));
@@ -648,7 +663,7 @@ test('Stripe: assinatura no cartão ativa, renova, recusa e encerra pelo webhook
 
     // Webhook sem assinatura válida é recusado e não muda nada.
     assert.equal((await hook('checkout.session.completed', { metadata: { company_id: companyId, plan: 'essencial' } }, { secret: 'outro' })).status, 400);
-    assert.equal((await u('/api/meta')).data.plan.id, 'gratis');
+    assert.equal((await u('/api/meta')).data.plan.id, 'basico');
 
     // Pagamento aprovado: plano ativo e mensalidade registrada (eventos repetidos não duplicam).
     await hook('checkout.session.completed', { object: 'checkout.session', customer: 'cus_1', subscription: 'sub_1', client_reference_id: String(companyId), metadata: { company_id: String(companyId), plan: 'essencial' } });
@@ -712,7 +727,7 @@ test('Pix confirmado pelo admin soma um mês por pagamento e entra no financeiro
   assert.equal(c.subscription.paid_until, addDays(addMonths(addDays(firstEnd, 1), 1), -1), 'segundo Pix começa depois do primeiro mês');
   assert.equal(c.payments.length, 2);
   const after = (await a('/api/admin/finance')).data;
-  assert.equal(after.received.by_method.pix - before.received.by_method.pix, 49800);
+  assert.equal(after.received.by_method.pix - before.received.by_method.pix, 49980);
   assert.equal(after.plans.find((p) => p.id === 'profissional').pix - before.plans.find((p) => p.id === 'profissional').pix, 1);
 });
 
@@ -741,13 +756,13 @@ test('Stripe Pix: cada pagamento soma um mês, confirmado pelo webhook, sem dupl
     const b = sent[0];
     assert.equal(b.get('mode'), 'payment');
     assert.equal(b.get('payment_method_types[0]'), 'pix');
-    assert.equal(b.get('line_items[0][price_data][unit_amount]'), '24900');
+    assert.equal(b.get('line_items[0][price_data][unit_amount]'), '24990');
     assert.equal(b.get('metadata[kind]'), 'pix_month');
 
     const session = (sid, status = 'paid') => ({ object: 'checkout.session', id: sid, mode: 'payment', payment_status: status, amount_total: 24900, customer: 'cus_pix', metadata: { company_id: String(id), plan: 'profissional', kind: 'pix_month' } });
     // Ainda não pago: nada muda.
     assert.equal((await hook('checkout.session.completed', session('cs_a', 'unpaid'))).pending, true);
-    assert.equal((await u('/api/meta')).data.plan.id, 'gratis');
+    assert.equal((await u('/api/meta')).data.plan.id, 'basico');
     // Pago: plano ativo por um mês; aviso repetido não soma de novo.
     await hook('checkout.session.async_payment_succeeded', session('cs_a'));
     await hook('checkout.session.async_payment_succeeded', session('cs_a'));
@@ -810,7 +825,7 @@ test('Stripe: quem assina no cartão muda de plano na mesma assinatura, com dife
     assert.equal(r.status, 200);
     const update = calls.find((c) => c.method === 'POST' && c.url.endsWith('/subscriptions/sub_m')).body;
     assert.equal(update.get('items[0][id]'), 'si_m');
-    assert.equal(update.get('items[0][price_data][unit_amount]'), '24900');
+    assert.equal(update.get('items[0][price_data][unit_amount]'), '24990');
     assert.equal(update.get('items[0][price_data][product]'), 'prod_pro');
     assert.equal(update.get('proration_behavior'), 'always_invoice');
     assert.equal(update.get('metadata[plan]'), 'profissional');
@@ -1358,11 +1373,11 @@ test('processos (advocacia): OAB e número CNJ, histórico sem alerta, intimaç�
     assert.equal((await u('/api/legal/overview')).data.unread, 1);
     assert.deepEqual((await u(`/api/legal/cases?contact_id=${client.id}`)).data.map((x) => x.id), [c.id]);
 
-    // Limite do teste grátis: 5 processos.
-    for (const n of ['0700002', '0700003', '0700004', '0700005']) assert.equal((await u('/api/legal/cases', { method: 'POST', body: { cnj: cnjOf(n) } })).status, 200);
-    const over = await u('/api/legal/cases', { method: 'POST', body: { cnj: cnjOf('0700006') } });
+    // Limite do Básico: 10 processos.
+    for (let n = 2; n <= 10; n++) assert.equal((await u('/api/legal/cases', { method: 'POST', body: { cnj: cnjOf(`07000${String(n).padStart(2, '0')}`) } })).status, 200);
+    const over = await u('/api/legal/cases', { method: 'POST', body: { cnj: cnjOf('0700011') } });
     assert.equal(over.status, 400);
-    assert.match(over.data.error, /até 5 processos.*Essencial são 20/);
+    assert.match(over.data.error, /até 10 processos.*Essencial são 20/);
 
     // Outra empresa (com o módulo ligado) não vê nada desta.
     // Fora da Advocacia, o dono não liga sozinho: só o administrador libera.
@@ -1385,4 +1400,193 @@ test('processos (advocacia): OAB e número CNJ, histórico sem alerta, intimaç�
   } finally {
     legal.setLegalFetch((...a) => fetch(...a));
   }
+});
+
+test('indique e ganhe: código por usuário, 30 dias para quem chega, +1 mês para quem indicou no 1º pagamento, tudo visível no admin', async () => {
+  const { todayIn, addDays } = await import('../src/services/time.js');
+  const { addMonths } = await import('../src/services/subscriptions.js');
+  const today = todayIn('America/Sao_Paulo');
+  resetLoginAttempts();
+  const a = await adminSession();
+  // Empresa que indica, com dois usuários: cada um tem o próprio código.
+  const dona = browser();
+  await dona('/api/auth/register', { method: 'POST', body: { companyName: 'Clínica Sorriso', name: 'Marina Dona', email: 'marina@sorriso.com', password: 'senhaforte1' } });
+  const sorrisoId = (await dona('/api/auth/me')).data.company.id;
+  await a(`/api/admin/companies/${sorrisoId}/activate-plan`, { method: 'POST', body: { plan: 'essencial' } });
+  await dona('/api/users', { method: 'POST', body: { name: 'Bruno Atendente', email: 'bruno@sorriso.com', password: 'senhaforte1', role: 'agent' } });
+  const bruno = (await userSession('bruno@sorriso.com', 'senhaforte1')).u;
+  const codeA = (await dona('/api/referral')).data.code;
+  const ref = (await bruno('/api/referral')).data;
+  assert.match(codeA, /^MARINA-[A-Z2-9]{4}$/);
+  assert.match(ref.code, /^BRUNO-[A-Z2-9]{4}$/);
+  assert.notEqual(codeA, ref.code);
+  assert.equal(ref.link, `${(await import('../src/config.js')).config.publicUrl}/?ref=${ref.code}`);
+  assert.match(ref.message, new RegExp(`acredito que você deveria conhecer.*${ref.code}.*1 mês grátis`));
+  assert.equal((await bruno('/api/referral')).data.code, ref.code, 'o código não muda');
+
+  // Página inicial com o código: mostra só o primeiro nome de quem indicou.
+  assert.deepEqual((await browser()(`/api/public/referral/${ref.code.toLowerCase()}`)).data, { valid: true, code: ref.code, by: 'Bruno' });
+  assert.equal((await browser()('/api/public/referral/XXXX-0000')).data.valid, false);
+
+  // Cadastro com o código do Bruno: 30 dias de teste, ligado ao Bruno e à Clínica Sorriso.
+  const novo = browser();
+  await novo('/api/auth/register', { method: 'POST', body: { companyName: 'Pet Feliz', name: 'Paula', email: 'paula@pet.com', password: 'senhaforte1', ref: ref.code.replace('-', '') } });
+  const sub = (await novo('/api/meta')).data.subscription;
+  assert.deepEqual([sub.state, sub.courtesy_until, sub.referral], ['teste', addDays(today, 30), true]);
+  const petId = (await novo('/api/auth/me')).data.company.id;
+  assert.equal((await novo('/api/referral')).data.can_redeem, false, 'quem já veio indicado não usa outro código');
+
+  // Sem código no cadastro, dá para usar um depois (ainda no teste): vira 30 dias do cadastro.
+  const tardio = browser();
+  await tardio('/api/auth/register', { method: 'POST', body: { companyName: 'Loja Tardia', name: 'Téo', email: 'teo@tardia.com', password: 'senhaforte1' } });
+  assert.equal((await tardio('/api/meta')).data.subscription.courtesy_until, addDays(today, 7));
+  assert.match((await tardio('/api/referral/redeem', { method: 'POST', body: { code: (await tardio('/api/referral')).data.code } })).data.error, /própria empresa/);
+  assert.equal((await tardio('/api/referral/redeem', { method: 'POST', body: { code: codeA } })).status, 200);
+  assert.equal((await tardio('/api/meta')).data.subscription.courtesy_until, addDays(today, 30));
+  assert.match((await tardio('/api/referral/redeem', { method: 'POST', body: { code: ref.code } })).data.error, /já usou/);
+
+  // Indicação ainda não paga: ninguém ganhou nada.
+  const before = (await a(`/api/admin/companies/${sorrisoId}`)).data.subscription.paid_until;
+  let sorriso = (await dona('/api/referral')).data;
+  assert.deepEqual([sorriso.invited, sorriso.converted, sorriso.months_earned], [2, 0, 0]);
+  assert.deepEqual((await bruno('/api/referral')).data.mine, { invited: 1, converted: 0 });
+
+  // A Pet Feliz pagou o primeiro mês: a Clínica Sorriso (Pix) ganha +1 mês pago, uma vez só.
+  await a(`/api/admin/companies/${petId}/activate-plan`, { method: 'POST', body: { plan: 'basico' } });
+  assert.equal((await a(`/api/admin/companies/${sorrisoId}`)).data.subscription.paid_until, addMonths(before, 1));
+  await a(`/api/admin/companies/${petId}/activate-plan`, { method: 'POST', body: { plan: 'basico' } });
+  assert.equal((await a(`/api/admin/companies/${sorrisoId}`)).data.subscription.paid_until, addMonths(before, 1), 'só no primeiro pagamento');
+  sorriso = (await dona('/api/referral')).data;
+  assert.deepEqual([sorriso.converted, sorriso.months_earned], [1, 1]);
+  assert.deepEqual(sorriso.people.find((p) => p.name === 'Pet Feliz'), { name: 'Pet Feliz', since: sorriso.people.find((p) => p.name === 'Pet Feliz').since, paid: true, by: 'Bruno Atendente' });
+
+  // Admin: qual código, de qual usuário e de qual empresa trouxe cada cadastro.
+  const adm = (await a('/api/admin/referrals')).data;
+  const pet = adm.list.find((x) => x.name === 'Pet Feliz');
+  assert.deepEqual([pet.code, pet.by_user, pet.by_email, pet.by_company, Boolean(pet.referral_rewarded_at)], [ref.code, 'Bruno Atendente', 'bruno@sorriso.com', 'Clínica Sorriso', true]);
+  assert.equal(adm.list.find((x) => x.name === 'Loja Tardia').by_user, 'Marina Dona');
+  const rank = adm.ranking.find((x) => x.user === 'Bruno Atendente');
+  assert.deepEqual([rank.company, rank.invited, rank.paid], ['Clínica Sorriso', 1, 1]);
+  assert.ok((await a('/api/admin/audit')).data.some((x) => x.action === 'prêmio de indicação' && x.company_id === sorrisoId && x.details.includes('Bruno Atendente') && x.details.includes(ref.code)));
+
+  // Quem indicou ainda está no teste: ganha +30 dias no teste.
+  const t2 = browser();
+  await t2('/api/auth/register', { method: 'POST', body: { companyName: 'Indicada da Tardia', name: 'Ana', email: 'ana@indicada.com', password: 'senhaforte1', ref: (await tardio('/api/referral')).data.code } });
+  const t2Id = (await t2('/api/auth/me')).data.company.id;
+  await a(`/api/admin/companies/${t2Id}/activate-plan`, { method: 'POST', body: { plan: 'basico' } });
+  assert.equal((await tardio('/api/meta')).data.subscription.courtesy_until, addDays(addDays(today, 30), 30));
+});
+
+test('MEI: envia o certificado, cai no admin (e no WhatsApp), admin aprova e o Básico fica grátis sem prazo', async () => {
+  const { config } = await import('../src/config.js');
+  const { setPlatformNotify } = await import('../src/services/platform.js');
+  const pings = [];
+  setPlatformNotify(async (company, phone, text) => { pings.push({ company: company.name, phone, text }); });
+  config.salesWhatsapp = '5511999990000';
+  try {
+    resetLoginAttempts();
+    const a = await adminSession();
+    // A conta do próprio administrador no Conversa CRM (mesmo e-mail) é quem envia o aviso.
+    const plataforma = browser();
+    await plataforma('/api/auth/register', { method: 'POST', body: { companyName: 'Conversa CRM (plataforma)', name: 'Neto', email: 'admin@plataforma.com', password: 'senhaforte1' } });
+    const u = browser();
+    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Doces da Lu', name: 'Lu', email: 'lu@doces.com', password: 'senhaforte1' } });
+    const pdf = Buffer.from('%PDF-1.4 certificado MEI').toString('base64');
+    assert.match((await u('/api/mei', { method: 'POST', body: { cnpj: '11.222.333/0001-80', file_name: 'ccmei.pdf', mime: 'application/pdf', data_base64: pdf } })).data.error, /CNPJ inválido/);
+    assert.match((await u('/api/mei', { method: 'POST', body: { cnpj: '11.222.333/0001-81', file_name: 'x.exe', mime: 'application/x-msdownload', data_base64: pdf } })).data.error, /PDF, JPG ou PNG/);
+    const sent = (await u('/api/mei', { method: 'POST', body: { cnpj: '11.222.333/0001-81', file_name: 'ccmei.pdf', mime: 'application/pdf', data_base64: pdf } })).data;
+    assert.deepEqual([sent.status, sent.cnpj], ['pendente', '11.222.333/0001-81']);
+    assert.match((await u('/api/mei', { method: 'POST', body: { cnpj: '11.222.333/0001-81', file_name: 'ccmei.pdf', mime: 'application/pdf', data_base64: pdf } })).data.error, /já está em análise/);
+    await new Promise((r) => setTimeout(r, 20));
+    assert.equal(pings.length, 1);
+    assert.deepEqual([pings[0].company, pings[0].phone], ['Conversa CRM (plataforma)', '5511999990000']);
+    assert.match(pings[0].text, /Pedido de MEI[\s\S]*Doces da Lu[\s\S]*11\.222\.333\/0001-81[\s\S]*lu@doces\.com[\s\S]*\/admin#mei/);
+
+    // Admin vê o pedido, abre o certificado e aprova.
+    const list = (await a('/api/admin/mei')).data;
+    const req = list.find((x) => x.company_name === 'Doces da Lu');
+    assert.equal(req.status, 'pendente');
+    assert.ok(!('data' in req), 'a lista não carrega o arquivo');
+    const cookie = await (async () => { const r = await fetch(`${base}/api/admin/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@plataforma.com', password: 'admin12345' }) }); return r.headers.getSetCookie().map((c) => c.split(';')[0]).join('; '); })();
+    const file = await fetch(`${base}/api/admin/mei/${req.id}/file`, { headers: { cookie } });
+    assert.equal(file.headers.get('content-type'), 'application/pdf');
+    assert.equal(Buffer.from(await file.arrayBuffer()).toString(), '%PDF-1.4 certificado MEI');
+    assert.equal((await fetch(`${base}/api/admin/mei/${req.id}/file`)).status, 401);
+    assert.equal((await u(`/api/admin/mei/${req.id}/file`)).status, 401, 'a empresa não acessa o painel');
+    assert.equal((await a(`/api/admin/mei/${req.id}/decide`, { method: 'POST', body: { approve: true } })).data.status, 'aprovado');
+    const meta = (await u('/api/meta')).data;
+    assert.deepEqual([meta.plan.id, meta.subscription.state, meta.subscription.courtesy_until, meta.subscription.courtesy_reason], ['basico', 'cortesia', null, 'MEI: plano Básico grátis']);
+    assert.equal((await u('/api/mei')).data.status, 'aprovado');
+    assert.match((await u('/api/mei', { method: 'POST', body: { cnpj: '11.222.333/0001-81', file_name: 'ccmei.pdf', mime: 'application/pdf', data_base64: pdf } })).data.error, /já tem o plano Básico grátis/);
+
+    // Recusa exige motivo, que a empresa vê.
+    const v = browser();
+    await v('/api/auth/register', { method: 'POST', body: { companyName: 'Não é MEI', name: 'Vi', email: 'vi@ltda.com', password: 'senhaforte1' } });
+    await v('/api/mei', { method: 'POST', body: { cnpj: '11.222.333/0001-81', file_name: 'c.png', mime: 'image/png', data_base64: pdf } });
+    const r2 = (await a('/api/admin/mei')).data.find((x) => x.company_name === 'Não é MEI');
+    assert.equal((await a(`/api/admin/mei/${r2.id}/decide`, { method: 'POST', body: { approve: false } })).status, 400);
+    await a(`/api/admin/mei/${r2.id}/decide`, { method: 'POST', body: { approve: false, note: 'O certificado é de uma LTDA, não de MEI.' } });
+    assert.deepEqual([(await v('/api/mei')).data.status, (await v('/api/mei')).data.note], ['recusado', 'O certificado é de uma LTDA, não de MEI.']);
+    assert.equal((await v('/api/meta')).data.subscription.state, 'teste');
+  } finally {
+    config.salesWhatsapp = '';
+  }
+});
+
+test('medição: página inicial, cadastro e uso do sistema viram o relatório de inteligência do admin', async () => {
+  resetLoginAttempts();
+  const t = (body) => fetch(`${base}/api/t`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+  const vid = 'visitante-teste-1';
+  // Visitante chega pelo Instagram, lê, rola, abre uma pergunta do FAQ e clica para começar.
+  assert.equal((await t({ v: vid, s: 'sessao-teste-1', p: '/', src: 'instagram', d: 'mobile', e: [
+    { k: 'pageview' }, { k: 'section', n: 'recursos', val: 8000 }, { k: 'section', n: 'planos', val: 12000 }, { k: 'scroll', val: 95 },
+    { k: 'faq', n: 'Posso cancelar quando quiser?' }, { k: 'cta', n: 'Começar grátis (topo)' }, { k: 'time', val: 65000 }, { k: 'nao-existe' },
+  ] })).n, 7, 'tipo desconhecido é ignorado');
+  await t({ v: 'visitante-teste-2', s: 'sessao-teste-2', p: '/', d: 'desktop', e: [{ k: 'pageview' }, { k: 'section', n: 'recursos', val: 3000 }, { k: 'time', val: 15000 }] });
+  assert.equal((await t({ v: 'x', e: [{ k: 'pageview' }] })).n, 0, 'identificador inválido');
+  // Cadastro do mesmo visitante: a empresa fica ligada à origem.
+  const u = browser();
+  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Studio Medido', name: 'Mel', email: 'mel@studio.com', password: 'senhaforte1', vid, src: 'instagram' } });
+  const id = (await u('/api/auth/me')).data.company.id;
+  assert.deepEqual(Object.values(mainDb.prepare('SELECT signup_visitor, signup_source FROM companies WHERE id = ?').get(id)), [vid, 'instagram']);
+  // No sistema: tempo em cada menu (enviado pela tela) e ações (registradas no servidor, com usuário e empresa).
+  await u('/api/t', { method: 'POST', body: { v: vid, s: 'sessao-teste-3', e: [{ k: 'app_page', n: 'inbox', val: 120000 }, { k: 'app_page', n: 'agenda', val: 30000 }, { k: 'share', n: 'whatsapp' }] } });
+  await u('/api/contacts', { method: 'POST', body: { name: 'Cliente Medido', phone: '11955550001' } });
+  const feat = mainDb.prepare("SELECT * FROM analytics_events WHERE kind = 'feature' AND company_id = ?").all(id);
+  assert.deepEqual(feat.map((f) => f.name), ['POST /api/contacts']);
+  assert.ok(feat[0].user_id);
+  assert.ok(mainDb.prepare("SELECT 1 FROM analytics_events WHERE kind = 'app_page' AND company_id = ? AND user_id IS NOT NULL").get(id));
+
+  const a = await adminSession();
+  const intel = (await a('/api/admin/intelligence?days=30')).data;
+  assert.equal(intel.goal.target_cents, 1000000);
+  assert.ok(intel.landing.visitors >= 2);
+  assert.ok(intel.landing.faq.some((f) => f.name === 'Posso cancelar quando quiser?'));
+  assert.ok(intel.landing.sources.some((s) => s.name === 'instagram'));
+  assert.ok(intel.landing.sections.find((s) => s.id === 'planos').seen_percent > 0);
+  assert.ok(intel.landing.devices.some((d) => d.name === 'Celular'));
+  assert.ok(intel.menus.find((m) => m.id === 'inbox').minutes >= 2);
+  assert.equal(intel.features.find((f) => f.name === 'POST /api/contacts').label, 'Cadastrou cliente/lead');
+  assert.equal(intel.funnel.length, 6);
+  assert.ok(intel.funnel.find((s) => s.step === 'Usaram de verdade').count >= 1);
+  assert.ok(intel.referral.shares >= 1);
+  assert.ok(intel.tips.length >= 1);
+  assert.ok(intel.companies.find((c) => c.id === id).actions >= 1);
+  // Só administrador vê.
+  assert.equal((await u('/api/admin/intelligence')).status, 401);
+});
+
+test('fim do grátis antigo: contas no grátis ganham 30 dias do Básico, uma vez só', async () => {
+  const { migrateFreeAccounts } = await import('../src/services/subscriptions.js');
+  const { todayIn, addDays } = await import('../src/services/time.js');
+  mainDb.prepare('DELETE FROM platform_state').run();
+  const u = browser();
+  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Grátis Antigo', name: 'Gil', email: 'gil@antigo.com', password: 'senhaforte1' } });
+  const id = (await u('/api/auth/me')).data.company.id;
+  mainDb.prepare("UPDATE companies SET plan = 'gratis', courtesy_until = NULL, courtesy_reason = NULL WHERE id = ?").run(id);
+  assert.ok(migrateFreeAccounts() >= 1);
+  const sub = (await u('/api/meta')).data.subscription;
+  assert.deepEqual([sub.state, sub.courtesy_until], ['teste', addDays(todayIn('America/Sao_Paulo'), 30)]);
+  mainDb.prepare("UPDATE companies SET plan = 'gratis', courtesy_until = NULL, courtesy_reason = NULL WHERE id = ?").run(id);
+  assert.equal(migrateFreeAccounts(), 0, 'só roda uma vez');
 });

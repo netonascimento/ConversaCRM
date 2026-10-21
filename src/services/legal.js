@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { all, get, run, now, forEachDatabase } from '../db.js';
 import { config } from '../config.js';
 import { getCompany } from './company.js';
-import { PLANS } from './plans.js';
+import { PLANS, accessExpired } from './plans.js';
 import { sendToPhone } from './messaging.js';
 import { summarizeLegalEvent } from './ai.js';
 import { zonedParts } from './time.js';
@@ -381,7 +381,7 @@ export async function monitorOnce() {
     await forEachDatabase(async () => {
       const usable = (companyId) => {
         const company = getCompany(companyId);
-        return company && company.status === 'ativa' && processesEnabled(company) ? company : null;
+        return company && company.status === 'ativa' && !accessExpired(company) && processesEnabled(company) ? company : null;
       };
       const oabs = all('SELECT id, company_id FROM legal_oabs WHERE active = 1 AND (checked_at IS NULL OR checked_at < ?) ORDER BY checked_at IS NOT NULL, checked_at LIMIT 5', hoursAgo(OAB_EVERY_H));
       for (const o of oabs) if (usable(o.company_id)) await afterCheck(o.company_id, await checkOab(o.company_id, o.id));

@@ -230,13 +230,18 @@ export function handleStripeEvent(event) {
       return { ok: true };
     }
     case 'customer.subscription.deleted': {
-      // Assinatura encerrada: volta para o teste grátis (dados ficam; IA e limites voltam ao grátis).
+      // Assinatura encerrada: a conta fica só com leitura (os dados ficam) até assinar de novo.
       main.run("UPDATE companies SET subscription_status = 'cancelada', cancel_at_period_end = 0, stripe_subscription_id = NULL WHERE id = ?", id);
       applyPlan(id, 'gratis');
-      auditLog(id, 'assinatura encerrada', 'voltou para o teste grátis');
+      auditLog(id, 'assinatura encerrada', 'conta só com leitura até assinar de novo');
       return { ok: true };
     }
     default:
       return { ignored: event.type };
   }
+}
+
+/** Crédito na conta do cliente no Stripe (abate da próxima fatura). Usado no "indique e ganhe". */
+export async function creditCustomer(customerId, cents, description) {
+  return stripe(`customers/${customerId}/balance_transactions`, { amount: -Math.abs(cents), currency: 'brl', description });
 }

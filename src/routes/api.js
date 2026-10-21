@@ -2,13 +2,13 @@ import { all, get, run, now, main, transaction } from '../db.js';
 import { config } from '../config.js';
 import { HttpError } from '../http.js';
 import {
-  registerCompany, login, createSession, sessionCookie, requireAuth, requireRole, ownerOnly, ROLES, listUsers, createUser, updateUser,
+  registerCompany, login, createSession, sessionCookie, requireAuth, requireRole, ownerOnly, ROLES, listUsers, createUser, updateUser, userFromRequest,
 } from '../auth.js';
 import { getCompany, saveSettings, maskSettings, anthropicKeyFor, aiKeySource, placesKeyFor } from '../services/company.js';
 import {
   STAGES, listContacts, createContact, getContact, updateContact, changeStage, logActivity, PlanLimitError, leadsRemaining, normalizePhone, normalizeBirthDate,
 } from '../services/crm.js';
-import { PLANS, publicPlans, aiAllowed, UPGRADE_PLAN, upgradeTxid } from '../services/plans.js';
+import { PLANS, publicPlans, aiAllowed, accessExpired, UPGRADE_PLAN, RECOMMENDED_PLAN, upgradeTxid } from '../services/plans.js';
 import { pixPayload } from '../services/billing.js';
 import { stripeEnabled, createCheckout, createPixCheckout, createPortal, changeCardPlan } from '../services/stripe.js';
 import { subscriptionState } from '../services/subscriptions.js';
@@ -33,6 +33,9 @@ import { TRIGGERS, listSequences, parseSequence, enroll } from '../services/foll
 import { listCharges, createCharge, markPaid, cancelCharge, getCharge, chargeMessage } from '../services/billing.js';
 import { searchPlaces, listSearches, getSearch, importProspects, searchQuota } from '../services/prospecting.js';
 import { presentMessage, friendlyBody, retryMedia, mediaFile } from '../services/media.js';
+import { startSignupTrial, referralOverview, redeemCode, ownerOfCode } from '../services/referrals.js';
+import { meiStatus, submitMei } from '../services/mei.js';
+import { track, recordSignup } from '../services/analytics.js';
 import {
   processesEnabled, parseCnj, listOabs, saveOab, deleteOab, caseLimit, createCase, updateCase, deleteCase, refreshCase,
   listCases, getCase, listNews, listUnlinked, getEvent, markRead, unreadCount,
@@ -72,8 +75,19 @@ const ownContacts = (req) => new Set(all(
 ).map((r) => r.contact_id));
 const visible = (req, contactId) => proScope(req) === null || ownContacts(req).has(Number(contactId));
 
+// Teste encerrado sem assinatura: a conta continua entrando e vendo tudo, mas não edita, altera
+// nem cadastra nada. Só passam a assinatura, as promoções (indicação e MEI), sair e a medição de uso.
+const EXPIRED_ALLOWED = [/^\/api\/auth\//, /^\/api\/upgrade/, /^\/api\/referral/, /^\/api\/mei/, /^\/api\/onboarding\/dismiss$/, /^\/api\/t$/];
+export const EXPIRED_MESSAGE = 'Seu teste grátis terminou. Você continua vendo tudo, mas para editar, alterar ou cadastrar é preciso assinar um plano.';
+
 export function registerApi(router) {
-  const auth = requireAuth;
+  const auth = (req) => {
+    requireAuth(req);
+    if (req.method === 'GET' || req.user.impersonated_by) return;
+    const path = String(req.url || '').split('?')[0];
+    if (EXPIRED_ALLOWED.some((r) => r.test(path))) return;
+    if (accessExpired(getCompany(req.companyId))) throw new HttpError(402, EXPIRED_MESSAGE);
+  };
   const staff = requireRole('agent');
   const contactGuard = (req, res, { params }) => {
     if (!visible(req, params.id)) throw new HttpError(404, 'Contato não encontrado');
@@ -82,8 +96,10 @@ export function registerApi(router) {
   // ---- Autenticação ----------------------------------------------------------
   router.post('/api/auth/register', (req, res, { body }) => {
     if (!config.allowSignup) throw new HttpError(403, 'Cadastro desativado');
-    // Cadastro pela página inicial: sempre começa no plano de teste grátis.
-    const { userId } = registerCompany({ ...body, plan: 'gratis', maxUsers: undefined, maxLeads: undefined });
+    // Cadastro pela página inicial: teste do Básico (7 dias; 30 com código de indicação).
+    const { userId, companyId } = registerCompany({ ...body, plan: 'basico', maxUsers: undefined, maxLeads: undefined });
+    startSignupTrial(companyId, body.ref);
+    recordSignup(companyId, { visitor: body.vid, source: body.ref ? 'indicação' : body.src });
     res.setHeader('Set-Cookie', sessionCookie(createSession(userId), req));
     return { ok: true };
   });
@@ -102,6 +118,16 @@ export function registerApi(router) {
     segments: Object.entries(PRESETS).map(([id, p]) => ({ id, label: p.label })),
   }));
   // Página inicial (landing): planos e contato de vendas.
+  // Medição (página inicial e sistema). Com sessão, o evento fica ligado ao usuário e à empresa.
+  router.post('/api/t', (req, res, { body }) => {
+    const user = userFromRequest(req);
+    return { n: track(body, { userId: user?.id || null, companyId: user?.company_id || null }) };
+  });
+  // Página inicial com ?ref=CÓDIGO: mostra quem indicou (só o primeiro nome) e o mês grátis.
+  router.get('/api/public/referral/:code', (req, res, { params }) => {
+    const r = ownerOfCode(params.code);
+    return r && r.status === 'ativa' ? { valid: true, code: r.code, by: String(r.user_name).split(' ')[0] } : { valid: false };
+  });
   router.get('/api/public/info', () => ({ plans: publicPlans(), sales_whatsapp: config.salesWhatsapp, allow_signup: config.allowSignup }));
   router.get('/api/auth/me', auth, (req) => {
     const company = getCompany(req.companyId);
@@ -163,6 +189,8 @@ export function registerApi(router) {
       })(),
       prospecting_limit: company.settings.whatsapp.provider === 'evolution' ? { limit: COLD_DAILY_LIMIT, used: coldSentToday(company) } : null,
       subscription: { method: company.billing_method, paid_until: company.paid_until, ...subscriptionState(company) },
+      // Teste encerrado: só leitura até assinar.
+      expired: accessExpired(company),
       team: assignableUsers(company.id),
       contract_periods: PERIODS,
       document_categories: CATEGORIES,
@@ -725,6 +753,14 @@ export function registerApi(router) {
     return completeTask(req.companyId, task.id, 'cancelada');
   });
 
+  // ---- Descontos e promoções: indique e ganhe, MEI -------------------------------
+  router.get('/api/referral', auth, (req) => referralOverview(req.companyId, req.user.id));
+  router.post('/api/referral/redeem', auth, ownerOnly, (req, res, { body }) => tryIt(() => redeemCode(req.companyId, body.code)));
+  router.get('/api/mei', auth, ownerOnly, (req) => meiStatus(req.companyId));
+  router.post('/api/mei', auth, ownerOnly, async (req, res, { body }) => {
+    try { return await submitMei(req.companyId, req.user, body); } catch (e) { throw new HttpError(400, e.message); }
+  });
+
   // ---- Processos (advocacia) -------------------------------------------------
   // Só com o módulo ligado; quem atende (dono e atendentes) acompanha os processos.
   const legal = (req) => {
@@ -795,13 +831,13 @@ export function registerApi(router) {
     // Planos pagos, cada um com o Pix do valor dele (mesma chave, identificador da empresa).
     const plans = publicPlans().filter((p) => p.price_cents > 0).map((p) => ({
       ...p,
-      recommended: p.id === UPGRADE_PLAN,
+      recommended: p.id === RECOMMENDED_PLAN,
       pix_code: config.platformPixKey
         ? pixPayload({ key: config.platformPixKey, name: config.platformPixName, city: config.platformPixCity, amountCents: p.price_cents, txid })
         : null,
     }));
     return {
-      plans, current_plan: company.plan, ai_locked: !aiAllowed(company), txid, requested_plan: company.upgrade_plan || null,
+      plans, current_plan: company.plan, ai_locked: !aiAllowed(company), expired: accessExpired(company), txid, requested_plan: company.upgrade_plan || null,
       card_enabled: stripeEnabled(),
       subscription: {
         method: company.billing_method, status: company.subscription_status, paid_until: company.paid_until,

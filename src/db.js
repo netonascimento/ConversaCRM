@@ -348,6 +348,46 @@ CREATE TABLE IF NOT EXISTS legal_events (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_events_hash ON legal_events(company_id, event_hash);
 CREATE INDEX IF NOT EXISTS idx_legal_events_case ON legal_events(company_id, case_id, occurred_at);
 CREATE INDEX IF NOT EXISTS idx_legal_events_cnj ON legal_events(company_id, cnj);
+-- Pedidos de plano Básico grátis para MEI (o certificado fica aqui até o admin decidir).
+CREATE TABLE IF NOT EXISTS mei_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  cnpj TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  data BLOB NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pendente',
+  note TEXT,
+  decided_by TEXT,
+  decided_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_mei_requests_company ON mei_requests(company_id, id);
+-- Medição própria (sem ferramentas de terceiros): visitas da página inicial, cadastro e uso do sistema.
+-- visitor_id é aleatório e fica só no navegador; não guardamos IP.
+CREATE TABLE IF NOT EXISTS analytics_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  visitor_id TEXT,
+  session_id TEXT,
+  user_id INTEGER,
+  company_id INTEGER,
+  kind TEXT NOT NULL,
+  name TEXT,
+  value REAL,
+  path TEXT,
+  source TEXT,
+  device TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_analytics_kind ON analytics_events(kind, at);
+CREATE INDEX IF NOT EXISTS idx_analytics_visitor ON analytics_events(visitor_id, at);
+CREATE INDEX IF NOT EXISTS idx_analytics_company ON analytics_events(company_id, at);
+-- Tarefas que rodam uma vez só (ex.: dar 30 dias às empresas que estavam no grátis).
+CREATE TABLE IF NOT EXISTS platform_state (
+  key TEXT PRIMARY KEY,
+  value TEXT,
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 -- Números de WhatsApp extras da empresa (o número principal continua em companies.settings.whatsapp).
 CREATE TABLE IF NOT EXISTS whatsapp_numbers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -425,6 +465,16 @@ const COLUMNS = [
   ['messages', 'channel_id', 'INTEGER'],
   // Módulo de Processos liberado pelo administrador (empresas que não são do segmento Advocacia).
   ['companies', 'processes_module', 'INTEGER NOT NULL DEFAULT 0'],
+  // Indique e ganhe: cada usuário tem o próprio código; a empresa guarda quem a indicou (usuário e
+  // empresa dele) e os meses ganhos por indicação (o prêmio vai para a conta da empresa).
+  ['users', 'referral_code', 'TEXT'],
+  ['companies', 'referred_by', 'INTEGER'],
+  ['companies', 'referred_by_user', 'INTEGER'],
+  ['companies', 'referral_rewarded_at', 'TEXT'],
+  ['companies', 'referral_months', 'INTEGER NOT NULL DEFAULT 0'],
+  // De onde veio o cadastro (visitante da página inicial, origem e campanha).
+  ['companies', 'signup_visitor', 'TEXT'],
+  ['companies', 'signup_source', 'TEXT'],
   ['messages', 'media_type', 'TEXT'],
   ['messages', 'media_status', 'TEXT'],
   ['messages', 'media_mime', 'TEXT'],
@@ -442,6 +492,10 @@ function migrate(db) {
   for (const [table, column, def] of COLUMNS) {
     const exists = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
     if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+  }
+  // Índices de colunas acrescentadas acima (bancos antigos só têm a coluna depois da migração).
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").get()) {
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral ON users(referral_code) WHERE referral_code IS NOT NULL');
   }
   // Identificador público (usado nas URLs de webhook) e token de webhook para empresas antigas.
   for (const c of db.prepare('SELECT id FROM companies WHERE public_id IS NULL OR webhook_token IS NULL').all()) {

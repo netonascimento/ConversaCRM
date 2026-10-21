@@ -54,7 +54,7 @@ const modalHead = (title) => `<div class="modal-head"><h2>${esc(title)}</h2><spa
 
 const STATUS_BADGE = (s) => `<span class="badge ${s === 'ativa' ? 'green' : 'red'}">${s === 'ativa' ? 'ativa' : 'suspensa'}</span>`;
 const STORAGE_BADGE = (s) => (s === 'dedicated' ? '<span class="badge purple">banco separado</span>' : '<span class="badge">compartilhado</span>');
-const planLabel = (id) => state.me?.plans.find((p) => p.id === id)?.label || id || 'Personalizado';
+const planLabel = (id) => (id === 'gratis' ? 'Teste encerrado' : state.me?.plans.find((p) => p.id === id)?.label || id || 'Personalizado');
 // Pedido de assinatura em aberto (cliente clicou em "Já enviei o comprovante").
 const UPGRADE_BADGE = (c) => (c.upgrade_plan ? `<div><span class="badge amber">⏳ aguardando Pix · ${esc(planLabel(c.upgrade_plan))}</span></div>` : '');
 const roleLabel = (id) => state.me?.roles.find((r) => r.id === id)?.label.split(' (')[0] || id;
@@ -89,9 +89,12 @@ function renderLogin() {
 // Layout
 // ---------------------------------------------------------------------------
 const PAGES = [
+  ['inteligencia', 'Inteligência', renderIntelligence],
   ['visao', 'Visão geral', renderOverview],
   ['empresas', 'Empresas', renderCompanies],
   ['financeiro', 'Financeiro', renderFinance],
+  ['indicacoes', 'Indicações', renderReferrals],
+  ['mei', 'MEI', renderMei],
   ['historico', 'Histórico', renderAudit],
   ['admins', 'Administradores', renderAdmins],
 ];
@@ -117,7 +120,9 @@ function renderLayout() {
 
 async function route() {
   if (!state.me) return;
-  const [, page = 'visao', ...rest] = location.hash.replace(/^#/, '').split('/');
+  // Links do aviso de MEI no WhatsApp chegam como /admin#mei.
+  if (location.hash === '#mei') { history.replaceState(null, '', '#/mei'); }
+  const [, page = 'inteligencia', ...rest] = location.hash.replace(/^#/, '').split('/');
   const def = PAGES.find((p) => p[0] === page) || PAGES[0];
   $$('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === def[0]));
   $('#sidebar')?.classList.remove('open');
@@ -140,11 +145,11 @@ window.addEventListener('hashchange', () => { $('#modal-root').innerHTML = ''; r
 const METHOD_LABEL = { cartao: '💳 cartão', pix: '◆ Pix' };
 const SUB_BADGE = {
   em_dia: ['green', 'em dia'], vencida: ['red', 'Pix vencido'], atrasada: ['red', 'cartão recusado'], cancelada: ['', 'cancelada'],
-  cortesia: ['purple', 'cortesia'], interna: ['outline', 'sem cobrança'], gratis: ['', 'teste grátis'], personalizado: ['outline', 'personalizado'],
+  cortesia: ['purple', 'cortesia'], teste: ['amber', 'em teste'], interna: ['outline', 'sem cobrança'], gratis: ['red', 'teste encerrado'], personalizado: ['outline', 'personalizado'],
 };
 const subBadge = (s) => {
   const [c, l] = SUB_BADGE[s?.state] || ['', s?.state || '-'];
-  return `<span class="badge ${c}" ${s?.courtesy_reason ? `title="${esc(s.courtesy_reason)}"` : ''}>${l}${s?.state === 'cortesia' && s.courtesy_until ? ` até ${fmtDate(s.courtesy_until)}` : ''}</span>`;
+  return `<span class="badge ${c}" ${s?.courtesy_reason ? `title="${esc(s.courtesy_reason)}"` : ''}>${l}${['cortesia', 'teste'].includes(s?.state) && s.courtesy_until ? ` até ${fmtDate(s.courtesy_until)}` : ''}</span>`;
 };
 const COURTESY_REASONS = ['Parceiro', 'Influenciador', 'Teste estendido', 'Cliente piloto', 'Permuta'];
 const addDaysIso = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
@@ -172,7 +177,7 @@ function courtesyForm(c) {
       <div class="field"><label for="ct-reason">Motivo</label><input id="ct-reason" name="reason" list="ct-reasons" required maxlength="120" value="${esc(s.courtesy_reason || '')}" placeholder="Ex.: parceiro, influenciador, teste estendido">
         <datalist id="ct-reasons">${COURTESY_REASONS.map((r) => `<option value="${r}">`).join('')}</datalist></div>
     </div>
-    <p class="hint">Sem cobrança e fora da receita. No fim do prazo a empresa volta sozinha para o teste grátis; se ela assinar antes, a cortesia termina.</p>
+    <p class="hint">Sem cobrança e fora da receita. No fim do prazo a conta fica só com leitura até assinar; se ela assinar antes, a cortesia termina.</p>
     <div class="row"><button type="button" class="sm" id="ct-cancel">Cancelar</button><button class="sm primary">Liberar cortesia</button></div>
   </form>`;
 }
@@ -219,7 +224,7 @@ async function renderFinance(el) {
         <div class="table-wrap"><table class="small" style="margin-top:6px">
           <tr><th>Plano</th><th>Empresas</th><th>Pagantes</th><th>Cartão / Pix</th><th class="right">Recorrente</th></tr>
           ${f.plans.map((p) => `<tr><td><strong>${esc(p.label)}</strong><div class="muted">${p.price_cents ? `${money(p.price_cents)}/mês` : 'grátis'}</div></td>
-            <td>${num(p.companies)}</td><td>${p.price_cents ? num(p.paying) : '—'}${p.courtesy ? `<div class="muted">${p.courtesy} cortesia</div>` : ''}${p.internal ? `<div class="muted">${p.internal} sem cobrança</div>` : ''}</td>
+            <td>${num(p.companies)}</td><td>${p.price_cents ? num(p.paying) : '—'}${p.courtesy ? `<div class="muted">${p.courtesy} cortesia</div>` : ''}${p.internal ? `<div class="muted">${p.internal} sem cobrança</div>` : ''}${p.trial ? `<div class="muted">${p.trial} em teste</div>` : ''}</td>
             <td>${p.price_cents ? `${p.card} / ${p.pix}` : '—'}</td><td class="right nowrap">${p.price_cents ? money(p.mrr_cents) : '—'}</td></tr>`).join('')}
         </table></div>
         <p class="hint">"Cortesia": liberada por você, com motivo e prazo. "Sem cobrança": plano pago colocado à mão, sem pagamento (ex.: contas internas e de demonstração). Nenhuma das duas entra na receita.</p></div>
@@ -233,7 +238,7 @@ async function renderFinance(el) {
       <div class="card"><h3>Em atraso</h3>
         ${rc.overdue.length ? `<div class="table-wrap"><table class="small"><tr><th>Empresa</th><th>Plano</th><th>Venceu</th><th>Situação</th><th class="right">Valor</th></tr>
           ${rc.overdue.map((x) => row(x, `<td class="nowrap">${fmtDate(x.due_date)}</td><td>${subBadge(x)}</td>`)).join('')}</table></div>` : '<div class="empty">Ninguém em atraso. 🎉</div>'}
-        <p class="hint">Cartão recusado: o Stripe tenta de novo sozinho e, se não conseguir, encerra a assinatura (a empresa volta para o teste grátis). Pix vencido: confirme o novo Pix na ficha da empresa ou mude o plano.</p></div>
+        <p class="hint">Cartão recusado: o Stripe tenta de novo sozinho e, se não conseguir, encerra a assinatura (a empresa fica só com leitura até assinar de novo). Pix vencido: confirme o novo Pix na ficha da empresa ou mude o plano.</p></div>
     </div>
     <div class="card" style="margin-top:14px"><h3>Últimos pagamentos</h3>
       ${f.payments.length ? `<div class="table-wrap"><table class="small"><tr><th>Data</th><th>Empresa</th><th>Plano</th><th>Forma</th><th>Período</th><th>Situação</th><th class="right">Valor</th></tr>
@@ -242,6 +247,128 @@ async function renderFinance(el) {
           <td><span class="badge ${p.status === 'pago' ? 'green' : 'red'}">${p.status === 'pago' ? 'pago' : 'recusado'}</span></td><td class="right nowrap">${money(p.amount_cents)}</td></tr>`).join('')}</table></div>` : '<div class="empty">Nenhum pagamento ainda.</div>'}
     </div>`;
   $$('tr[data-id]', el).forEach((tr) => { tr.onclick = () => openCompany(Number(tr.dataset.id)); });
+}
+
+// ---------------------------------------------------------------------------
+// Inteligência: meta de receita, funil, página inicial, uso do sistema e alertas
+// ---------------------------------------------------------------------------
+// Barra horizontal simples (cor do design system), com o valor à direita.
+const hbar = (label, value, max, right = num(value), tone = 'var(--green-700)') => `
+  <div style="margin:6px 0"><div class="row small" style="gap:8px"><span>${esc(label)}</span><span class="spacer"></span><strong>${right}</strong></div>
+  <div style="height:8px;border-radius:var(--r-pill);background:var(--line-2);overflow:hidden"><span style="display:block;height:100%;width:${max ? Math.min(100, Math.round((value / max) * 100)) : 0}%;background:${tone};border-radius:var(--r-pill)"></span></div></div>`;
+const secs = (s) => (s >= 60 ? `${Math.floor(s / 60)} min ${s % 60 ? `${s % 60} s` : ''}` : `${s} s`);
+
+async function renderIntelligence(el) {
+  const days = Number(sessionStorage.getItem('intel-days') || 30);
+  const i = await api(`/api/admin/intelligence?days=${days}`);
+  const g = i.goal; const l = i.landing;
+  const maxFunnel = Math.max(1, ...i.funnel.map((f) => f.count));
+  el.innerHTML = `
+    <div class="page-head"><div><h1>Inteligência</h1><p class="muted">O que os visitantes e clientes fazem, para crescer até a meta</p></div>
+      <span class="spacer"></span><div class="segmented" id="intel-days">${[7, 30, 90].map((d) => `<button type="button" data-d="${d}" class="${d === days ? 'active' : ''}">${d} dias</button>`).join('')}</div></div>
+    <div class="card" style="margin-bottom:14px">
+      <div class="row wrap"><div><div class="small muted">Meta: R$ 10 mil por mês</div><div style="font-size:var(--fs-30);font-weight:600">${money(g.mrr_cents)} <span class="small muted">de ${money(g.target_cents)} (${g.percent}%)</span></div></div>
+        <span class="spacer"></span><div class="small" style="text-align:right">${num(g.paying)} assinantes pagantes · ticket médio ${money(g.avg_ticket_cents)}<br>${num(g.trial)} em teste agora · faltam <strong>~${num(g.missing_customers)} assinantes</strong></div></div>
+      <div style="height:12px;border-radius:var(--r-pill);background:var(--line-2);overflow:hidden;margin-top:10px"><span style="display:block;height:100%;width:${Math.min(100, g.percent)}%;background:var(--green-700)"></span></div>
+    </div>
+    ${i.tips.length ? `<div class="card" style="margin-bottom:14px"><h3>O que os números dizem</h3><ul class="small" style="padding-left:18px;margin:8px 0 0">${i.tips.map((t) => `<li style="margin:4px 0">${esc(t)}</li>`).join('')}</ul></div>` : ''}
+    <div class="grid halves">
+      <div class="card"><h3>Funil (${days} dias)</h3>
+        ${i.funnel.map((f, idx) => hbar(f.step, f.count, maxFunnel, `${num(f.count)}${idx ? ` <span class="muted">· ${f.from_previous > 100 ? '—' : `${f.from_previous}%`}</span>` : ''}`)).join('')}
+        <p class="hint">% = quanto passou da etapa anterior ("—" quando há cadastros direto pelo sistema, sem passar pela página). "Usaram de verdade" = cadastraram cliente, conectaram o WhatsApp, responderam ou agendaram.</p>
+        ${i.signup_sources.length ? `<p class="small" style="margin-bottom:0">Cadastros por origem: ${i.signup_sources.map((s) => `<strong>${esc(s.name)}</strong> ${num(s.count)}`).join(' · ')}</p>` : ''}</div>
+      <div class="card"><h3>Página inicial</h3>
+        <div class="grid kpis" style="grid-template-columns:repeat(3,1fr);gap:8px;margin:8px 0">
+          <div class="kpi"><div class="label">Visitantes</div><div class="value">${num(l.visitors)}</div></div>
+          <div class="kpi"><div class="label">Tempo de leitura</div><div class="value">${secs(l.median_seconds)}</div><div class="sub">mediana · média ${secs(l.avg_seconds)}</div></div>
+          <div class="kpi"><div class="label">Leram até o fim</div><div class="value">${l.scroll.full}%</div><div class="sub">metade: ${l.scroll.half}%</div></div>
+        </div>
+        <h3 style="margin-top:10px">Atenção por seção</h3>
+        ${l.sections.map((s) => hbar(s.label, s.seen_percent, 100, `${s.seen_percent}% · ${secs(s.avg_seconds)}`)).join('') || '<p class="small muted">Sem visitas ainda.</p>'}
+      </div>
+    </div>
+    <div class="grid halves" style="margin-top:14px">
+      <div class="card"><h3>Perguntas mais abertas no FAQ</h3>${l.faq.map((f) => hbar(f.name, f.count, l.faq[0].count)).join('') || '<p class="small muted">Ninguém abriu ainda.</p>'}
+        <h3 style="margin-top:14px">Botões mais clicados</h3>${l.cta.map((f) => hbar(f.name, f.count, l.cta[0].count)).join('') || '<p class="small muted">Nenhum clique ainda.</p>'}
+        ${l.plans.length ? `<h3 style="margin-top:14px">Planos clicados</h3>${l.plans.map((f) => hbar(f.name, f.count, l.plans[0].count)).join('')}` : ''}</div>
+      <div class="card"><h3>De onde vêm</h3>${l.sources.map((s) => hbar(s.name, s.count, l.sources[0].count)).join('') || '<p class="small muted">Sem visitas ainda.</p>'}
+        <h3 style="margin-top:14px">Aparelho</h3>${l.devices.map((s) => hbar(s.name, s.count, Math.max(...l.devices.map((x) => x.count)))).join('') || '<p class="small muted">—</p>'}
+        <h3 style="margin-top:14px">Indicações</h3>
+        <p class="small" style="margin:4px 0">${num(i.referral.shares)} compartilhamentos por ${num(i.referral.sharers)} usuário(s) · ${num(i.referral.visits)} visitas por código · ${num(i.referral.signups)} cadastros · ${num(i.referral.paid)} pagaram</p>
+        ${i.referral.channels.length ? `<p class="small muted" style="margin:0">Por canal: ${i.referral.channels.map((c) => `${esc(c.name)} ${num(c.count)}`).join(' · ')}</p>` : ''}
+        <a class="small" href="#/indicacoes">Ver quem indicou quem →</a></div>
+    </div>
+    <div class="grid halves" style="margin-top:14px">
+      <div class="card"><h3>Tempo em cada menu do sistema</h3>
+        ${i.menus.length ? `<div class="table-wrap"><table class="small"><tr><th>Menu</th><th class="right">Minutos</th><th class="right">Usuários</th><th class="right">Por visita</th></tr>
+          ${i.menus.map((m) => `<tr><td>${esc(m.label)}</td><td class="right">${num(m.minutes)}</td><td class="right">${num(m.users)}</td><td class="right">${secs(m.avg_seconds)}</td></tr>`).join('')}</table></div>` : '<p class="small muted">Sem uso registrado ainda.</p>'}</div>
+      <div class="card"><h3>Funções mais usadas</h3>
+        ${i.features.length ? `<div class="table-wrap"><table class="small"><tr><th>Função</th><th class="right">Empresas</th><th class="right">Vezes</th></tr>
+          ${i.features.map((f) => `<tr><td title="${esc(f.name)}">${esc(f.label)}</td><td class="right">${num(f.companies)}</td><td class="right">${num(f.count)}</td></tr>`).join('')}</table></div>` : '<p class="small muted">Sem uso registrado ainda.</p>'}</div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>Empresas: quem usa e quem precisa de atenção</h3>
+      ${i.ending_trials.length ? `<p class="small">⏳ <strong>Teste acabando (até 3 dias):</strong> ${i.ending_trials.map((c) => `<a href="#" data-co="${c.id}">${esc(c.name)}</a> (${fmtDate(c.courtesy_until)})`).join(', ')}</p>` : ''}
+      ${i.cooling.length ? `<p class="small">🧊 <strong>Sem entrar há mais de 7 dias:</strong> ${i.cooling.map((c) => `<a href="#" data-co="${c.id}">${esc(c.name)}</a>`).join(', ')}</p>` : ''}
+      <div class="table-wrap"><table class="small"><tr><th>Empresa</th><th>Plano</th><th class="right">Usuários (7 dias)</th><th class="right">Ações</th><th class="right">Minutos</th><th>Menu preferido</th><th>Última atividade</th></tr>
+        ${i.companies.map((c) => `<tr class="clickable" data-id="${c.id}"><td><strong>${esc(c.name)}</strong></td><td>${esc(c.plan_label)}${/^(Teste|Indicação)/.test(c.courtesy_reason || '') ? ` <span class="badge amber">teste até ${fmtDate(c.courtesy_until)}</span>` : ''}</td>
+          <td class="right">${num(c.users_7d)}</td><td class="right">${num(c.actions)}</td><td class="right">${num(c.minutes)}</td><td>${esc(c.top_menu || '—')}</td><td class="nowrap">${fmt(c.last_at)}</td></tr>`).join('')}</table></div>
+      <p class="hint">Medição própria, sem ferramentas de terceiros: o visitante é um número aleatório no navegador, sem IP. Eventos com mais de 180 dias são apagados.</p>
+    </div>`;
+  $$('#intel-days button').forEach((b) => { b.onclick = () => { sessionStorage.setItem('intel-days', b.dataset.d); route(); }; });
+  $$('tr[data-id]', el).forEach((tr) => { tr.onclick = () => openCompany(Number(tr.dataset.id)); });
+  $$('[data-co]', el).forEach((a) => { a.onclick = (e) => { e.preventDefault(); openCompany(Number(a.dataset.co)); }; });
+}
+
+// ---------------------------------------------------------------------------
+// Indicações: qual código (de qual usuário e empresa) trouxe cada cadastro
+// ---------------------------------------------------------------------------
+async function renderReferrals(el) {
+  const r = await api('/api/admin/referrals');
+  el.innerHTML = `
+    <div class="page-head"><div><h1>Indicações</h1><p class="muted">Cada usuário tem o próprio código; o mês grátis vai para a conta da empresa dele</p></div></div>
+    <div class="grid kpis">
+      <div class="card kpi"><div class="label">Cadastros por indicação</div><div class="value">${num(r.total)}</div></div>
+      <div class="card kpi good"><div class="label">Já pagaram</div><div class="value">${num(r.paid)}</div><div class="sub">quem indicou ganhou +1 mês</div></div>
+      <div class="card kpi"><div class="label">Conversão</div><div class="value">${r.total ? Math.round((r.paid / r.total) * 100) : 0}%</div></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>Quem mais indica</h3>
+      ${r.ranking.length ? `<div class="table-wrap"><table class="small"><tr><th>Usuário</th><th>Código</th><th>Empresa dele</th><th class="right">Indicou</th><th class="right">Pagaram</th></tr>
+        ${r.ranking.map((x) => `<tr class="clickable" data-id="${x.company_id}"><td><strong>${esc(x.user)}</strong><div class="muted">${esc(x.email)}</div></td><td><span class="code">${esc(x.code)}</span></td><td>${esc(x.company)}</td><td class="right">${num(x.invited)}</td><td class="right">${num(x.paid)}</td></tr>`).join('')}</table></div>` : '<div class="empty">Nenhuma indicação ainda.</div>'}</div>
+    <div class="card" style="margin-top:14px"><h3>Todas as indicações</h3>
+      ${r.list.length ? `<div class="table-wrap"><table class="small"><tr><th>Empresa que chegou</th><th>Cadastro</th><th>Código usado</th><th>Indicada por</th><th>Situação</th></tr>
+        ${r.list.map((x) => `<tr class="clickable" data-id="${x.id}"><td><strong>${esc(x.name)}</strong><div class="muted">${esc(planLabel(x.plan))}</div></td><td class="nowrap">${fmt(x.created_at)}</td><td><span class="code">${esc(x.code || '—')}</span></td>
+          <td>${esc(x.by_user || '—')}<div class="muted">${esc(x.by_company)}</div></td><td>${x.referral_rewarded_at ? `<span class="badge green">pagou · prêmio dado</span>` : '<span class="badge">ainda não pagou</span>'}</td></tr>`).join('')}</table></div>` : '<div class="empty">Nenhuma indicação ainda.</div>'}</div>`;
+  $$('tr[data-id]', el).forEach((tr) => { tr.onclick = () => openCompany(Number(tr.dataset.id)); });
+}
+
+// ---------------------------------------------------------------------------
+// MEI: Básico grátis para microempreendedor, com certificado conferido aqui
+// ---------------------------------------------------------------------------
+async function renderMei(el) {
+  const list = await api('/api/admin/mei');
+  const pending = list.filter((x) => x.status === 'pendente');
+  const badge = { pendente: 'amber', aprovado: 'green', recusado: 'red' };
+  el.innerHTML = `
+    <div class="page-head"><div><h1>MEI</h1><p class="muted">Pedidos de plano Básico grátis. Confira o certificado (CCMEI) e o CNPJ antes de aprovar.</p></div></div>
+    <div class="card">
+      ${list.length ? `<div class="table-wrap"><table class="small"><tr><th>Empresa</th><th>CNPJ</th><th>Enviado em</th><th>Certificado</th><th>Situação</th><th></th></tr>
+        ${list.map((x) => `<tr><td><a href="#" data-co="${x.company_id}"><strong>${esc(x.company_name)}</strong></a><div class="muted">${esc(planLabel(x.plan))}</div></td><td class="nowrap">${esc(x.cnpj)}</td><td class="nowrap">${fmt(x.created_at)}</td>
+          <td><a href="/api/admin/mei/${x.id}/file" target="_blank" rel="noopener">${esc(x.file_name)}</a></td>
+          <td><span class="badge ${badge[x.status]}">${x.status}</span>${x.note ? `<div class="muted">${esc(x.note)}</div>` : ''}${x.decided_by ? `<div class="muted">${esc(x.decided_by.replace('admin:', ''))} · ${fmt(x.decided_at)}</div>` : ''}</td>
+          <td class="nowrap">${x.status === 'pendente' ? `<button class="sm primary" data-ok="${x.id}">Aprovar</button> <button class="sm" data-no="${x.id}">Recusar</button>` : ''}</td></tr>`).join('')}</table></div>
+        <p class="hint">Aprovar libera o Básico sem prazo e sem cobrança (aparece como cortesia "MEI"). Confira o CNPJ na consulta pública da Receita se tiver dúvida.</p>` : '<div class="empty">Nenhum pedido de MEI ainda.</div>'}
+    </div>`;
+  $$('[data-co]', el).forEach((a) => { a.onclick = (e) => { e.preventDefault(); openCompany(Number(a.dataset.co)); }; });
+  $$('[data-ok]', el).forEach((b) => { b.onclick = async () => {
+    if (!confirm('Aprovar e liberar o plano Básico grátis para esta empresa?')) return;
+    try { await api(`/api/admin/mei/${b.dataset.ok}/decide`, { method: 'POST', body: { approve: true } }); toast('MEI aprovado: Básico liberado'); route(); } catch (err) { fail(err); }
+  }; });
+  $$('[data-no]', el).forEach((b) => { b.onclick = async () => {
+    const note = prompt('Motivo da recusa (a empresa vê esta mensagem):');
+    if (!note) return;
+    try { await api(`/api/admin/mei/${b.dataset.no}/decide`, { method: 'POST', body: { approve: false, note } }); toast('Pedido recusado'); route(); } catch (err) { fail(err); }
+  }; });
+  if (pending.length) document.title = `(${pending.length}) MEI · Admin`;
 }
 
 // ---------------------------------------------------------------------------
@@ -496,7 +623,7 @@ async function openCompany(id) {
   $('#new-courtesy', box)?.addEventListener('click', openCourtesyForm);
   $('#edit-courtesy', box)?.addEventListener('click', openCourtesyForm);
   $('#end-courtesy', box)?.addEventListener('click', async () => {
-    if (!confirm(`Encerrar a cortesia de ${c.name}? A empresa volta para o teste grátis agora.`)) return;
+    if (!confirm(`Encerrar a cortesia de ${c.name}? A conta fica só com leitura até assinar.`)) return;
     try { await api(`/api/admin/companies/${id}/courtesy`, { method: 'DELETE' }); toast('Cortesia encerrada'); reopen(); } catch (err) { fail(err); }
   });
   $$('[data-pix-plan]', box).forEach((b) => { b.onclick = async () => {

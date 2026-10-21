@@ -1,5 +1,5 @@
 import { main, now } from '../db.js';
-import { PLANS } from './plans.js';
+import { PLANS, DEFAULT_PLAN, EXPIRED_PLAN } from './plans.js';
 import { todayIn, addDays } from './time.js';
 
 // Assinatura das empresas na plataforma (o que elas pagam ao Conversa CRM).
@@ -24,15 +24,23 @@ export function applyPlan(companyId, planId) {
     planId, plan.max_users, plan.max_leads, companyId);
 }
 
+// Primeiro pagamento de uma empresa (usado pelo "indique e ganhe"). Registrado de fora, sem import circular.
+let onFirstPayment = null;
+export function setFirstPaymentHook(fn) { onFirstPayment = fn; }
+
 /** Registra uma mensalidade (idempotente pelo provider_ref). Retorna false se já existia. */
 export function recordPayment(companyId, { plan, amountCents, method, status = 'pago', periodStart = null, periodEnd = null, providerRef = null, paidAt = now() }) {
-  // Pagou: deixa de ser cortesia.
+  // Pagou: deixa de ser cortesia (ou teste).
   if (status === 'pago') main.run('UPDATE companies SET courtesy_until = NULL, courtesy_reason = NULL WHERE id = ?', companyId);
+  const first = status === 'pago' && !main.get("SELECT 1 AS x FROM subscription_payments WHERE company_id = ? AND status = 'pago'", companyId);
   const r = main.run(
     `INSERT OR IGNORE INTO subscription_payments (company_id, plan, amount_cents, method, status, period_start, period_end, provider_ref, paid_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     companyId, plan, amountCents, method, status, periodStart, periodEnd, providerRef, status === 'pago' ? paidAt : null,
   );
+  if (r.changes > 0 && first && onFirstPayment) {
+    try { onFirstPayment(companyId); } catch (err) { console.error('[assinatura] prêmio de indicação falhou:', err.message); }
+  }
   return r.changes > 0;
 }
 
@@ -62,7 +70,9 @@ export function confirmPixPayment(companyId, planId, { providerRef = null, amoun
  */
 export function subscriptionState(c, ref = today()) {
   const plan = PLANS[c.plan];
-  if (!plan || !(plan.price_cents > 0)) return { state: c.plan === 'gratis' ? 'gratis' : 'personalizado', paying: false };
+  if (!plan || !(plan.price_cents > 0)) return { state: c.plan === EXPIRED_PLAN ? 'gratis' : 'personalizado', paying: false };
+  // Teste grátis (7 dias, ou 30 por indicação) usa o mesmo mecanismo da cortesia, com motivo próprio.
+  if (isTrialReason(c.courtesy_reason)) return { state: 'teste', paying: false, courtesy_until: c.courtesy_until || null, courtesy_reason: c.courtesy_reason || '', referral: /^Indicação/.test(c.courtesy_reason) };
   if (c.courtesy_reason || c.courtesy_until) return { state: 'cortesia', paying: false, courtesy_until: c.courtesy_until || null, courtesy_reason: c.courtesy_reason || '' };
   if (!c.billing_method) return { state: 'interna', paying: false };
   if (c.subscription_status === 'cancelada') return { state: 'cancelada', paying: false };
@@ -73,7 +83,7 @@ export function subscriptionState(c, ref = today()) {
 
 /**
  * Cortesia: o admin libera um plano pago sem cobrança, com motivo e, se quiser, prazo.
- * No fim do prazo a empresa volta sozinha para o teste grátis.
+ * No fim do prazo a conta fica só com leitura até assinar.
  */
 export function grantCourtesy(companyId, planId, { until = null, reason = '' } = {}) {
   const plan = PLANS[planId];
@@ -91,23 +101,49 @@ export function grantCourtesy(companyId, planId, { until = null, reason = '' } =
   return { plan: planId, until: until || null, reason: why };
 }
 
-/** Encerra a cortesia: volta para o teste grátis. */
+export const isTrialReason = (reason) => /^(Teste|Indicação)/.test(reason || '');
+
+/** Começa (ou estende) o teste grátis do plano de entrada, por `days` dias a partir de hoje. */
+export function startTrial(companyId, days, reason) {
+  applyPlan(companyId, DEFAULT_PLAN);
+  const until = addDays(today(), days);
+  main.run('UPDATE companies SET courtesy_until = ?, courtesy_reason = ? WHERE id = ?', until, reason, companyId);
+  return until;
+}
+
+/** Encerra a cortesia ou o teste: a conta fica sem plano até assinar. */
 export function endCourtesy(companyId) {
   if (!main.get('SELECT id FROM companies WHERE id = ?', companyId)) return null;
-  applyPlan(companyId, 'gratis');
+  applyPlan(companyId, EXPIRED_PLAN);
   main.run('UPDATE companies SET courtesy_until = NULL, courtesy_reason = NULL WHERE id = ?', companyId);
   return true;
 }
 
-/** Agendador: cortesias vencidas voltam para o teste grátis. */
+/** Agendador: testes e cortesias vencidos deixam a conta sem plano (o sistema pede a assinatura). */
 export function processCourtesies(ref = today()) {
-  const due = main.all('SELECT id, plan, courtesy_until FROM companies WHERE courtesy_until IS NOT NULL AND courtesy_until < ?', ref);
+  const due = main.all('SELECT id, plan, courtesy_until, courtesy_reason FROM companies WHERE courtesy_until IS NOT NULL AND courtesy_until < ?', ref);
   for (const c of due) {
     endCourtesy(c.id);
-    main.run('INSERT INTO audit_log (actor, action, company_id, details) VALUES (?, ?, ?, ?)', 'sistema', 'cortesia encerrada', c.id,
-      `prazo terminou em ${c.courtesy_until.split('-').reverse().join('/')}; voltou para o teste grátis`);
+    main.run('INSERT INTO audit_log (actor, action, company_id, details) VALUES (?, ?, ?, ?)', 'sistema', isTrialReason(c.courtesy_reason) ? 'teste encerrado' : 'cortesia encerrada', c.id,
+      `prazo terminou em ${c.courtesy_until.split('-').reverse().join('/')}; aguardando assinatura`);
   }
   return due.length;
+}
+
+/**
+ * Uma vez só (mudança de 20/10/2026, fim do plano grátis): quem estava no teste grátis ganha 30 dias
+ * do plano de entrada para decidir. Depois disso, segue a regra normal (assinar para continuar).
+ */
+export function migrateFreeAccounts() {
+  const key = 'free_to_trial_2026_10';
+  if (main.get('SELECT 1 AS x FROM platform_state WHERE key = ?', key)) return 0;
+  const free = main.all("SELECT id FROM companies WHERE plan = ? AND courtesy_until IS NULL AND (billing_method IS NULL OR subscription_status = 'cancelada')", EXPIRED_PLAN);
+  for (const c of free) {
+    startTrial(c.id, 30, 'Teste: 30 dias para conhecer os planos novos');
+    main.run('INSERT INTO audit_log (actor, action, company_id, details) VALUES (?, ?, ?, ?)', 'sistema', 'teste de 30 dias', c.id, 'estava no grátis antigo');
+  }
+  main.run('INSERT INTO platform_state (key, value) VALUES (?, ?)', key, String(free.length));
+  return free.length;
 }
 
 const monthKey = (iso) => String(iso).slice(0, 7);
@@ -120,6 +156,11 @@ export function financeOverview() {
     `SELECT id, name, status, plan, billing_method, paid_until, subscription_status, cancel_at_period_end, upgrade_plan, upgrade_requested_at,
        courtesy_until, courtesy_reason FROM companies ORDER BY name`,
   ).map((c) => ({ ...c, ...subscriptionState(c, ref), price_cents: PLANS[c.plan]?.price_cents || 0 }));
+  // Quem assinou antes da mudança de preço paga o valor antigo: a receita mensal usa o último valor pago.
+  const lastPaid = Object.fromEntries(main.all(
+    "SELECT company_id, amount_cents FROM subscription_payments WHERE id IN (SELECT MAX(id) FROM subscription_payments WHERE status = 'pago' GROUP BY company_id)",
+  ).map((r) => [r.company_id, r.amount_cents]));
+  for (const c of companies) if (lastPaid[c.id] && PLANS[c.plan]?.price_cents) c.price_cents = lastPaid[c.id];
 
   const payments = main.all("SELECT p.*, c.name AS company_name FROM subscription_payments p LEFT JOIN companies c ON c.id = p.company_id ORDER BY COALESCE(p.paid_at, p.created_at) DESC");
   const paid = payments.filter((p) => p.status === 'pago');
@@ -147,8 +188,9 @@ export function financeOverview() {
       card: paying.filter((c) => c.billing_method === 'cartao').length,
       pix: paying.filter((c) => c.billing_method === 'pix').length,
       courtesy: on.filter((c) => c.state === 'cortesia').length,
+      trial: on.filter((c) => c.state === 'teste').length,
       internal: on.filter((c) => c.state === 'interna').length,
-      mrr_cents: paying.length * p.price_cents,
+      mrr_cents: paying.reduce((n, c) => n + c.price_cents, 0),
     };
   });
 

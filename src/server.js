@@ -8,6 +8,9 @@ import { registerAdmin, ensureAdminFromEnv } from './routes/admin.js';
 import { withCompanyDb, closeAllDatabases } from './db.js';
 import { startScheduler } from './services/scheduler.js';
 import { startLegalMonitor } from './services/legal.js';
+import { recordFeature } from './services/analytics.js';
+import { migrateFreeAccounts } from './services/subscriptions.js';
+import './services/referrals.js'; // registra o prêmio de indicação no primeiro pagamento
 import { managedEnabled } from './services/whatsapp-connect.js';
 import { stripeMode } from './services/stripe.js';
 
@@ -49,13 +52,15 @@ export function createServer() {
         params: match.params,
         query: Object.fromEntries(url.searchParams),
         body: ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)
-          ? await readBody(req, url.pathname === '/api/documents' ? 15 * 1024 * 1024 : undefined) : {},
+          ? await readBody(req, url.pathname === '/api/documents' || url.pathname === '/api/mei' ? 15 * 1024 * 1024 : undefined) : {},
       };
       let result;
       // Depois do login, cada rota roda no banco da empresa do usuário (compartilhado ou dedicado).
       for (const handler of match.handlers) {
         result = req.companyId ? await withCompanyDb(req.companyId, () => handler(req, res, ctx)) : await handler(req, res, ctx);
       }
+      // Medição: cada ação de quem está logado (criar, editar, enviar…) conta como uso daquela função.
+      if (req.user && req.method !== 'GET' && match.pattern !== '/api/t') recordFeature(req, match.pattern);
       if (res.writableEnded) return;
       send(res, 200, result ?? { ok: true });
     } catch (err) {
@@ -68,6 +73,9 @@ export function createServer() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.join(ROOT, 'src', 'server.js')) {
   ensureAdminFromEnv();
+  // Fim do plano grátis (20/10/2026): quem estava nele ganha 30 dias do Básico, uma vez só.
+  const migrated = migrateFreeAccounts();
+  if (migrated) console.log(`[assinatura] ${migrated} conta(s) do grátis antigo ganharam 30 dias do Básico`);
   const server = createServer().listen(config.port, () => {
     console.log(`Conversa CRM rodando em ${config.publicUrl} (porta ${config.port})`);
     if (!config.disableScheduler) { startScheduler(config.schedulerIntervalMs); startLegalMonitor(); }

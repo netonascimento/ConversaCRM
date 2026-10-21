@@ -22,7 +22,7 @@ Serve para **vender qualquer coisa**: você cadastra seus produtos/serviços e d
 
 O Conversa CRM roda como serviço (SaaS): um único servidor atende várias empresas, cada uma com seus usuários, dados, WhatsApp e integrações.
 
-- **Página inicial** (`/`): apresentação do produto e planos. O botão de teste grátis cria a conta da empresa no plano gratuito.
+- **Página inicial** (`/`): apresentação do produto e planos. O botão de teste cria a conta da empresa com 7 dias grátis do plano Básico (30 com código de indicação); depois, a conta fica só com leitura até assinar.
 - **Sistema** (`/app`): onde cada empresa trabalha.
 - **Painel do administrador** (`/admin`): só para você, dono da plataforma. Lá você:
   - cadastra empresas já com o modelo do segmento (clínica, advocacia, salão, loja, serviços, imobiliária) e o primeiro usuário;

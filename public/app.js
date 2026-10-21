@@ -55,6 +55,10 @@ async function api(path, { method = 'GET', body } = {}) {
   });
   const data = await res.json().catch(() => ({}));
   if (res.status === 401 && !path.startsWith('/api/auth/')) { state.me = null; renderAuth(); throw new Error(data.error || 'Sessão expirada'); }
+  // Teste acabou com a tela aberta: atualiza a conta para o aviso do topo e a assinatura aparecerem.
+  if (res.status === 402 && state.meta && !state.meta.expired) {
+    fetch('/api/meta', { credentials: 'same-origin' }).then((r) => r.json()).then((m) => { if (m?.expired) { state.meta = m; renderLayout(); route(); } }).catch(() => {});
+  }
   if (!res.ok) throw new Error(data.error || `Erro ${res.status}`);
   return data;
 }
@@ -102,6 +106,7 @@ const ICONS = {
   followup: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5M12 7v5l3 3"/>',
   tarefas: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
   cobranca: '<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+  promocoes: '<path d="M20 12v9H4v-9M2 7h20v5H2zM12 21V7M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7zM12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z"/>',
   processos: '<path d="M12 3v18M5 21h14M6 7h12M6 7l-3 7a3 3 0 0 0 6 0zM18 7l-3 7a3 3 0 0 0 6 0z"/>',
   prospeccao: '<path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
   clientes: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2M2 13h20"/>',
@@ -117,10 +122,44 @@ const SOURCE_LABEL = { whatsapp: 'WhatsApp', manual: 'Manual', google_maps: 'Goo
 const CHARGE_BADGE = { pendente: 'amber', pago: 'green', vencido: 'red', cancelado: '' };
 const sessionGet = (k) => { try { return sessionStorage.getItem(k); } catch { return null; } };
 const sessionSet = (k, v) => { try { sessionStorage.setItem(k, v); } catch { /* sem armazenamento */ } };
+const localGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const localSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* sem armazenamento */ } };
+
+// Medição própria (painel Inteligência do admin): tempo em cada menu, só com a aba visível, e alguns
+// cliques (ex.: compartilhar o código). As ações (criar, editar…) o servidor já registra sozinho.
+const newId = () => (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`).slice(0, 32);
+const tracker = { queue: [], page: null, ms: 0, since: 0 };
+tracker.vid = localGet('cc_vid') || newId(); localSet('cc_vid', tracker.vid);
+tracker.sid = (() => { try { return sessionStorage.getItem('cc_sid') || (sessionStorage.setItem('cc_sid', newId()), sessionStorage.getItem('cc_sid')); } catch { return newId(); } })();
+function trackEvent(k, n = null, val = null) { tracker.queue.push({ k, n, val }); }
+function flushTrack(leaving = false) {
+  if (!tracker.queue.length) return;
+  const body = JSON.stringify({ v: tracker.vid, s: tracker.sid, p: '/app', d: matchMedia('(max-width: 760px)').matches ? 'mobile' : 'desktop', e: tracker.queue.splice(0, 60) });
+  if (leaving && navigator.sendBeacon) navigator.sendBeacon('/api/t', new Blob([body], { type: 'application/json' }));
+  else fetch('/api/t', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true, credentials: 'same-origin' }).catch(() => {});
+}
+function pageLeave() {
+  if (!tracker.page) return;
+  if (tracker.since) tracker.ms += Date.now() - tracker.since;
+  if (tracker.ms >= 1000) trackEvent('app_page', tracker.page, tracker.ms);
+  tracker.page = null; tracker.ms = 0; tracker.since = 0;
+}
+function pageEnter(name) {
+  pageLeave();
+  tracker.page = name; tracker.ms = 0; tracker.since = document.hidden ? 0 : Date.now();
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (tracker.since) { tracker.ms += Date.now() - tracker.since; tracker.since = 0; }
+    if (tracker.page && tracker.ms >= 1000) { trackEvent('app_page', tracker.page, tracker.ms); tracker.ms = 0; }
+    flushTrack(true);
+  } else if (tracker.page) tracker.since = Date.now();
+});
+setInterval(() => { if (state.me) flushTrack(); }, 30000);
 // Teste grátis: tudo que usa IA aparece com cadeado e leva para a tela de assinatura.
 const aiLocked = () => Boolean(state.meta?.ai_locked);
-const lockBtn = (label = 'Desbloquear IA') => `<a class="btn sm" href="#/assinar" title="A IA faz parte dos planos pagos">🔒 ${esc(label)}</a>`;
-const lockCard = (what) => `<div class="banner">🔒 <strong>${esc(what)}</strong> faz parte dos planos pagos. No teste grátis você usa o atendimento manual, o CRM, a agenda e o resto do sistema. <a href="#/assinar">Desbloquear a IA</a></div>`;
+const lockBtn = (label = 'Desbloquear IA') => `<a class="btn sm" href="#/assinar" title="Assine um plano para usar">🔒 ${esc(label)}</a>`;
+const lockCard = (what) => `<div class="banner">🔒 <strong>${esc(what)}</strong> volta a funcionar quando você assinar um plano. <a href="#/assinar">Ver planos</a></div>`;
 const AUTHOR_LABEL = { ai: '🤖 IA', human: '👤 Equipe', followup: '🔁 Follow-up', billing: '💰 Cobrança', system: '⏰ Lembrete', contact: '' };
 // Mídias recebidas no WhatsApp (os mesmos textos do servidor, em src/services/media.js).
 const MEDIA_LABEL = { image: '📷 Foto', audio: '🎤 Áudio', video: '🎬 Vídeo', document: '📄 Documento', sticker: '🖼️ Figurinha' };
@@ -154,10 +193,14 @@ async function renderAuth(mode = 'login') {
   const buying = buyingPlanId()
     ? (await fetch('/api/public/info').then((r) => r.json()).catch(() => ({ plans: [] }))).plans.find((p) => p.id === buyingPlanId() && p.price_cents > 0)
     : null;
-  const title = buying ? `Assinar o ${buying.label}` : mode === 'login' ? 'Entrar' : 'Teste grátis';
+  // Veio por um link de indicação (/?ref=CÓDIGO ou /app?ref=CÓDIGO): o código fica guardado no navegador.
+  const urlRef = new URLSearchParams(location.search).get('ref');
+  if (urlRef) localSet('cc_ref', urlRef.toUpperCase());
+  const refCode = localGet('cc_ref') || '';
+  const title = buying ? `Assinar o ${buying.label}` : mode === 'login' ? 'Entrar' : refCode ? '1 mês grátis' : 'Teste grátis de 7 dias';
   const intro = buying
     ? `${money(buying.price_cents)}/mês, com IA. ${mode === 'login' ? 'Entre na sua conta' : 'Crie a conta da sua empresa'} e pague por Pix na próxima tela.`
-    : mode === 'login' ? 'Toda conversa vira cliente.' : 'Crie a conta da sua empresa: 1 usuário e até 30 clientes, sem cartão. A IA fica disponível nos planos pagos.';
+    : mode === 'login' ? 'Toda conversa vira cliente.' : `Crie a conta da sua empresa e use o plano Básico completo, com IA, por ${refCode ? '30 dias (código de indicação)' : '7 dias'}. Sem cartão.`;
   $('#app').innerHTML = `
     <div class="auth"><div>
       <div class="card">
@@ -168,10 +211,11 @@ async function renderAuth(mode = 'login') {
           ${mode === 'register' ? `
             <div><label for="r-company">Nome da empresa</label><input id="r-company" name="companyName" required></div>
             <div><label for="r-segment">Tipo de negócio</label><select id="r-segment" name="segment">${(cfg.segments || []).map((sg) => `<option value="${sg.id}">${esc(sg.label)}</option>`).join('')}</select><div class="hint">Já deixa a IA configurada para o seu segmento. Dá para ajustar depois.</div></div>
-            <div><label for="r-name">Seu nome</label><input id="r-name" name="name" required></div>` : ''}
+            <div><label for="r-name">Seu nome</label><input id="r-name" name="name" required></div>
+            <div><label for="r-ref">Código de indicação (opcional)</label><input id="r-ref" name="ref" value="${esc(refCode)}" placeholder="Ex.: MARIA-7K3Q" autocapitalize="characters"><div class="hint">Com código, o teste vai de 7 para 30 dias.</div></div>` : ''}
           <div><label for="r-email">E-mail</label><input id="r-email" name="email" type="email" required autocomplete="username"></div>
           <div><label for="r-pass">Senha</label><input id="r-pass" name="password" type="password" required minlength="${mode === 'login' ? 1 : 8}" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}">${mode === 'register' ? '<div class="hint">Mínimo de 8 caracteres.</div>' : ''}</div>
-          <button class="primary" style="width:100%;justify-content:center">${mode === 'login' ? (buying ? 'Entrar e continuar' : 'Entrar') : buying ? 'Criar conta e continuar para o Pix' : 'Criar conta grátis'}</button>
+          <button class="primary" style="width:100%;justify-content:center">${mode === 'login' ? (buying ? 'Entrar e continuar' : 'Entrar') : buying ? 'Criar conta e continuar para o Pix' : 'Começar o teste grátis'}</button>
         </form>
         <p class="small muted" style="margin-top:14px;text-align:center">
           ${mode === 'login' ? (cfg.allow_signup ? `Ainda não usa? <a href="#cadastro" data-mode="register">${buying ? 'Criar conta' : 'Teste grátis'}</a>` : '') : 'Já tem conta? <a href="#" data-mode="login">Entrar</a>'}
@@ -184,7 +228,9 @@ async function renderAuth(mode = 'login') {
   $('#auth-form').onsubmit = async (e) => {
     e.preventDefault();
     try {
-      await api(`/api/auth/${mode}`, { method: 'POST', body: formData(e.target) });
+      // Cadastro: liga a conta nova à visita da página inicial (origem e campanha) para o funil do admin.
+      const body = mode === 'register' ? { ...formData(e.target), vid: localGet('cc_vid'), src: localGet('cc_src') } : formData(e.target);
+      await api(`/api/auth/${mode}`, { method: 'POST', body });
       await boot();
     } catch (err) { fail(err); }
   };
@@ -205,14 +251,15 @@ const PAGES = [
   ['cobranca', 'Cobrança', renderBilling],
   ['prospeccao', 'Prospecção', renderProspecting],
   ['produtos', 'Produtos', renderProducts],
+  ['promocoes', 'Descontos e promoções', renderPromotions],
   ['config', 'Configurações', renderSettings],
 ];
 
 // O que cada perfil vê no menu (o servidor também bloqueia o acesso).
 const ROLE_PAGES = {
   owner: null,
-  agent: ['dashboard', 'inbox', 'tarefas', 'crm', 'clientes', 'processos', 'agenda', 'followup', 'prospeccao', 'produtos'],
-  professional: ['dashboard', 'inbox', 'tarefas', 'crm', 'clientes', 'agenda'],
+  agent: ['dashboard', 'inbox', 'tarefas', 'crm', 'clientes', 'processos', 'agenda', 'followup', 'prospeccao', 'produtos', 'promocoes'],
+  professional: ['dashboard', 'inbox', 'tarefas', 'crm', 'clientes', 'agenda', 'promocoes'],
 };
 const allowedPages = () => {
   const list = ROLE_PAGES[state.me?.user.role];
@@ -254,6 +301,10 @@ function renderLayout() {
 
 function planBanner() {
   const plan = state.meta?.plan;
+  // Teste encerrado: todo mundo da equipe vê; só leitura até assinar.
+  if (state.meta?.expired) {
+    return `<div class="banner">🔒 <strong>Seu teste grátis terminou.</strong> Você continua vendo tudo, mas para editar, cadastrar ou responder é preciso assinar. ${isOwner() ? '<a href="#/assinar">Escolher um plano</a> · <a href="#/promocoes">Sou MEI</a>' : 'Peça ao dono da conta para assinar.'}</div>`;
+  }
   if (!plan || !isOwner()) return '';
   // Pix: lembrete de renovação (vale para qualquer plano pago, inclusive sem limite de leads).
   const sub = state.meta.subscription;
@@ -261,6 +312,10 @@ function planBanner() {
     const days = Math.round((Date.parse(`${sub.paid_until}T12:00:00Z`) - Date.parse(`${todayStr()}T12:00:00Z`)) / 86400000);
     if (days < 0) return `<div class="banner">O mês pago do plano ${esc(plan.label)} terminou em ${fmtDay(sub.paid_until)}. <a href="#/assinar">Pagar com Pix</a></div>`;
     if (days <= 5) return `<div class="banner">Seu plano ${esc(plan.label)} está pago até ${fmtDay(sub.paid_until)} (${days === 0 ? 'vence hoje' : `${days} dia(s)`}). <a href="#/assinar">Pagar o próximo mês</a></div>`;
+  }
+  if (sub?.state === 'teste' && sub.courtesy_until) {
+    const days = Math.round((Date.parse(`${sub.courtesy_until}T12:00:00Z`) - Date.parse(`${todayStr()}T12:00:00Z`)) / 86400000);
+    return `<div class="banner">${sub.referral ? '🎁 1 mês grátis por indicação' : '⏳ Teste grátis'} do plano ${esc(plan.label)}: ${days <= 0 ? '<strong>termina hoje</strong>' : `faltam <strong>${days} dia${days > 1 ? 's' : ''}</strong>`} (até ${fmtDay(sub.courtesy_until)}). <a href="#/assinar">Assinar agora</a>${sub.referral ? '' : ' · <a href="#/promocoes">Tem um código? Ganhe 30 dias</a>'}</div>`;
   }
   if (sub?.state === 'cortesia' && sub.courtesy_until) {
     const days = Math.round((Date.parse(`${sub.courtesy_until}T12:00:00Z`) - Date.parse(`${todayStr()}T12:00:00Z`)) / 86400000);
@@ -274,7 +329,6 @@ function planBanner() {
   const left = plan.leads_remaining;
   const contact = state.meta.sales_whatsapp ? ` <a href="https://wa.me/${esc(state.meta.sales_whatsapp)}?text=${encodeURIComponent(`Olá! Quero mudar de plano no Conversa CRM (${state.me.company.name}).`)}" target="_blank" rel="noopener">Mudar de plano</a>` : ' <a href="#/assinar">Mudar de plano</a>';
   if (left === 0) return `<div class="banner">Você usou os ${plan.max_leads} leads do plano ${esc(plan.label)}. Novos contatos não entram no CRM até você mudar de plano. ${aiLocked() ? '<a href="#/assinar">Assinar</a>' : contact}</div>`;
-  if (aiLocked()) return `<div class="banner">Teste grátis: ${plan.leads_used} de ${plan.max_leads} leads usados, sem IA. <a href="#/assinar">🔒 Desbloquear a IA</a></div>`;
   return `<div class="banner">Plano ${esc(plan.label)}: ${plan.leads_used} de ${plan.max_leads} leads usados.${contact}</div>`;
 }
 
@@ -336,6 +390,7 @@ async function route() {
       : pages.find((p) => p[0] === page) || pages[0];
   $$('.nav a').forEach((a) => a.classList.toggle('active', a.dataset.page === def[0]));
   $('#sidebar')?.classList.remove('open');
+  pageEnter(def[0]);
   const el = $('#page');
   el.innerHTML = '<div class="empty">Carregando…</div>';
   try { await def[2](el, rest); } catch (err) { el.innerHTML = `<div class="empty">Erro: ${esc(err.message)}</div>`; }
@@ -1251,8 +1306,8 @@ async function renderPaywall(el, [planId] = []) {
   const leadsText = (n) => (n === null || n === undefined ? 'leads ilimitados' : `até ${n} leads`);
   el.innerHTML = `
     <div class="page-head">
-      <div><h1>${info.ai_locked ? '🔒 Desbloqueie a IA do Conversa CRM' : 'Assinatura'}</h1>
-        <p class="muted">${info.ai_locked ? 'No teste grátis tudo que usa IA fica bloqueado. Escolha um plano para a atendente virtual começar a trabalhar.' : 'Mude de plano quando precisar de mais usuários ou leads.'}</p></div>
+      <div><h1>${info.expired ? '🔒 Seu teste grátis terminou' : info.subscription.state === 'teste' ? 'Assine e continue sem parar' : 'Assinatura'}</h1>
+        <p class="muted">${info.expired ? 'Você continua vendo tudo. Para editar, cadastrar e responder (e a IA voltar a trabalhar), escolha um plano.' : info.subscription.state === 'teste' ? 'Escolha o plano agora; o teste não se perde e nada muda nas suas configurações.' : 'Mude de plano quando precisar de mais usuários ou leads.'}</p></div>
     </div>
     ${subscriptionCard(info)}
     <div class="grid halves">
@@ -1326,12 +1381,19 @@ async function renderPaywall(el, [planId] = []) {
 
 function subscriptionCard(info) {
   const sub = info.subscription;
+  if (sub.state === 'teste') {
+    return `<div class="card" style="margin-bottom:14px">
+      <div class="card-head"><h3>Sua conta</h3><span class="spacer"></span><span class="badge amber">${sub.referral ? '🎁 1 mês grátis' : '⏳ teste grátis'}</span></div>
+      <p style="margin:6px 0">Plano <strong>Básico</strong> liberado até <strong>${sub.courtesy_until.split('-').reverse().join('/')}</strong>, sem cobrança. Depois disso, a conta fica só com leitura até você assinar.</p>
+      <p class="small muted">É MEI? <a href="#/promocoes">Envie o certificado</a> e use o Básico de graça.</p>
+    </div>`;
+  }
   if (sub.state === 'cortesia') {
     const current = info.plans.find((p) => p.id === info.current_plan);
     return `<div class="card" style="margin-bottom:14px">
       <div class="card-head"><h3>Sua assinatura</h3><span class="spacer"></span><span class="badge purple">🎁 cortesia</span></div>
       <p style="margin:6px 0">Plano <strong>${esc(current?.label || info.current_plan)}</strong> liberado como cortesia${sub.courtesy_until ? ` até <strong>${sub.courtesy_until.split('-').reverse().join('/')}</strong>` : ''}, sem cobrança.</p>
-      ${sub.courtesy_until ? '<p class="small muted">Depois dessa data a conta volta para o teste grátis. Para continuar com a IA, assine abaixo quando quiser.</p>' : ''}
+      ${sub.courtesy_until ? '<p class="small muted">Depois dessa data a conta fica só com leitura até você assinar. Assine abaixo quando quiser.</p>' : ''}
     </div>`;
   }
   if (!sub.method) return '';
@@ -1340,7 +1402,7 @@ function subscriptionCard(info) {
   return `<div class="card" style="margin-bottom:14px">
     <div class="card-head"><h3>Sua assinatura</h3><span class="spacer"></span><span class="badge ${label[0]}">${label[1]}</span></div>
     <p style="margin:6px 0">${current ? `Plano <strong>${esc(current.label)}</strong> · ${money(current.price_cents)}/mês · ` : ''}${sub.method === 'cartao' ? '💳 cartão (renova sozinho)' : 'Pix'}${sub.paid_until ? ` · pago até ${sub.paid_until.split('-').reverse().join('/')}` : ''}</p>
-    ${sub.cancel_at_period_end ? '<p class="small">Cancelamento agendado: o plano vale até o fim do período pago e depois volta para o teste grátis.</p>' : ''}
+    ${sub.cancel_at_period_end ? '<p class="small">Cancelamento agendado: o plano vale até o fim do período pago e depois a conta fica só com leitura até assinar de novo.</p>' : ''}
     ${sub.state === 'atrasada' ? '<p class="small">O cartão foi recusado. Atualize o cartão para não perder o plano.</p>' : ''}
     ${sub.state === 'vencida' ? '<p class="small">O mês pago por Pix terminou. Pague o Pix do plano abaixo para continuar.</p>' : ''}
     ${sub.method === 'pix' && info.card_enabled && current && sub.state !== 'cancelada' ? `<button class="sm primary" data-pix="${current.id}">Pagar o próximo mês com Pix</button> <button class="sm" data-card="${current.id}">Passar para o cartão (automático)</button>` : ''}
@@ -1546,7 +1608,7 @@ function wzTest(body) {
       ${['Oi! Quanto custa?', 'Tem horário amanhã?', 'Vocês aceitam Pix?'].map((t) => `<button type="button" class="sm" data-say="${esc(t)}">${esc(t)}</button>`).join('')}</div>
     <form class="row" id="wz-say"><input name="text" placeholder="Mensagem do cliente…" aria-label="Mensagem do cliente" autocomplete="off"><button class="primary">Enviar como cliente</button></form>
     ${locked ? `<div id="wz-reply-box" class="hidden" style="margin-top:12px">
-        <p class="small muted" style="margin:0 0 6px">No teste grátis a IA não responde: quem responde é a sua equipe. Responda você:</p>
+        <p class="small muted" style="margin:0 0 6px">Sem plano ativo a IA não responde: quem responde é a sua equipe. Responda você:</p>
         <form class="row" id="wz-reply"><input name="text" placeholder="Sua resposta…" aria-label="Sua resposta" autocomplete="off"><button>Responder como equipe</button></form>
         <p class="small" style="margin-top:8px">🔒 Com um plano pago, a IA responde, agenda e cobra sozinha. <a href="#/assinar">Ver planos</a></p></div>` : ''}
     <p class="hint" style="margin-top:10px">O cliente de teste aparece no Atendimento e no CRM como "Cliente teste". Pode apagar depois.</p>`;
@@ -2289,6 +2351,101 @@ async function chargeForm(defaults, onSaved) {
 }
 
 // ---------------------------------------------------------------------------
+// Descontos e promoções: indique e ganhe (código de cada usuário) e Básico grátis para MEI
+// ---------------------------------------------------------------------------
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch {
+    const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select();
+    const ok = document.execCommand('copy'); t.remove(); return ok;
+  }
+}
+
+async function renderPromotions(el) {
+  const [r, mei] = await Promise.all([api('/api/referral'), isOwner() ? api('/api/mei').catch(() => null) : null]);
+  const wa = `https://wa.me/?text=${encodeURIComponent(r.message)}`;
+  el.innerHTML = `
+    <div class="page-head"><div><h1>Descontos e promoções</h1><p class="muted">Indique o Conversa CRM e ganhe meses grátis</p></div></div>
+    <div class="grid halves">
+      <div class="card"><h2 style="margin-top:0">🎁 Indique e ganhe</h2>
+        <p>Quem usar o seu código ganha <strong>1 mês grátis</strong>. Quando essa pessoa assinar, a sua empresa ganha <strong>+1 mês grátis</strong>.</p>
+        <div class="small muted">Seu código</div>
+        <div class="row wrap" style="margin:4px 0 12px"><span class="code" style="font-size:var(--fs-24);letter-spacing:.06em">${esc(r.code)}</span></div>
+        <div class="row wrap" style="gap:8px">
+          <a class="btn primary" href="${esc(wa)}" target="_blank" rel="noopener" data-share="whatsapp">💬 Enviar no WhatsApp</a>
+          <button type="button" data-share="link">Copiar link</button>
+          <button type="button" data-share="mensagem">Copiar mensagem</button>
+          ${navigator.share ? '<button type="button" data-share="nativo">Compartilhar…</button>' : ''}
+        </div>
+        <div class="small muted" style="margin-top:12px">A mensagem que vai junto:</div>
+        <p class="small" style="white-space:pre-wrap;margin:4px 0 0;padding:10px 12px;border:1px solid var(--line-2);border-radius:var(--r-sm);background:var(--paper-2)">${esc(r.message)}</p>
+      </div>
+      <div class="card"><h3 style="margin-top:0">Seus resultados</h3>
+        <div class="grid kpis" style="grid-template-columns:repeat(3,1fr);gap:8px">
+          <div class="kpi"><div class="label">Você indicou</div><div class="value">${r.mine.invited}</div></div>
+          <div class="kpi"><div class="label">Assinaram</div><div class="value">${r.mine.converted}</div></div>
+          <div class="kpi"><div class="label">Meses ganhos (empresa)</div><div class="value">${r.months_earned}</div></div>
+        </div>
+        ${r.people.length ? `<ul class="feed" style="margin-top:8px">${r.people.map((p) => `<li><strong>${esc(p.name)}</strong> <span class="muted">· ${fmtDay(p.since.slice(0, 10))}${p.by ? ` · indicado por ${esc(p.by)}` : ''}</span> ${p.paid ? '<span class="badge green">assinou · +1 mês</span>' : '<span class="badge">em teste</span>'}</li>`).join('')}</ul>`
+          : '<p class="small muted">Ninguém usou o código ainda. Mande para 3 colegas de profissão: quem atende pelo WhatsApp entende o valor na hora.</p>'}
+        <p class="hint">Cada pessoa da equipe tem o próprio código; os meses ganhos vão para a conta da empresa.</p>
+      </div>
+    </div>
+    <div class="grid halves" style="margin-top:14px">
+      ${r.can_redeem && isOwner() ? `<div class="card"><h3 style="margin-top:0">Recebeu um código?</h3>
+        <p class="small">Use agora e o seu teste grátis passa a valer <strong>30 dias</strong> desde o cadastro.</p>
+        <form id="redeem" class="row"><input name="code" placeholder="Ex.: MARIA-7K3Q" required autocapitalize="characters"><button class="primary">Usar código</button></form></div>` : ''}
+      ${isOwner() ? `<div class="card" id="mei-card"><h3 style="margin-top:0">🧾 MEI: plano Básico grátis</h3>${meiBlock(mei)}</div>` : ''}
+    </div>`;
+  const tell = (channel) => trackEvent('share', channel);
+  $$('[data-share]', el).forEach((b) => b.addEventListener('click', async (e) => {
+    const ch = b.dataset.share;
+    tell(ch);
+    if (ch === 'whatsapp') return;
+    e.preventDefault();
+    if (ch === 'nativo') { navigator.share({ title: 'Conversa CRM', text: r.message }).catch(() => {}); return; }
+    toast(await copyText(ch === 'link' ? r.link : r.message) ? (ch === 'link' ? 'Link copiado' : 'Mensagem copiada') : 'Não foi possível copiar', '');
+  }));
+  $('#redeem')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const out = await api('/api/referral/redeem', { method: 'POST', body: formData(e.target) });
+      state.meta = await api('/api/meta');
+      toast(`Código aplicado: teste até ${fmtDay(out.until)}`); renderLayout(); route();
+    } catch (err) { fail(err); }
+  });
+  bindMei(el);
+}
+
+function meiBlock(m) {
+  if (m?.status === 'aprovado') return '<p>✓ <strong>Liberado.</strong> Sua conta tem o plano Básico grátis para MEI, sem prazo.</p>';
+  if (m?.status === 'pendente') return `<p>⏳ <strong>Pedido em análise</strong> (CNPJ ${esc(m.cnpj)}, enviado em ${fmt(m.created_at)}). Avisamos assim que for liberado.</p>`;
+  return `${m?.status === 'recusado' ? `<div class="banner" style="margin-bottom:10px">Pedido anterior recusado: ${esc(m.note || '')}</div>` : ''}
+    <p class="small">É microempreendedor individual? Envie o <strong>CCMEI</strong> (Certificado da Condição de MEI) e liberamos o plano Básico de graça.</p>
+    <p class="small muted">Baixe o certificado no Portal do Empreendedor (gov.br/mei) → "Emitir Comprovante". PDF, JPG ou PNG, até 5 MB.</p>
+    <form id="mei-form" class="stack">
+      <div><label for="mei-cnpj">CNPJ do MEI</label><input id="mei-cnpj" name="cnpj" inputmode="numeric" placeholder="00.000.000/0000-00" required></div>
+      <div><label for="mei-file">Certificado (CCMEI)</label><input id="mei-file" type="file" accept="application/pdf,image/jpeg,image/png" required></div>
+      <button class="primary">Enviar para análise</button>
+    </form>`;
+}
+
+function bindMei(el) {
+  $('#mei-form', el)?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const file = $('#mei-file', el).files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast('O arquivo passa de 5 MB.', 'error'); return; }
+    const btn = e.target.querySelector('button'); btn.disabled = true; btn.textContent = 'Enviando…';
+    try {
+      const data = await new Promise((ok, no) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.onerror = no; fr.readAsDataURL(file); });
+      const m = await api('/api/mei', { method: 'POST', body: { cnpj: $('#mei-cnpj', el).value, file_name: file.name, mime: file.type, data_base64: data } });
+      $('#mei-card', el).innerHTML = `<h3 style="margin-top:0">🧾 MEI: plano Básico grátis</h3>${meiBlock(m)}`;
+      toast('Certificado enviado. Avisamos quando for liberado.');
+    } catch (err) { fail(err); btn.disabled = false; btn.textContent = 'Enviar para análise'; }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Processos (advocacia): intimações do DJEN e movimentações do DataJud
 // ---------------------------------------------------------------------------
 const SEVERITY = { alta: ['red', 'Alta'], media: ['amber', 'Média'], baixa: ['', 'Baixa'] };
@@ -2494,7 +2651,7 @@ async function renderProspecting(el, [searchId]) {
     ${!meta.places_configured ? '<div class="banner">A busca no Google Maps está temporariamente indisponível. Tente de novo mais tarde. Se preferir, use uma chave própria do Google em <a href="#/config/avancado">Configurações → Avançado</a>.</div>' : ''}
     <div class="card">
       ${left === 0 ? (monthly
-    ? `<div class="banner">Você usou as <strong>${quota.max} buscas deste mês</strong>. Elas renovam no dia 1º, e as buscas anteriores continuam aqui.${meta.plan?.id === 'essencial' ? ' <a href="#/assinar">No plano Profissional são 50 por mês.</a>' : ''}</div>`
+    ? `<div class="banner">Você usou as <strong>${quota.max} buscas deste mês</strong>. Elas renovam no dia 1º, e as buscas anteriores continuam aqui.${{ basico: ' <a href="#/assinar">No Essencial são 30 por mês, e no Profissional, 50.</a>', essencial: ' <a href="#/assinar">No plano Profissional são 50 por mês.</a>' }[meta.plan?.id] || ''}</div>`
     : `<div class="banner">🔒 Você usou as <strong>${quota.max} buscas do teste grátis</strong>. As buscas anteriores continuam aqui. <a href="#/assinar">Assine um plano</a> para continuar prospectando.</div>`) : `
       <form id="search-form" class="row wrap">
         <input name="query" placeholder='Ex.: "academias em Campinas", "pet shop zona sul São Paulo"' required style="flex:1;min-width:240px">
@@ -2617,7 +2774,7 @@ async function renderSettings(el, [tab = 'empresa']) {
       <h2 style="margin:0 0 12px">Atendente virtual (IA)</h2>
       ${aiLocked() ? `<p class="hint" style="margin-bottom:12px">🔒 A IA faz parte dos planos pagos. <a href="#/assinar">Desbloquear</a></p>` : check('ai', 'enabled', 'IA responde automaticamente as mensagens do WhatsApp')}
       <div class="fields">${input('ai', 'agent_name', 'Nome da atendente', { hint: 'Como ela se apresenta aos clientes.' })}${input('ai', 'model', 'Modelo Claude', { placeholder: 'claude-opus-5-5', hint: 'Deixe vazio para usar o padrão.' })}</div>
-      <div class="card" style="margin:6px 0 14px"><h3>Chave da IA (Anthropic) ${aiLocked() ? '<span class="badge">🔒 bloqueada no teste grátis</span>' : meta.ai_configured ? '<span class="badge green">conectada</span>' : '<span class="badge amber">sem chave</span>'}</h3>
+      <div class="card" style="margin:6px 0 14px"><h3>Chave da IA (Anthropic) ${aiLocked() ? '<span class="badge">🔒 volta quando assinar</span>' : meta.ai_configured ? '<span class="badge green">conectada</span>' : '<span class="badge amber">sem chave</span>'}</h3>
         ${aiLocked() ? `<p class="hint">A IA faz parte dos planos pagos.</p>${lockBtn()}` : meta.ai_key_source === 'platform'
           ? '<p class="hint">A IA desta conta usa a chave do Conversa CRM, configurada pela nossa equipe. Você não precisa fazer nada.</p>'
           : `<p class="hint">Crie sua chave em console.anthropic.com. O consumo da IA é cobrado pela Anthropic direto na sua conta. Sem chave, a IA usa respostas automáticas simples.</p>${input('integrations', 'anthropic_api_key', 'API key', { placeholder: 'sk-ant-...' })}`}</div>

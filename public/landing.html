@@ -436,11 +436,16 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
   .seq{flex-wrap:wrap;row-gap:16px}
   .seq .s{flex:1 1 45%}
 }
+/* faixa de indicação (?ref=CÓDIGO) */
+.ref-strip{background:var(--green-800);color:#fff;text-align:center;padding:10px 16px;font-size:14px}
+.ref-strip b{font-weight:600}
+.ref-strip a{color:#fff;text-decoration:underline;text-underline-offset:3px;margin-left:6px}
 </style>
 </head>
 <body>
 <a class="skip" href="#conteudo">Pular para o conteúdo</a>
 
+<div class="ref-strip" id="ref-strip" hidden></div>
 <header class="site-header" id="topo">
   <div class="wrap nav">
     <a class="brand" href="#topo" aria-label="Conversa CRM, início">
@@ -455,23 +460,23 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
     </nav>
     <div class="nav-cta">
       <a class="link-enter" href="/app">Entrar</a>
-      <a class="btn btn-primary btn-sm" data-signup href="/app#cadastro">Começar grátis</a>
+      <a class="btn btn-primary btn-sm" data-signup data-track="Testar grátis (menu)" href="/app#cadastro">Testar 7 dias grátis</a>
     </div>
   </div>
 </header>
 
 <main id="conteudo">
 <!-- HERO -->
-<section class="hero" aria-labelledby="hero-title">
+<section class="hero" id="inicio" aria-labelledby="hero-title">
   <div class="wrap hero-grid">
     <div>
       <span class="eyebrow">Toda conversa vira cliente.</span>
       <h1 id="hero-title" class="display">Do primeiro <em>“oi”</em> ao Pix pago.</h1>
       <p class="lede">WhatsApp com IA, agenda, CRM, follow-up e cobrança num lugar só. A IA do Conversa CRM responde na hora, faz a triagem, agenda com o profissional certo e envia o Pix. O que precisa de gente vira tarefa para a sua equipe — o resto acontece sem você.</p>
       <div class="hero-ctas">
-        <a class="btn btn-primary" data-signup href="/app#cadastro">Começar grátis
+        <a class="btn btn-primary" data-signup data-track="Testar grátis (topo)" href="/app#cadastro">Testar 7 dias grátis
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-        <a class="btn btn-ghost" href="#como-funciona">Ver como funciona</a>
+        <a class="btn btn-ghost" data-track="Ver como funciona" href="#como-funciona">Ver como funciona</a>
       </div>
       <div class="hero-note">
         <span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Sem cartão de crédito</span>
@@ -714,7 +719,7 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
         <span class="eyebrow">Planos</span>
         <h2 id="planos-title" class="h2">Preço simples. <em>Todos os módulos</em> em todos os planos.</h2>
       </div>
-      <p class="lede">A diferença entre os planos é só o tamanho da equipe. Comece grátis com seus próprios clientes e mude de plano quando fizer sentido.</p>
+      <p class="lede">A diferença entre os planos é só o tamanho da equipe. Teste o Básico por 7 dias, sem cartão (30 dias com código de indicação). É MEI? O Básico sai de graça.</p>
     </div>
     <div class="plans" id="plans" aria-live="polite"></div>
     <div class="included reveal">
@@ -739,6 +744,18 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
       <p class="lede" style="margin-top:20px">Não encontrou o que procurava? <a href="#" data-sales style="text-decoration:underline;text-underline-offset:3px">Fale com a gente</a>.</p>
     </div>
     <div class="faq">
+      <details>
+        <summary>Tem teste grátis? Preciso de cartão?<span class="pm" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span></summary>
+        <div class="ans"><p><b>Sim, 7 dias grátis do plano Básico, sem cartão.</b> Com o código de indicação de quem já usa, são 30 dias. Depois, você escolhe um plano; se não assinar, a conta continua aberta só para consulta.</p></div>
+      </details>
+      <details>
+        <summary>Sou MEI. Tenho desconto?<span class="pm" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span></summary>
+        <div class="ans"><p><b>Sim: para MEI o plano Básico é grátis.</b> Crie a conta, vá em "Descontos e promoções" e envie o certificado CCMEI (do Portal do Empreendedor). A nossa equipe confere e libera.</p></div>
+      </details>
+      <details>
+        <summary>Como funciona o "indique e ganhe"?<span class="pm" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span></summary>
+        <div class="ans"><p>Cada pessoa da sua equipe tem um código. Quem se cadastra com ele ganha 1 mês grátis, e quando essa empresa assina, a sua ganha mais 1 mês grátis. Dá para mandar pelo WhatsApp com um toque.</p></div>
+      </details>
       <details open>
         <summary>Preciso da API oficial do WhatsApp?<span class="pm" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span></summary>
         <div class="ans"><p><b>Não.</b> A API oficial da Meta é opcional. Dá para conectar o número que você já usa lendo um QR Code (via Evolution API), sem custo por mensagem. A API oficial fica disponível para quem quiser mais estabilidade e escala.</p></div>
@@ -768,16 +785,16 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
 </section>
 
 <!-- FINAL CTA -->
-<section class="final" aria-labelledby="final-title">
+<section class="final" id="final" aria-labelledby="final-title">
   <div class="wrap">
     <div class="final-box reveal">
       <h2 id="final-title">Deixe o WhatsApp trabalhar <em>enquanto você atende</em>.</h2>
       <div>
-        <p>Teste grátis com seus próprios clientes. Configure em uma tarde e veja a primeira conversa virar agendamento.</p>
+        <p>7 dias grátis com seus próprios clientes, sem cartão. Configure em uma tarde e veja a primeira conversa virar agendamento.</p>
         <div class="ctas">
-          <a class="btn btn-primary" data-signup href="/app#cadastro">Começar grátis
+          <a class="btn btn-primary" data-signup data-track="Testar grátis (final)" href="/app#cadastro">Testar 7 dias grátis
             <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
-          <a class="btn btn-ghost" href="#planos">Ver planos</a>
+          <a class="btn btn-ghost" data-track="Ver planos (final)" href="#planos">Ver planos</a>
         </div>
       </div>
     </div>
@@ -787,7 +804,7 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
 
 <footer>
   <div class="wrap foot">
-    <span>© <span id="year">2026</span> Conversa CRM · Toda conversa vira cliente. · <a href="mailto:contato@conversacrm.online">contato@conversacrm.online</a></span>
+    <span>© <span id="year">2026</span> Conversa CRM · Toda conversa vira cliente. · <a href="mailto:contato@conversacrm.online">contato@conversacrm.online</a><br><small>Medimos as visitas desta página com ferramenta própria, sem cookies de terceiros e sem guardar o seu IP.</small></span>
     <nav aria-label="Rodapé">
       <a href="#recursos">Recursos</a>
       <a href="#planos">Planos</a>
@@ -809,9 +826,9 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
   /* pricing */
   var FALLBACK = {
     plans: [
-      {id:'trial', label:'Teste grátis', price_cents:0, max_users:1, max_leads:30, ai:false, max_searches:3, searches_period:'total', description:'Para conhecer o sistema com seus próprios clientes.'},
-      {id:'essencial', label:'Essencial', price_cents:10000, max_users:2, max_leads:100, max_searches:30, searches_period:'month', description:'Para quem atende sozinho ou em dupla.'},
-      {id:'profissional', label:'Profissional', price_cents:24900, max_users:10, max_leads:null, max_searches:50, searches_period:'month', description:'Para equipes com vários atendentes e profissionais.'}
+      {id:'basico', label:'Básico', price_cents:4990, max_users:1, max_leads:50, max_searches:10, searches_period:'month', description:'Para quem atende sozinho e está começando.'},
+      {id:'essencial', label:'Essencial', price_cents:9990, max_users:2, max_leads:100, max_searches:30, searches_period:'month', description:'Para quem atende sozinho ou em dupla.'},
+      {id:'profissional', label:'Profissional', price_cents:24990, max_users:10, max_leads:null, max_searches:50, searches_period:'month', description:'Para equipes com vários atendentes e profissionais.'}
     ],
     sales_whatsapp: '',
     allow_signup: true
@@ -847,9 +864,10 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
       var rec = i === recIdx;
       var label = p.label || p.id;
       // Plano pago: cria a conta (ou entra) e vai direto para o Pix do plano.
-      var href = free ? SIGNUP : '/app#/assinar/' + encodeURIComponent(p.id || '');
+      // Todos os planos começam pelo teste de 7 dias (sem cartão); a assinatura vem depois, dentro do sistema.
+      var href = SIGNUP;
       var ext = /^https:/.test(href);
-      var cta = free ? 'Começar grátis' : 'Assinar o ' + label;
+      var cta = 'Testar 7 dias grátis';
       return '<article class="plan' + (rec ? ' rec' : '') + '" aria-label="Plano ' + esc(label) + '">' +
         '<h3>' + esc(label) + (rec ? '<span class="badge">Recomendado</span>' : '') + '</h3>' +
         '<div class="price"><span class="cur">R$</span><span class="val">' + money(p.price_cents) + '</span>' + (free ? '' : '<span class="per">/mês</span>') + '</div>' +
@@ -861,7 +879,7 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
           '<li><span>Atendimento com IA</span><b>' + (p.ai === false ? 'Não incluso' : 'Incluso') + '</b></li>' +
           '<li><span>Módulos</span><b>Todos</b></li>' +
         '</ul>' +
-        '<a class="btn ' + (rec ? 'btn-primary' : (free ? 'btn-ghost' : 'btn-primary')) + '" href="' + esc(href) + '"' + (ext ? ' target="_blank" rel="noopener"' : '') + '>' + esc(cta) +
+        '<a class="btn ' + (rec ? 'btn-primary' : 'btn-ghost') + '" data-signup data-plan="' + esc(label) + '" href="' + esc(href) + '"' + (ext ? ' target="_blank" rel="noopener"' : '') + '>' + esc(cta) +
         ' <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>' +
       '</article>';
     }).join('');
@@ -913,6 +931,97 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
     /* safety net: never leave content hidden (e.g. print, anchors, odd viewports) */
     window.addEventListener('beforeprint', function(){ els.forEach(function(el){ el.classList.remove('pending'); }); });
   }
+})();
+</script>
+<script>
+/* Indicação (?ref=CÓDIGO) e medição própria da página: origem, tempo de leitura, atenção por seção,
+   rolagem, perguntas abertas no FAQ e botões clicados. Sem cookies de terceiros e sem IP. */
+(function(){
+  if (location.protocol === 'file:') return;
+  function get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }
+  function set(k, v){ try { localStorage.setItem(k, v); } catch(e){} }
+  function id(){ return (window.crypto && crypto.randomUUID ? crypto.randomUUID().replace(/-/g,'') : Date.now().toString(36) + Math.random().toString(36).slice(2)).slice(0, 32); }
+  var qs = new URLSearchParams(location.search);
+  var ref = (qs.get('ref') || '').toUpperCase().replace(/[^A-Z0-9-]/g, '');
+  if (ref) set('cc_ref', ref);
+  var vid = get('cc_vid') || id(); set('cc_vid', vid);
+  var sid; try { sid = sessionStorage.getItem('cc_sid') || id(); sessionStorage.setItem('cc_sid', sid); } catch(e){ sid = id(); }
+  var host = ''; try { host = document.referrer ? new URL(document.referrer).hostname.replace(/^www\./, '') : ''; } catch(e){}
+  var src = qs.get('utm_source') || (ref ? 'indicação' : (host && host !== location.hostname ? host : 'direto'));
+  if (!get('cc_src')) set('cc_src', src);
+  var mobile = window.matchMedia && window.matchMedia('(max-width: 760px)').matches;
+  var queue = [{ k: 'pageview' }];
+  function push(k, n, val){ queue.push({ k: k, n: n == null ? null : String(n).slice(0, 120), val: val == null ? null : Math.round(val) }); }
+  function flush(leaving){
+    if (!queue.length) return;
+    var body = JSON.stringify({ v: vid, s: sid, p: '/', src: src, d: mobile ? 'mobile' : 'desktop', e: queue.splice(0, 60) });
+    if (leaving && navigator.sendBeacon) navigator.sendBeacon('/api/t', new Blob([body], { type: 'application/json' }));
+    else if (window.fetch) fetch('/api/t', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body, keepalive: true }).catch(function(){});
+  }
+
+  /* faixa "Fulano te indicou" */
+  if (ref && window.fetch){
+    fetch('/api/public/referral/' + encodeURIComponent(ref)).then(function(r){ return r.json(); }).then(function(r){
+      var el = document.getElementById('ref-strip');
+      if (!r || !r.valid || !el) return;
+      el.innerHTML = '🎁 <b>' + String(r.by).replace(/[<>&"]/g, '') + '</b> te indicou: você ganha <b>1 mês grátis</b> com o código ' + r.code + '.<a href="/app#cadastro" data-signup data-track="Faixa de indicação">Começar agora</a>';
+      el.hidden = false;
+    }).catch(function(){});
+  }
+
+  /* tempo de leitura (só com a aba visível) */
+  var visibleMs = 0, since = document.hidden ? 0 : Date.now();
+  function elapsed(){ return visibleMs + (since ? Date.now() - since : 0); }
+
+  /* atenção por seção: tempo com a seção ocupando boa parte da tela */
+  var secMs = {}, secSince = {};
+  var ids = ['inicio', 'recursos', 'para-quem', 'como-funciona', 'planos', 'duvidas', 'final'];
+  if ('IntersectionObserver' in window){
+    var so = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        var k = e.target.id;
+        if (e.isIntersecting && e.intersectionRatio >= 0.35){ if (!secSince[k] && !document.hidden) secSince[k] = Date.now(); }
+        else if (secSince[k]){ secMs[k] = (secMs[k] || 0) + Date.now() - secSince[k]; secSince[k] = 0; }
+      });
+    }, { threshold: [0, 0.35, 0.6] });
+    ids.forEach(function(k){ var el = document.getElementById(k); if (el) so.observe(el); });
+  }
+  function closeSections(){ Object.keys(secSince).forEach(function(k){ if (secSince[k]){ secMs[k] = (secMs[k] || 0) + Date.now() - secSince[k]; secSince[k] = 0; } }); }
+
+  /* rolagem máxima (%) */
+  var maxScroll = 0;
+  window.addEventListener('scroll', function(){
+    var h = document.documentElement.scrollHeight - window.innerHeight;
+    if (h > 0) maxScroll = Math.max(maxScroll, Math.min(100, Math.round(window.scrollY / h * 100)));
+  }, { passive: true });
+
+  /* FAQ aberto e cliques nos botões */
+  document.querySelectorAll('.faq details').forEach(function(d){
+    d.addEventListener('toggle', function(){ if (d.open && d.dataset.seen !== '1'){ d.dataset.seen = '1'; var s = d.querySelector('summary'); push('faq', s ? s.textContent.trim() : ''); } });
+  });
+  document.addEventListener('click', function(e){
+    var a = e.target.closest && e.target.closest('a, button');
+    if (!a) return;
+    if (a.dataset.plan) push('plan', a.dataset.plan);
+    var name = a.dataset.track || (a.hasAttribute('data-signup') ? 'Testar grátis' + (a.dataset.plan ? ' (plano ' + a.dataset.plan + ')' : '') : (a.getAttribute('href') === '/app' ? 'Entrar' : null));
+    if (name) push('cta', name);
+    if (a.hasAttribute('data-signup') || a.getAttribute('href') === '/app') flush(true);
+  }, true);
+
+  /* envia o resumo ao sair ou esconder a aba (e a cada 20 s, para não perder visitas longas) */
+  function summary(){
+    closeSections();
+    Object.keys(secMs).forEach(function(k){ if (secMs[k] >= 500) push('section', k, secMs[k]); secMs[k] = 0; });
+    push('time', null, elapsed());
+    if (maxScroll) push('scroll', null, maxScroll);
+  }
+  document.addEventListener('visibilitychange', function(){
+    if (document.hidden){ if (since){ visibleMs += Date.now() - since; since = 0; } summary(); flush(true); }
+    else { since = Date.now(); }
+  });
+  window.addEventListener('pagehide', function(){ summary(); flush(true); });
+  setInterval(function(){ if (!document.hidden){ summary(); flush(false); } }, 20000);
+  setTimeout(function(){ flush(false); }, 1500);
 })();
 </script>
 </body>

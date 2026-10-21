@@ -1,4 +1,5 @@
 import { all, get, run, now } from '../db.js';
+import { accessExpired } from './plans.js';
 import { config } from '../config.js';
 import { getCompany } from './company.js';
 import { getContact, formatMoney, firstName, logActivity, changeStage } from './crm.js';
@@ -206,7 +207,7 @@ export async function processBilling() {
   const open = all("SELECT * FROM charges WHERE status IN ('pendente', 'vencido')");
   for (const charge of open) {
     const company = getCompany(charge.company_id);
-    if (company.status !== 'ativa') continue;
+    if (company.status !== 'ativa' || accessExpired(company)) continue; // teste encerrado: espera a assinatura
     const today = todayIn(company.timezone);
     const days = daysBetween(today, charge.due_date); // > 0: faltam dias; < 0: atrasada
     if (days < 0 && charge.status === 'pendente') run("UPDATE charges SET status = 'vencido' WHERE id = ?", charge.id);

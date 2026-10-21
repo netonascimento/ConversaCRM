@@ -8,7 +8,7 @@ export class Router {
   add(method, pattern, ...handlers) {
     const keys = [];
     const regex = new RegExp(`^${pattern.replace(/:(\w+)/g, (_, k) => { keys.push(k); return '([^/]+)'; })}/?$`);
-    this.routes.push({ method, regex, keys, handlers });
+    this.routes.push({ method, pattern, regex, keys, handlers });
   }
 
   get(p, ...h) { this.add('GET', p, ...h); }
@@ -21,7 +21,7 @@ export class Router {
     for (const r of this.routes) {
       if (r.method !== method) continue;
       const m = pathname.match(r.regex);
-      if (m) return { handlers: r.handlers, params: Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])) };
+      if (m) return { pattern: r.pattern, handlers: r.handlers, params: Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1])])) };
     }
     return null;
   }

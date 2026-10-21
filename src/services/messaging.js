@@ -27,7 +27,7 @@ export function coldBlocked(company, contactId, author) {
   if (company.settings.whatsapp.provider !== 'evolution' || !['followup', 'human'].includes(author) || !isCold(contactId)) return false;
   return coldSentToday(company) >= COLD_DAILY_LIMIT;
 }
-import { aiAllowed } from './plans.js';
+import { aiAllowed, accessExpired } from './plans.js';
 
 // ---- Provedores de WhatsApp -------------------------------------------------
 
@@ -98,6 +98,13 @@ export async function sendMessage(companyId, contactId, body, author = 'human', 
   const company = getCompany(companyId);
   const contact = getContact(companyId, contactId);
   if (!contact) throw new Error('Contato não encontrado');
+  // Teste encerrado sem assinatura: nada sai pelo WhatsApp. As rotinas automáticas já pulam a conta;
+  // aqui fica a última barreira (registra como não enviada, sem derrubar quem chamou).
+  if (accessExpired(company)) {
+    const { id } = run("INSERT INTO messages (company_id, contact_id, direction, author, body, status, error) VALUES (?, ?, 'out', ?, ?, 'failed', ?)",
+      companyId, contactId, author, body, 'Não enviada: o teste grátis terminou (assinatura necessária).');
+    return get('SELECT * FROM messages WHERE id = ?', id);
+  }
   // Resposta sai pelo número por onde o cliente falou por último; primeira mensagem, pelo principal.
   const firstContact = isCold(contactId);
   const { wa, channelId } = channelConfig(company, firstContact ? null : lastInboundChannel(contactId));
