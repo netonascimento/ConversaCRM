@@ -61,6 +61,7 @@ export function companyDetail(companyId) {
     billing_provider: settings.billing.provider,
     ai_objective: settings.ai.objective,
     ai_platform_key: Boolean(company.ai_platform_key),
+    processes_module: Boolean(company.processes_module),
     ai_key_source: aiKeySource(company),
     upgrade_txid: upgradeTxid(company),
     subscription: { ...subscriptionState(company), method: company.billing_method, paid_until: company.paid_until, status: company.subscription_status, cancel_at_period_end: Boolean(company.cancel_at_period_end) },
@@ -79,8 +80,10 @@ export function updateCompany(companyId, data) {
   const maxLeads = data.max_leads === undefined ? c.max_leads : (data.max_leads === '' || data.max_leads === null ? null : Number(data.max_leads));
   // Chave da IA da plataforma: só o administrador liga ou desliga (o consumo é cobrado à parte).
   const platformKey = data.ai_platform_key === undefined ? c.ai_platform_key : (data.ai_platform_key === true || data.ai_platform_key === 'true' ? 1 : 0);
-  main.run('UPDATE companies SET name = ?, plan = ?, max_users = ?, max_leads = ?, notes = ?, ai_platform_key = ? WHERE id = ?',
-    data.name?.trim() || c.name, data.plan ?? c.plan, Number(data.max_users) || c.max_users, maxLeads, data.notes ?? c.notes, platformKey, companyId);
+  // Módulo de Processos para empresas fora da Advocacia: só o administrador libera.
+  const processes = data.processes_module === undefined ? c.processes_module : (data.processes_module === true || data.processes_module === 'true' ? 1 : 0);
+  main.run('UPDATE companies SET name = ?, plan = ?, max_users = ?, max_leads = ?, notes = ?, ai_platform_key = ?, processes_module = ? WHERE id = ?',
+    data.name?.trim() || c.name, data.plan ?? c.plan, Number(data.max_users) || c.max_users, maxLeads, data.notes ?? c.notes, platformKey, processes, companyId);
   // Mudou de plano: o pedido de assinatura em aberto deixa de valer.
   if ((data.plan ?? c.plan) !== c.plan) main.run('UPDATE companies SET upgrade_plan = NULL, upgrade_requested_at = NULL WHERE id = ?', companyId);
   return companyDetail(companyId);

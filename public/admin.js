@@ -414,6 +414,8 @@ async function openCompany(id) {
           </div>
           <label class="check field"><input type="checkbox" name="ai_platform_key" ${c.ai_platform_key ? 'checked' : ''}> Usar a minha chave de IA (consumo cobrado à parte)</label>
           <div class="hint" style="margin:-6px 0 12px">Desmarcado, a empresa usa a chave da Anthropic que ela mesma cadastra em Configurações → Integrações.</div>
+          ${c.segment === 'advocacia' ? '<p class="hint" style="margin:0 0 12px">⚖️ Módulo de Processos: ligado (segmento Advocacia).</p>' : `<label class="check field"><input type="checkbox" name="processes_module" ${c.processes_module ? 'checked' : ''}> Liberar o módulo de Processos (intimações e movimentações)</label>
+          <div class="hint" style="margin:-6px 0 12px">Para Advocacia ele já vem ligado. Nas outras empresas, só aparece se você liberar aqui.</div>`}
           <div class="field"><label for="p-notes">Observações internas</label><textarea id="p-notes" name="notes">${esc(c.notes)}</textarea></div>
           <button class="primary sm">Salvar</button>
         </form>

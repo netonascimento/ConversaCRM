@@ -36,8 +36,8 @@ export function setLegalNotify(fn) { notifyImpl = fn; }
 
 // ---- Módulo e limites -------------------------------------------------------------------
 
-/** O módulo aparece sozinho para Advocacia; as outras empresas podem ligar nas Configurações. */
-export const processesEnabled = (company) => company.settings.modules?.processes ?? company.segment === 'advocacia';
+/** O módulo aparece sozinho para Advocacia; para as outras empresas, só o administrador libera (painel admin). */
+export const processesEnabled = (company) => company.segment === 'advocacia' || Boolean(company.processes_module);
 /** Processos que o plano permite acompanhar (null = sem limite; plano fora da tabela: sem limite). */
 export const maxProcesses = (company) => (PLANS[company.plan] ? PLANS[company.plan].max_processes ?? null : null);
 const maxOabs = (company) => Math.max(1, company.max_users || 1);

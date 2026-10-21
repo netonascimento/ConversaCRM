@@ -423,6 +423,8 @@ const COLUMNS = [
   ['messages', 'user_name', 'TEXT'],
   ['messages', 'cold', 'INTEGER NOT NULL DEFAULT 0'],
   ['messages', 'channel_id', 'INTEGER'],
+  // Módulo de Processos liberado pelo administrador (empresas que não são do segmento Advocacia).
+  ['companies', 'processes_module', 'INTEGER NOT NULL DEFAULT 0'],
   ['messages', 'media_type', 'TEXT'],
   ['messages', 'media_status', 'TEXT'],
   ['messages', 'media_mime', 'TEXT'],

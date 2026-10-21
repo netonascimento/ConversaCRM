@@ -1365,7 +1365,12 @@ test('processos (advocacia): OAB e número CNJ, histórico sem alerta, intimaç�
     assert.match(over.data.error, /até 5 processos.*Essencial são 20/);
 
     // Outra empresa (com o módulo ligado) não vê nada desta.
+    // Fora da Advocacia, o dono não liga sozinho: só o administrador libera.
     await loja('/api/settings', { method: 'PUT', body: { settings: { modules: { processes: true } } } });
+    assert.equal((await loja('/api/meta')).data.processes_enabled, false);
+    const adm = await adminSession();
+    const lojaId = (await loja('/api/auth/me')).data.company.id;
+    assert.equal((await adm(`/api/admin/companies/${lojaId}`, { method: 'PUT', body: { processes_module: true } })).data.processes_module, true);
     assert.equal((await loja('/api/meta')).data.processes_enabled, true);
     assert.equal((await loja(`/api/legal/cases/${c.id}`)).status, 404);
     assert.equal((await loja(`/api/legal/events/${linked.id}`)).status, 404);

@@ -72,9 +72,10 @@ export function registerAdmin(router) {
 
   router.get('/api/admin/companies/:id', admin, (req, res, { params }) => need(companyDetail(Number(params.id)), 'Empresa'));
   router.put('/api/admin/companies/:id', admin, (req, res, { params, body }) => {
-    const before = main.get('SELECT ai_platform_key FROM companies WHERE id = ?', Number(params.id));
+    const before = main.get('SELECT ai_platform_key, processes_module FROM companies WHERE id = ?', Number(params.id));
     const out = need(updateCompany(Number(params.id), body), 'Empresa');
     audit(actor(req), 'empresa editada', out.id, `plano: ${out.plan || '-'}, usuários: ${out.max_users}, leads: ${out.max_leads ?? 'ilimitados'}`);
+    if (Boolean(before?.processes_module) !== out.processes_module) audit(actor(req), out.processes_module ? 'módulo de Processos liberado' : 'módulo de Processos desligado', out.id, '');
     if (Boolean(before?.ai_platform_key) !== out.ai_platform_key) {
       audit(actor(req), out.ai_platform_key ? 'IA com chave da plataforma' : 'IA com chave da empresa', out.id,
         out.ai_platform_key ? 'consumo de tokens cobrado à parte' : 'a empresa usa a própria chave');

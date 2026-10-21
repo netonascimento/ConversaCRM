@@ -54,10 +54,6 @@ export const DEFAULT_SETTINGS = {
     reminder_days_after: [1, 3, 7],
     auto_win_on_payment: true,
   },
-  // Módulos opcionais. null = padrão do segmento (Processos liga sozinho para Advocacia).
-  modules: {
-    processes: null,
-  },
   integrations: {
     anthropic_api_key: '',
     google_places_key: '',

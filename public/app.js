@@ -2608,7 +2608,6 @@ async function renderSettings(el, [tab = 'empresa']) {
   const panels = {
     empresa: `
       <div class="field"><label>Nome da empresa</label><input name="name" value="${esc(data.name)}"></div>
-      <label class="check field"><input type="checkbox" name="modules.processes" ${meta.processes_enabled ? 'checked' : ''}> Módulo de Processos (escritórios de advocacia): acompanhar intimações e movimentações dos processos</label>
       <h2 style="margin:8px 0 4px">Sobre a sua empresa</h2>
       <p class="hint" style="margin-bottom:10px">É com isso que a atendente responde os seus clientes no WhatsApp.${aiLocked() ? ' Pode preencher já: a IA passa a usar quando você assinar.' : ''}</p>
       <div class="field"><label>O que você faz, endereço, formas de pagamento, diferenciais e políticas</label><textarea name="ai.business_description" rows="6" placeholder="Ex.: Barbearia no centro de Campinas (Rua das Flores, 123). Corte, barba e sobrancelha. Aceitamos Pix e cartão em até 3x. Atendemos com hora marcada; tolerância de 10 minutos.">${esc(s.ai.business_description)}</textarea></div>
