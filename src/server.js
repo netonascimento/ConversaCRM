@@ -40,7 +40,8 @@ export function createServer() {
     const url = new URL(req.url, 'http://localhost');
     const match = router.match(req.method, url.pathname);
     if (!match) {
-      if (req.method === 'GET' && !url.pathname.startsWith('/api/')) {
+      // HEAD responde como GET (o Node descarta o corpo): buscadores e verificadores de link usam HEAD.
+      if ((req.method === 'GET' || req.method === 'HEAD') && !url.pathname.startsWith('/api/')) {
         // Página inicial (landing), sistema (/app) e painel do administrador (/admin).
         const pages = { '/': '/landing.html', '/app': '/app.html', '/admin': '/admin.html' };
         const page = pages[url.pathname.replace(/\/$/, '') || '/'];
