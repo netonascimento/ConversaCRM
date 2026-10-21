@@ -7,7 +7,7 @@ import { registerWebhooks } from './routes/webhooks.js';
 import { registerAdmin, ensureAdminFromEnv } from './routes/admin.js';
 import { withCompanyDb, closeAllDatabases } from './db.js';
 import { startScheduler } from './services/scheduler.js';
-import { startLegalMonitor } from './services/legal.js';
+import { startLegalMonitor, djenHealth } from './services/legal.js';
 import { recordFeature } from './services/analytics.js';
 import { migrateFreeAccounts } from './services/subscriptions.js';
 import './services/referrals.js'; // registra o prêmio de indicação no primeiro pagamento
@@ -24,6 +24,8 @@ router.get('/health', () => ({
   whatsapp_qr: managedEnabled(),
   stripe: stripeMode(),
   stripe_webhook: Boolean(config.stripeWebhookSecret),
+  // Diário (DJEN): ok, bloqueado (servidor fora do Brasil, sem ponto de saída) ou fora do ar.
+  djen: djenHealth(),
 }));
 
 // Um erro inesperado numa tarefa de fundo (agendador, envio, IA) não derruba o servidor inteiro:

@@ -1615,3 +1615,48 @@ test('telas sempre na versão nova: HTML sem cache e arquivos com versão no end
   // Sem versão no endereço (link antigo): não guarda.
   assert.equal((await fetch(`${base}/app.js`)).headers.get('cache-control'), 'no-cache');
 });
+
+test('processos: Diário recusando (fora do Brasil) vira mensagem amigável; com ponto de saída no Brasil, a consulta passa por ele', async () => {
+  const legal = await import('../src/services/legal.js');
+  const { config } = await import('../src/config.js');
+  const urls = [];
+  let djen403 = true;
+  legal.setLegalFetch(async (url, init = {}) => {
+    urls.push({ url, headers: init.headers || {} });
+    if (url.includes('api-publica.datajud')) return new Response(JSON.stringify({ hits: { hits: [] } }), { status: 200 });
+    if (djen403) return new Response('<html>403 ERROR</html>', { status: 403 });
+    return new Response(JSON.stringify({ status: 'success', items: [] }), { status: 200 });
+  });
+  try {
+    resetLoginAttempts();
+    const u = browser();
+    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Adv Proxy', name: 'Pri', email: 'pri@adv.test', password: 'senhaforte1', segment: 'advocacia' } });
+    const c = (await u('/api/legal/cases', { method: 'POST', body: { cnj: '4075574-44.2026.8.26.0100' } })).data;
+    // Cada rodada verifica poucos processos (os de outros testes podem estar na frente).
+    const until = async (ok) => { for (let i = 0; i < 10 && !(await ok()); i++) await legal.monitorOnce(); };
+    await until(async () => (await u(`/api/legal/cases/${c.id}`)).data.baseline_done === 1);
+    let d = (await u(`/api/legal/cases/${c.id}`)).data;
+    assert.match(d.error, /Não conseguimos consultar o Diário \(DJEN\) agora\. Tentamos de novo sozinhos/);
+    assert.doesNotMatch(d.error, /403/);
+    assert.equal(legal.djenHealth(), 'bloqueado');
+    assert.equal((await (await fetch(`${base}/health`)).json()).djen, 'bloqueado');
+
+    // Com o ponto de saída no Brasil configurado, o Diário é consultado por ele (com a senha dele).
+    config.djenProxyUrl = 'https://saida-br.exemplo.test/djen';
+    config.djenProxyToken = 'segredo-do-proxy';
+    djen403 = false;
+    mainDb.prepare('UPDATE legal_cases SET djen_checked_at = NULL WHERE id = ?').run(c.id);
+    await until(async () => (await u(`/api/legal/cases/${c.id}`)).data.djen_checked_at !== null);
+    const viaProxy = urls.filter((x) => x.url.startsWith('https://saida-br.exemplo.test/djen?') && x.url.includes('numeroProcesso=40755744420268260100'));
+    assert.ok(viaProxy.length >= 1, 'o processo foi consultado pelo ponto de saída');
+    assert.equal(viaProxy[0].headers['x-proxy-token'], 'segredo-do-proxy');
+    assert.ok(!urls.some((x) => x.url.startsWith('https://comunicaapi.pje.jus.br/') && urls.indexOf(x) > urls.indexOf(viaProxy[0])), 'com o ponto de saída, nada vai direto ao Diário');
+    assert.equal(legal.djenHealth(), 'ok');
+    d = (await u(`/api/legal/cases/${c.id}`)).data;
+    assert.ok(!/Diário/.test(d.error || ''), 'sem erro do Diário quando a consulta funciona');
+  } finally {
+    config.djenProxyUrl = '';
+    config.djenProxyToken = '';
+    legal.setLegalFetch((...a) => fetch(...a));
+  }
+});

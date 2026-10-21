@@ -83,18 +83,51 @@ let datajudNext = 0;
 const DJEN_GAP_MS = Number(process.env.DJEN_GAP_MS ?? 3500); // ~17 por minuto, abaixo do limite de 20
 const DATAJUD_GAP_MS = Number(process.env.DATAJUD_GAP_MS ?? 1000);
 
+// Erro de fonte: a mensagem é para a tela (amigável); o detalhe técnico vai só para o log.
 class SourceError extends Error {}
+const DJEN_DOWN = 'Não conseguimos consultar o Diário (DJEN) agora. Tentamos de novo sozinhos nas próximas horas.';
+const DATAJUD_DOWN = 'Não conseguimos consultar o tribunal (DataJud) agora. Tentamos de novo sozinhos nas próximas horas.';
+
+// Situação da última consulta ao Diário, para o /health: ok, bloqueado (fora do Brasil) ou fora do ar.
+let djenStatus = 'sem_consulta';
+export const djenHealth = () => djenStatus;
+const logged = new Set();
+const logOnce = (key, ...msg) => { if (!logged.has(key)) { logged.add(key); console.error(...msg); } };
 
 async function djenGet(params) {
   const wait = djenNext - Date.now();
   if (wait > 0) await sleep(wait);
   djenNext = Date.now() + DJEN_GAP_MS;
-  const res = await fetchImpl(`${DJEN_URL}?${new URLSearchParams(params)}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(30000) });
+  const qs = new URLSearchParams(params);
+  // Ponto de saída no Brasil (o Diário recusa consultas de fora do país).
+  const url = config.djenProxyUrl ? `${config.djenProxyUrl}?${qs}` : `${DJEN_URL}?${qs}`;
+  const headers = config.djenProxyUrl ? { Accept: 'application/json', 'x-proxy-token': config.djenProxyToken, 'x-region': 'sa-east-1' } : { Accept: 'application/json' };
+  let res;
+  try {
+    res = await fetchImpl(url, { headers, signal: AbortSignal.timeout(30000) });
+  } catch (err) {
+    djenStatus = 'fora_do_ar';
+    logOnce(`djen-net-${err.name}`, `[processos] DJEN sem resposta (${err.name === 'TimeoutError' ? 'demorou mais de 30s' : err.message})`);
+    throw new SourceError(DJEN_DOWN);
+  }
   // Chegou no limite: a próxima consulta espera um minuto.
   if (res.status === 429 || res.headers?.get?.('x-ratelimit-remaining') === '0') djenNext = Date.now() + 60000;
-  if (!res.ok) throw new SourceError(`DJEN respondeu ${res.status}`);
+  if (res.status === 403) {
+    djenStatus = 'bloqueado';
+    logOnce('djen-403', `[processos] DJEN recusou a consulta (HTTP 403).${config.djenProxyUrl ? ' Confira o ponto de saída (DJEN_PROXY_URL/DJEN_PROXY_TOKEN).' : ' O Diário só aceita consultas do Brasil: configure DJEN_PROXY_URL.'}`);
+    throw new SourceError(DJEN_DOWN);
+  }
+  if (!res.ok) {
+    djenStatus = 'fora_do_ar';
+    logOnce(`djen-${res.status}`, `[processos] DJEN respondeu HTTP ${res.status}`);
+    throw new SourceError(DJEN_DOWN);
+  }
   const data = await res.json().catch(() => ({}));
-  if (data.status && data.status !== 'success') throw new SourceError(`DJEN: ${data.message || 'erro'}`);
+  if (data.status && data.status !== 'success') {
+    logOnce(`djen-msg-${data.message}`, `[processos] DJEN: ${data.message || 'erro'}`);
+    throw new SourceError(DJEN_DOWN);
+  }
+  djenStatus = 'ok';
   return data.items || [];
 }
 
@@ -119,15 +152,21 @@ async function datajudSearch(alias, cnj) {
     headers: { Authorization: `APIKey ${config.datajudApiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ query: { match: { numeroProcesso: cnj } }, size: 10 }),
     signal: AbortSignal.timeout(60000),
+  }).catch((err) => {
+    logOnce(`datajud-net-${err.name}`, `[processos] DataJud sem resposta (${err.name === 'TimeoutError' ? 'demorou mais de 60s' : err.message})`);
+    throw new SourceError(DATAJUD_DOWN);
   });
   if (res.status === 401 || res.status === 403) {
     // Sinal de que o CNJ trocou a chave pública: avisa no log uma vez (o admin define DATAJUD_API_KEY).
     if (!datajudAuthFailed) console.error('[processos] DataJud recusou a chave (HTTP %d). Atualize DATAJUD_API_KEY com a chave da wiki do CNJ.', res.status);
     datajudAuthFailed = true;
-    throw new SourceError('DataJud recusou a chave de acesso');
+    throw new SourceError(DATAJUD_DOWN);
   }
-  if (res.status === 404) throw new SourceError('Tribunal ainda não disponível no DataJud');
-  if (!res.ok) throw new SourceError(`DataJud respondeu ${res.status}`);
+  if (res.status === 404) throw new SourceError('Este tribunal ainda não está disponível no DataJud (as intimações do Diário continuam chegando).');
+  if (!res.ok) {
+    logOnce(`datajud-${res.status}`, `[processos] DataJud respondeu HTTP ${res.status}`);
+    throw new SourceError(DATAJUD_DOWN);
+  }
   datajudAuthFailed = false;
   const data = await res.json().catch(() => ({}));
   return (data.hits?.hits || []).map((h) => h._source);
@@ -229,7 +268,7 @@ export async function checkOab(companyId, oabId) {
     }
     run('UPDATE legal_oabs SET checked_at = ?, error = NULL WHERE id = ?', now(), oab.id);
   } catch (err) {
-    run('UPDATE legal_oabs SET checked_at = ?, error = ? WHERE id = ?', now(), String(err.message).slice(0, 200), oab.id);
+    run('UPDATE legal_oabs SET checked_at = ?, error = ? WHERE id = ?', now(), err instanceof SourceError ? err.message : DJEN_DOWN, oab.id);
     if (!(err instanceof SourceError)) console.error(`[processos] OAB ${oab.id}:`, err.message);
   }
   return fresh;
@@ -250,7 +289,7 @@ export async function checkCase(companyId, caseId) {
       if (id) fresh.push(id);
     }
     run('UPDATE legal_cases SET djen_checked_at = ? WHERE id = ?', now(), c.id);
-  } catch (err) { errors.push(err.message); }
+  } catch (err) { errors.push(err instanceof SourceError ? err.message : DJEN_DOWN); if (!(err instanceof SourceError)) console.error('[processos] DJEN:', err.message); }
   if (c.datajud_alias) {
     try {
       const sources = await datajudSearch(c.datajud_alias, c.cnj);
@@ -265,9 +304,13 @@ export async function checkCase(companyId, caseId) {
           main.classe?.nome || c.class_name, main.orgaoJulgador?.nome || c.court_unit,
           (main.assuntos || []).map((a) => a.nome).filter(Boolean).join(', ').slice(0, 300) || c.subjects, updated, c.id);
       }
-      if (!sources.length && baseline) errors.push('Ainda não aparece no DataJud (o CNJ costuma levar semanas, e processos em segredo não aparecem)');
+      if (!sources.length && baseline) errors.push('Este processo ainda não aparece no DataJud (o CNJ costuma levar semanas, e processos em segredo de justiça não aparecem).');
       run('UPDATE legal_cases SET datajud_checked_at = ? WHERE id = ?', now(), c.id);
-    } catch (err) { errors.push(err.message); run('UPDATE legal_cases SET datajud_checked_at = ? WHERE id = ?', now(), c.id); }
+    } catch (err) {
+      errors.push(err instanceof SourceError ? err.message : DATAJUD_DOWN);
+      if (!(err instanceof SourceError)) console.error('[processos] DataJud:', err.message);
+      run('UPDATE legal_cases SET datajud_checked_at = ? WHERE id = ?', now(), c.id);
+    }
   } else {
     run('UPDATE legal_cases SET datajud_checked_at = ? WHERE id = ?', now(), c.id);
   }

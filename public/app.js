@@ -2589,7 +2589,7 @@ async function renderLegalCase(el, id) {
         <tr><td class="muted">Assuntos</td><td>${esc(c.subjects || '-')}</td></tr>
         <tr><td class="muted">Cliente</td><td>${c.contact_id ? `<a href="#" id="case-client">${esc(c.contact_name)}</a>` : '-'}</td></tr>
         <tr><td class="muted">Advogado</td><td>${esc(c.oab_name || '-')}</td></tr>
-        <tr><td class="muted">Diário (DJEN)</td><td>verificado ${checkedAgo(c.djen_checked_at)}</td></tr>
+        <tr><td class="muted">Diário (DJEN)</td><td>verificado ${checkedAgo(c.djen_checked_at)}${c.baseline_done && !/Diário/.test(c.error || '') ? ` · ${pubs ? `${pubs} publicaç${pubs === 1 ? 'ão' : 'ões'}` : 'nenhuma intimação encontrada'}` : ''}</td></tr>
         <tr><td class="muted">Tribunal (DataJud)</td><td>verificado ${checkedAgo(c.datajud_checked_at)}${c.datajud_updated_at ? ` · dados do CNJ de ${fmt(c.datajud_updated_at, { dateStyle: 'short' })}` : ''}</td></tr>
       </table>
       ${c.error ? `<p class="small muted" style="margin-bottom:0">ℹ️ ${esc(c.error)}</p>` : ''}
@@ -2599,7 +2599,7 @@ async function renderLegalCase(el, id) {
     </div>
     <div class="card" style="margin-top:14px"><h3>Linha do tempo</h3>
       ${c.baseline_done ? '' : '<p class="small muted">⏳ Buscando o histórico no Diário e no DataJud. Pode levar um minuto; esta página atualiza sozinha.</p>'}
-      <ul class="feed">${c.events.map(legalEventHtml).join('') || (c.baseline_done ? '<li class="muted">Nada encontrado ainda nas fontes públicas.</li>' : '')}</ul></div>`;
+      <ul class="feed">${c.events.map(legalEventHtml).join('') || (c.baseline_done ? '<li class="muted">Nenhuma intimação ou movimentação encontrada nas fontes públicas até agora.</li>' : '')}</ul></div>`;
   if (c.unread) api('/api/legal/read', { method: 'POST', body: { case_id: id } }).then(refreshUnread).catch(() => {});
   if (!c.baseline_done) every(5000, async () => { const x = await api(`/api/legal/cases/${id}`).catch(() => null); if (x?.baseline_done) route(); });
   $('#case-client')?.addEventListener('click', (e) => { e.preventDefault(); openContact(c.contact_id); });
