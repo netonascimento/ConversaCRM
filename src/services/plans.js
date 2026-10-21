@@ -2,15 +2,15 @@
 // O administrador pode ajustar os limites de uma empresa específica no painel.
 export const PLANS = {
   gratis: {
-    label: 'Teste grátis', price_cents: 0, max_users: 1, max_leads: 30, ai: false, max_whatsapp: 1, max_searches: 3, searches_period: 'total',
+    label: 'Teste grátis', price_cents: 0, max_users: 1, max_leads: 30, ai: false, max_whatsapp: 1, max_searches: 3, searches_period: 'total', max_processes: 5,
     description: 'Para conhecer o sistema com seus próprios clientes.',
   },
   essencial: {
-    label: 'Essencial', price_cents: 10000, max_users: 2, max_leads: 100, ai: true, max_whatsapp: 1, max_searches: 30, searches_period: 'month',
+    label: 'Essencial', price_cents: 10000, max_users: 2, max_leads: 100, ai: true, max_whatsapp: 1, max_searches: 30, searches_period: 'month', max_processes: 20,
     description: 'Para quem atende sozinho ou em dupla.',
   },
   profissional: {
-    label: 'Profissional', price_cents: 24900, max_users: 10, max_leads: null, ai: true, max_whatsapp: 3, max_searches: 50, searches_period: 'month',
+    label: 'Profissional', price_cents: 24900, max_users: 10, max_leads: null, ai: true, max_whatsapp: 3, max_searches: 50, searches_period: 'month', max_processes: null,
     description: 'Para equipes com vários atendentes e profissionais.',
   },
 };

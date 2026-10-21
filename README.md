@@ -153,6 +153,7 @@ Copie `.env.example` para `.env`. Todas são opcionais; as chaves também podem 
 | `PLATFORM_PIX_KEY` / `PLATFORM_PIX_NAME` / `PLATFORM_PIX_CITY` | Pix manual da assinatura (opcional, só sem Stripe) |
 | `SALES_EMAIL` | E-mail que recebe os comprovantes (padrão `contato@conversacrm.online`) |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Cria o primeiro administrador ao iniciar |
+| `DATAJUD_API_KEY` | Opcional. Chave pública do DataJud (CNJ) para o módulo de Processos; já vem a divulgada na wiki do CNJ. Troque se o CNJ mudar (o log avisa) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Credenciais OAuth do Google Cloud para sincronizar o Google Agenda |
 | `DB_PATH` | Caminho do banco SQLite (padrão `data/falaki.db`; se só existir o antigo `data/fechou.db`, ele continua sendo usado) |
 

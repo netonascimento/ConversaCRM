@@ -10,7 +10,7 @@ import { zonedParts } from './time.js';
 export const TENANT_TABLES = [
   'products', 'professionals', 'professional_services', 'contacts', 'activities', 'appointments', 'messages', 'message_media',
   'sequences', 'enrollments', 'charges', 'tasks', 'prospect_searches', 'prospects', 'google_connections',
-  'contracts', 'documents', 'document_files',
+  'contracts', 'documents', 'document_files', 'legal_oabs', 'legal_cases', 'legal_events',
 ];
 
 export function audit(actor, action, companyId = null, details = '') {

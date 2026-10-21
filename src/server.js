@@ -7,6 +7,7 @@ import { registerWebhooks } from './routes/webhooks.js';
 import { registerAdmin, ensureAdminFromEnv } from './routes/admin.js';
 import { withCompanyDb, closeAllDatabases } from './db.js';
 import { startScheduler } from './services/scheduler.js';
+import { startLegalMonitor } from './services/legal.js';
 import { managedEnabled } from './services/whatsapp-connect.js';
 import { stripeMode } from './services/stripe.js';
 
@@ -69,7 +70,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === path.join(ROOT, 'src', 
   ensureAdminFromEnv();
   const server = createServer().listen(config.port, () => {
     console.log(`Conversa CRM rodando em ${config.publicUrl} (porta ${config.port})`);
-    if (!config.disableScheduler) startScheduler(config.schedulerIntervalMs);
+    if (!config.disableScheduler) { startScheduler(config.schedulerIntervalMs); startLegalMonitor(); }
   });
   // Troca de versão (o Railway manda SIGTERM): para de aceitar conexões, termina as que estão em
   // andamento, fecha o banco direito e sai sem erro. Se demorar, sai assim mesmo.

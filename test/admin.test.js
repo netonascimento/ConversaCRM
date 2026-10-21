@@ -1253,3 +1253,131 @@ test('mídias do WhatsApp: foto, áudio e documento aparecem na conversa; grande
     config.evolutionApiKey = '';
   }
 });
+
+test('processos (advocacia): OAB e número CNJ, histórico sem alerta, intimação nova avisa no WhatsApp, limite e isolamento', async () => {
+  const legal = await import('../src/services/legal.js');
+  // Número CNJ válido a partir dos outros campos (dígito verificador módulo 97).
+  const cnjOf = (n, year = '2025', j = '8', tr = '02', origin = '0001') => {
+    const dd = String(98n - (BigInt(`${n}${year}${j}${tr}${origin}00`) % 97n)).padStart(2, '0');
+    return `${n}-${dd}.${year}.${j}.${tr}.${origin}`;
+  };
+  const CASE = '0729219-51.2021.8.02.0001';
+  const CASE_D = '07292195120218020001';
+  const OTHER_D = cnjOf('0700001').replace(/\D/g, '');
+  const pub = (id, cnj, tipo, texto, date = '2026-10-10') => ({ id, numero_processo: cnj, data_disponibilizacao: date, siglaTribunal: 'TJAL', tipoComunicacao: tipo, nomeOrgao: '3ª Vara Cível da Capital', texto, link: 'https://www2.tjal.jus.br', ativo: true });
+  let oabItems = [pub(1, CASE_D, 'Intimação', 'Processo antigo - Fica intimada a parte.')];
+  let caseItems = [pub(2, CASE_D, 'Intimação', 'Publicação antiga do processo.')];
+  let movements = [{ codigo: 85, nome: 'Petição', dataHora: '2026-08-01T10:00:00.000Z' }];
+  let updated = '2026-09-10T00:00:00Z';
+  const calls = [];
+  legal.setLegalFetch(async (url, init = {}) => {
+    calls.push(url);
+    if (url.startsWith('https://comunicaapi.pje.jus.br/')) {
+      const q = new URL(url).searchParams;
+      const items = q.get('numeroOab') ? oabItems : q.get('numeroProcesso') === CASE_D ? caseItems : [];
+      return new Response(JSON.stringify({ status: 'success', count: items.length, items: q.get('pagina') === '1' ? items : [] }), { status: 200 });
+    }
+    assert.match(init.headers.Authorization, /^APIKey /);
+    assert.ok(url.endsWith('/api_publica_tjal/_search'));
+    return new Response(JSON.stringify({ hits: { hits: [{ _source: { grau: 'G1', tribunal: 'TJAL', classe: { nome: 'Procedimento Comum Cível' }, orgaoJulgador: { nome: '3ª Vara Cível' }, assuntos: [{ nome: 'Indenização' }], dataHoraUltimaAtualizacao: updated, movimentos: movements } }] } }), { status: 200 });
+  });
+  const sent = [];
+  legal.setLegalNotify(async (company, phone, text) => { sent.push({ phone, text }); });
+  try {
+    resetLoginAttempts();
+    // Advocacia: o módulo aparece sozinho. Outro segmento: escondido até ligar.
+    const u = browser();
+    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Silva Advogados', name: 'Dra. Ana', email: 'ana@silva.adv', password: 'senhaforte1', segment: 'advocacia' } });
+    assert.equal((await u('/api/meta')).data.processes_enabled, true);
+    const loja = browser();
+    await loja('/api/auth/register', { method: 'POST', body: { companyName: 'Loja Sem Processo', name: 'Lu', email: 'lu@loja.com', password: 'senhaforte1', segment: 'loja' } });
+    assert.equal((await loja('/api/meta')).data.processes_enabled, false);
+    assert.equal((await loja('/api/legal/overview')).status, 404);
+
+    // Número errado e tribunal detectado.
+    assert.match((await u('/api/legal/check-cnj', { method: 'POST', body: { cnj: '0729219-52.2021.8.02.0001' } })).data.error, /dígito verificador/);
+    assert.deepEqual((await u('/api/legal/check-cnj', { method: 'POST', body: { cnj: '07292195120218020001' } })).data, { cnj: CASE_D, masked: CASE, court: 'TJAL', alias: 'tjal' });
+    assert.equal((await u('/api/legal/check-cnj', { method: 'POST', body: { cnj: '123' } })).status, 400);
+
+    // OAB e processo: o histórico entra sem alerta.
+    const client = (await u('/api/contacts', { method: 'POST', body: { name: 'Maria Cliente', phone: '82999990000' } })).data;
+    const oab = (await u('/api/legal/oabs', { method: 'POST', body: { name: 'Dra. Ana', oab_number: '012345', oab_uf: 'al', phone: '(82) 98888-7777' } })).data;
+    assert.deepEqual([oab.oab_number, oab.oab_uf, oab.phone], ['12345', 'AL', '82988887777']);
+    assert.match((await u('/api/legal/oabs', { method: 'POST', body: { name: 'Outro', oab_number: '999', oab_uf: 'SP' } })).data.error, /1 OAB/, 'teste grátis: 1 usuário, 1 OAB');
+    const c = (await u('/api/legal/cases', { method: 'POST', body: { cnj: CASE, label: 'Indenização — Maria', contact_id: client.id, oab_id: oab.id } })).data;
+    assert.equal(c.court, 'TJAL');
+    assert.equal((await u('/api/legal/cases', { method: 'POST', body: { cnj: CASE } })).data.error, 'Este processo já está cadastrado.');
+    await legal.monitorOnce();
+    let detail = (await u(`/api/legal/cases/${c.id}`)).data;
+    assert.equal(detail.baseline_done, 1);
+    assert.deepEqual([detail.class_name, detail.court_unit, detail.subjects], ['Procedimento Comum Cível', '3ª Vara Cível', 'Indenização']);
+    assert.equal(detail.events.length, 3, 'as duas publicações antigas e a movimentação');
+    assert.ok(detail.events.every((e) => e.baseline === 1));
+    assert.equal(sent.length, 0, 'histórico não gera alerta');
+    assert.equal((await u('/api/legal/overview')).data.news.length, 0);
+
+    // Saiu uma intimação nova na OAB (com prazo) e outra de um processo que não está cadastrado.
+    oabItems = [...oabItems,
+      pub(3, CASE_D, 'Intimação', 'Processo 0729219-51.2021.8.02.0001 - Fica a parte autora intimada para, no prazo de 15 (quinze) dias úteis, se manifestar.', '2026-10-19'),
+      pub(4, OTHER_D, 'Intimação', 'Fica intimado o advogado.', '2026-10-19'),
+      { ...pub(5, OTHER_D, 'Intimação', 'Cancelada'), ativo: false }];
+    mainDb.prepare("UPDATE legal_oabs SET checked_at = '2000-01-01T00:00:00Z'").run();
+    await legal.monitorOnce();
+    const news = (await u('/api/legal/overview')).data;
+    assert.equal(news.news.length, 2);
+    const linked = news.news.find((n) => n.case_id === c.id);
+    assert.deepEqual([linked.severity, linked.deadline_hint, linked.title], ['alta', '15 dias úteis', 'Intimação']);
+    assert.deepEqual(news.unlinked.map((x) => x.cnj), [OTHER_D]);
+    assert.equal(news.unread, 2);
+    assert.equal((await u('/api/meta')).data.legal_unread, 2);
+    assert.equal(sent.length, 2, 'intimação é urgente: sai na hora');
+    assert.ok(sent.every((s) => s.phone === '82988887777'));
+    const msg = sent.find((s) => s.text.includes('Indenização — Maria')).text;
+    assert.match(msg, /Intimação publicada no Diário/);
+    assert.match(msg, /Prazo mencionado: 15 dias úteis\. Confira a contagem/);
+    assert.match(msg, new RegExp(`#/processos/${c.id}`));
+    // A mesma intimação vista de novo (pelo número do processo) não duplica nem avisa outra vez.
+    caseItems = [...caseItems, oabItems[1]];
+    mainDb.prepare('UPDATE legal_cases SET djen_checked_at = NULL').run();
+    await legal.monitorOnce();
+    assert.equal(sent.length, 2);
+    assert.equal((await u(`/api/legal/cases/${c.id}`)).data.events.filter((e) => e.kind === 'publication').length, 3);
+
+    // Movimentação comum no tribunal: vai para o resumo diário, não na hora.
+    movements = [...movements, { codigo: 581, nome: 'Juntada', dataHora: '2026-10-01T10:00:00.000Z', complementosTabelados: [{ nome: 'Petição' }] }];
+    updated = '2026-10-15T00:00:00Z';
+    mainDb.prepare('UPDATE legal_cases SET djen_checked_at = NULL').run();
+    await legal.monitorOnce();
+    assert.equal(sent.length, 2);
+    assert.equal(await legal.sendDigests(true), 1);
+    assert.match(sent.at(-1).text, /Resumo do dia nos processos\* \(1 novidade\)\n• Indenização — Maria · 0729219-51\.2021\.8\.02\.0001 \(TJAL\): Juntada · Petição/);
+    assert.equal(await legal.sendDigests(true), 0, 'cada novidade vai uma vez só');
+
+    // Abrir o processo marca como lido; ficha do cliente lista o processo.
+    await u('/api/legal/read', { method: 'POST', body: { case_id: c.id } });
+    assert.equal((await u('/api/legal/overview')).data.unread, 1);
+    assert.deepEqual((await u(`/api/legal/cases?contact_id=${client.id}`)).data.map((x) => x.id), [c.id]);
+
+    // Limite do teste grátis: 5 processos.
+    for (const n of ['0700002', '0700003', '0700004', '0700005']) assert.equal((await u('/api/legal/cases', { method: 'POST', body: { cnj: cnjOf(n) } })).status, 200);
+    const over = await u('/api/legal/cases', { method: 'POST', body: { cnj: cnjOf('0700006') } });
+    assert.equal(over.status, 400);
+    assert.match(over.data.error, /até 5 processos.*Essencial são 20/);
+
+    // Outra empresa (com o módulo ligado) não vê nada desta.
+    await loja('/api/settings', { method: 'PUT', body: { settings: { modules: { processes: true } } } });
+    assert.equal((await loja('/api/meta')).data.processes_enabled, true);
+    assert.equal((await loja(`/api/legal/cases/${c.id}`)).status, 404);
+    assert.equal((await loja(`/api/legal/events/${linked.id}`)).status, 404);
+    assert.deepEqual((await loja('/api/legal/overview')).data.cases, []);
+    assert.equal((await loja(`/api/legal/cases/${c.id}`, { method: 'DELETE' })).data.ok, false);
+
+    // Remover o processo: movimentações saem; a intimação da OAB continua, como "sem processo".
+    assert.equal((await u(`/api/legal/cases/${c.id}`, { method: 'DELETE' })).data.ok, true);
+    const after = (await u('/api/legal/overview')).data;
+    assert.ok(after.unlinked.some((x) => x.cnj === CASE_D));
+    assert.ok(calls.every((x) => !x.includes('undefined')));
+  } finally {
+    legal.setLegalFetch((...a) => fetch(...a));
+  }
+});

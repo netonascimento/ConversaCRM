@@ -285,6 +285,69 @@ CREATE TABLE IF NOT EXISTS message_media (
   company_id INTEGER NOT NULL,
   data BLOB NOT NULL
 );
+-- Processos (advocacia): OAB dos advogados, processos acompanhados e o que aconteceu neles
+-- (intimações do DJEN e movimentações do DataJud). Fontes públicas e gratuitas do CNJ.
+CREATE TABLE IF NOT EXISTS legal_oabs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  oab_number TEXT NOT NULL,
+  oab_uf TEXT NOT NULL,
+  phone TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  checked_at TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_oabs_unique ON legal_oabs(company_id, oab_number, oab_uf);
+CREATE TABLE IF NOT EXISTS legal_cases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  cnj TEXT NOT NULL,
+  court TEXT NOT NULL,
+  datajud_alias TEXT,
+  label TEXT NOT NULL DEFAULT '',
+  contact_id INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+  oab_id INTEGER REFERENCES legal_oabs(id) ON DELETE SET NULL,
+  class_name TEXT,
+  court_unit TEXT,
+  subjects TEXT,
+  active INTEGER NOT NULL DEFAULT 1,
+  baseline_done INTEGER NOT NULL DEFAULT 0,
+  datajud_updated_at TEXT,
+  datajud_checked_at TEXT,
+  djen_checked_at TEXT,
+  last_event_at TEXT,
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_cases_unique ON legal_cases(company_id, cnj);
+CREATE TABLE IF NOT EXISTS legal_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_id INTEGER NOT NULL,
+  case_id INTEGER REFERENCES legal_cases(id) ON DELETE SET NULL,
+  oab_id INTEGER REFERENCES legal_oabs(id) ON DELETE SET NULL,
+  cnj TEXT,
+  kind TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  occurred_at TEXT NOT NULL,
+  event_hash TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT,
+  court TEXT,
+  court_unit TEXT,
+  severity TEXT NOT NULL DEFAULT 'media',
+  summary TEXT,
+  deadline_hint TEXT,
+  link TEXT,
+  baseline INTEGER NOT NULL DEFAULT 0,
+  read_at TEXT,
+  notified_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_legal_events_hash ON legal_events(company_id, event_hash);
+CREATE INDEX IF NOT EXISTS idx_legal_events_case ON legal_events(company_id, case_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_legal_events_cnj ON legal_events(company_id, cnj);
 -- Números de WhatsApp extras da empresa (o número principal continua em companies.settings.whatsapp).
 CREATE TABLE IF NOT EXISTS whatsapp_numbers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

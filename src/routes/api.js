@@ -33,6 +33,10 @@ import { TRIGGERS, listSequences, parseSequence, enroll } from '../services/foll
 import { listCharges, createCharge, markPaid, cancelCharge, getCharge, chargeMessage } from '../services/billing.js';
 import { searchPlaces, listSearches, getSearch, importProspects, searchQuota } from '../services/prospecting.js';
 import { presentMessage, friendlyBody, retryMedia, mediaFile } from '../services/media.js';
+import {
+  processesEnabled, parseCnj, listOabs, saveOab, deleteOab, caseLimit, createCase, updateCase, deleteCase, refreshCase,
+  listCases, getCase, listNews, listUnlinked, getEvent, markRead, unreadCount,
+} from '../services/legal.js';
 import { getDashboard, getMetrics } from '../services/dashboard.js';
 import { generateInsights } from '../services/ai.js';
 import { tick } from '../services/scheduler.js';
@@ -165,6 +169,9 @@ export function registerApi(router) {
       document_types: ALLOWED_EXTENSIONS,
       document_max_bytes: MAX_DOCUMENT_BYTES,
       places_configured: Boolean(placesKeyFor(company)),
+      // Processos (advocacia): aba no menu e contador de novidades.
+      processes_enabled: processesEnabled(company),
+      legal_unread: processesEnabled(company) ? unreadCount(company.id) : 0,
       // Google Agenda só aparece quando a plataforma tiver as credenciais do Google Cloud.
       google_calendar: googleConfigured(),
       prospecting_searches: searchQuota(company),
@@ -717,6 +724,30 @@ export function registerApi(router) {
     }
     return completeTask(req.companyId, task.id, 'cancelada');
   });
+
+  // ---- Processos (advocacia) -------------------------------------------------
+  // Só com o módulo ligado; quem atende (dono e atendentes) acompanha os processos.
+  const legal = (req) => {
+    if (!processesEnabled(getCompany(req.companyId))) throw new HttpError(404, 'O módulo de Processos não está ligado para esta empresa.');
+  };
+  router.get('/api/legal/overview', auth, staff, legal, (req) => ({
+    limit: caseLimit(req.companyId), oabs: listOabs(req.companyId), cases: listCases(req.companyId),
+    news: listNews(req.companyId), unlinked: listUnlinked(req.companyId), unread: unreadCount(req.companyId),
+  }));
+  router.get('/api/legal/unread', auth, staff, legal, (req) => ({ unread: unreadCount(req.companyId) }));
+  router.post('/api/legal/check-cnj', auth, staff, legal, (req, res, { body }) => tryIt(() => parseCnj(body.cnj)));
+  router.get('/api/legal/cases', auth, staff, legal, (req, res, { query }) => listCases(req.companyId, { contactId: int(query.contact_id) }));
+  router.post('/api/legal/cases', auth, staff, legal, (req, res, { body }) => tryIt(() => createCase(req.companyId, body)));
+  router.get('/api/legal/cases/:id', auth, staff, legal, (req, res, { params }) => need(getCase(req.companyId, Number(params.id)), 'Processo'));
+  router.put('/api/legal/cases/:id', auth, staff, legal, (req, res, { params, body }) => need(tryIt(() => updateCase(req.companyId, Number(params.id), body)), 'Processo'));
+  router.delete('/api/legal/cases/:id', auth, staff, legal, (req, res, { params }) => ({ ok: deleteCase(req.companyId, Number(params.id)) }));
+  router.post('/api/legal/cases/:id/refresh', auth, staff, legal, (req, res, { params }) => need(tryIt(() => refreshCase(req.companyId, Number(params.id))), 'Processo'));
+  router.get('/api/legal/events/:id', auth, staff, legal, (req, res, { params }) => need(getEvent(req.companyId, Number(params.id)), 'Intimação'));
+  router.post('/api/legal/read', auth, staff, legal, (req, res, { body }) => ({ marked: markRead(req.companyId, { ids: body.ids, caseId: int(body.case_id) }) }));
+  router.get('/api/legal/oabs', auth, staff, legal, (req) => listOabs(req.companyId));
+  router.post('/api/legal/oabs', auth, ownerOnly, legal, (req, res, { body }) => tryIt(() => saveOab(req.companyId, body)));
+  router.put('/api/legal/oabs/:id', auth, ownerOnly, legal, (req, res, { params, body }) => need(tryIt(() => saveOab(req.companyId, body, Number(params.id))), 'OAB'));
+  router.delete('/api/legal/oabs/:id', auth, ownerOnly, legal, (req, res, { params }) => ({ ok: deleteOab(req.companyId, Number(params.id)) }));
 
   // ---- Prospecção ------------------------------------------------------------
   router.post('/api/prospecting/search', auth, staff, async (req, res, { body }) => {

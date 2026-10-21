@@ -760,3 +760,34 @@ export function ruleBasedInsights(m) {
   if (!tips.length) tips.push('• Tudo em ordem! Continue prospectando e acompanhe o funil semanalmente.');
   return `${tips.join('\n')}\n\n(Configure a chave da API Anthropic em Configurações para insights personalizados por IA.)`;
 }
+
+/**
+ * Resume uma intimação/publicação do Diário (processos de advocacia) em linguagem simples.
+ * Retorna { summary, severity, deadline } ou null sem IA. Nunca afirma prazo final.
+ */
+export async function summarizeLegalEvent(company, { title, text, court, date }) {
+  if (!aiAllowed(company)) return null;
+  const client = clientFor(company);
+  if (!client) return null;
+  const response = await createMessage(company, client, {
+    ...requestOptions(company),
+    max_tokens: 1024,
+    system: 'Você ajuda advogados brasileiros a entender publicações do Diário de Justiça. Responda só com JSON válido, sem texto fora dele.',
+    messages: [{
+      role: 'user',
+      content: `Publicação (${title}, ${court}, disponibilizada em ${date}):
+"""
+${String(text || '').slice(0, 12000)}
+"""
+
+Devolva JSON com:
+- "resumo": 1 ou 2 frases em português simples dizendo o que aconteceu e o que se pede ao advogado.
+- "severidade": "alta" (sentença, decisão, intimação para se manifestar ou cumprir algo, audiência, penhora/bloqueio, citação), "media" ou "baixa" (mero expediente, juntada, remessa).
+- "prazo": o prazo mencionado no texto como aparece (ex.: "15 dias úteis"), ou null se não houver. Não calcule a data final.`,
+    }],
+  });
+  const raw = textOf(response).replace(/^```(?:json)?\s*|\s*```$/g, '');
+  const data = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
+  const severity = ['alta', 'media', 'baixa'].includes(data.severidade) ? data.severidade : null;
+  return { summary: String(data.resumo || '').slice(0, 600) || null, severity, deadline: data.prazo ? String(data.prazo).slice(0, 80) : null };
+}

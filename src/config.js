@@ -41,6 +41,9 @@ export const config = {
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   aiModel: process.env.AI_MODEL || 'claude-opus-5-5',
   googlePlacesKey: process.env.GOOGLE_PLACES_API_KEY || '',
+  // DataJud (CNJ): chave pública divulgada na wiki do CNJ (datajud-wiki.cnj.jus.br/api-publica/acesso).
+  // O CNJ pode trocar; quando isso acontecer, basta definir DATAJUD_API_KEY com a nova.
+  datajudApiKey: process.env.DATAJUD_API_KEY || 'cDZHYzlZa0JadVREZDJCendQbXY6SkJlTzNjLV9TRENyQk1RdnFKZGRQdw==',
   // App OAuth do Google Cloud (um só para a plataforma) para sincronizar o Google Agenda.
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',

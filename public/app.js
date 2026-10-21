@@ -102,6 +102,7 @@ const ICONS = {
   followup: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5M12 7v5l3 3"/>',
   tarefas: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
   cobranca: '<path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+  processos: '<path d="M12 3v18M5 21h14M6 7h12M6 7l-3 7a3 3 0 0 0 6 0zM18 7l-3 7a3 3 0 0 0 6 0z"/>',
   prospeccao: '<path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>',
   clientes: '<rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2M2 13h20"/>',
   produtos: '<path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7zM3.3 7L12 12l8.7-5M12 22V12"/>',
@@ -198,6 +199,7 @@ const PAGES = [
   ['tarefas', 'Tarefas da equipe', renderTasks],
   ['crm', 'CRM / Funil', renderCrm],
   ['clientes', 'Clientes', renderClients],
+  ['processos', 'Processos', renderProcesses],
   ['agenda', 'Agenda', renderAgenda],
   ['followup', 'Follow-up', renderFollowup],
   ['cobranca', 'Cobrança', renderBilling],
@@ -209,12 +211,14 @@ const PAGES = [
 // O que cada perfil vê no menu (o servidor também bloqueia o acesso).
 const ROLE_PAGES = {
   owner: null,
-  agent: ['dashboard', 'inbox', 'tarefas', 'crm', 'clientes', 'agenda', 'followup', 'prospeccao', 'produtos'],
+  agent: ['dashboard', 'inbox', 'tarefas', 'crm', 'clientes', 'processos', 'agenda', 'followup', 'prospeccao', 'produtos'],
   professional: ['dashboard', 'inbox', 'tarefas', 'crm', 'clientes', 'agenda'],
 };
 const allowedPages = () => {
   const list = ROLE_PAGES[state.me?.user.role];
-  return list ? PAGES.filter((p) => list.includes(p[0])) : PAGES;
+  // Processos só aparece com o módulo ligado (Advocacia, ou ligado nas Configurações).
+  const pages = PAGES.filter((p) => p[0] !== 'processos' || state.meta?.processes_enabled);
+  return list ? pages.filter((p) => list.includes(p[0])) : pages;
 };
 const isOwner = () => state.me?.user.role === 'owner';
 
@@ -227,7 +231,7 @@ function renderLayout() {
     <div class="layout">
       <aside class="sidebar" id="sidebar">
         <div class="brand"><div class="brand-logo">${icon('agenda')}</div>Conversa CRM</div>
-        <nav class="nav">${allowedPages().map(([id, label]) => `<a href="#/${id}" data-page="${id}">${icon(id)}<span>${label}</span>${id === 'inbox' ? '<span class="badge count hidden" id="unread-badge"></span>' : id === 'tarefas' ? '<span class="badge count hidden" id="tasks-badge"></span>' : ''}</a>`).join('')}</nav>
+        <nav class="nav">${allowedPages().map(([id, label]) => `<a href="#/${id}" data-page="${id}">${icon(id)}<span>${label}</span>${id === 'inbox' ? '<span class="badge count hidden" id="unread-badge"></span>' : id === 'tarefas' ? '<span class="badge count hidden" id="tasks-badge"></span>' : id === 'processos' ? '<span class="badge count hidden" id="legal-badge"></span>' : ''}</a>`).join('')}</nav>
         <div class="sidebar-foot">
           <div><strong style="color:#fff">${esc(state.me.company.name)}</strong></div>
           ${isOwner() && state.meta?.onboarding && !state.meta.onboarding.complete ? `<a class="onboard-pill" href="#/comecar" id="onboard-pill">Primeiros passos · ${state.meta.onboarding.done_count} de ${state.meta.onboarding.total}<div class="onboard-bar"><span style="width:${state.meta.onboarding.percent}%"></span></div></a>` : ''}
@@ -295,6 +299,11 @@ async function refreshUnread() {
     const open = (await api('/api/tasks?status=aberta')).length;
     const tb = $('#tasks-badge');
     if (tb) { tb.textContent = open; tb.classList.toggle('hidden', !open); }
+    const lb = $('#legal-badge');
+    if (lb) {
+      const { unread } = await api('/api/legal/unread');
+      lb.textContent = unread; lb.classList.toggle('hidden', !unread);
+    }
   } catch { /* ignore */ }
 }
 
@@ -837,6 +846,7 @@ async function openContact(id, onChange) {
           <div class="muted">${fmtDay(k.start_date)} a ${k.end_date ? fmtDay(k.end_date) : 'indeterminado'}</div><div style="margin-top:4px">${contractActions(k)}</div></div>`).join('') || '<p class="small muted">Nenhum.</p>'}` : ''}
         <div class="card-head" style="margin-top:12px"><h3>Documentos</h3><span class="spacer"></span><button class="sm" id="c-doc">Anexar</button></div>
         ${c.documents.map((d) => `<div class="small row" style="padding:4px 0"><span>📄 ${esc(d.name)}${d.category ? ` <span class="badge outline">${esc(d.category)}</span>` : ''}</span><span class="spacer"></span><button class="sm" data-open="${d.id}">${PREVIEWABLE[d.mime] ? 'Abrir' : 'Baixar'}</button></div>`).join('') || '<p class="small muted">Nenhum.</p>'}
+        ${state.meta.processes_enabled && state.me.user.role !== 'professional' ? '<div class="card-head" style="margin-top:12px"><h3>Processos</h3><span class="spacer"></span><a class="btn sm" href="#/processos?novo=1&cliente=' + c.id + '">+ Processo</a></div><div id="c-legal"><p class="small muted">Carregando…</p></div>' : ''}
         <h3 style="margin-top:12px">Tarefas</h3>
         ${c.tasks.map((t) => `<div class="small" style="padding:4px 0">${esc(t.title)} <span class="badge ${t.status === 'aberta' ? (Date.parse(t.due_at) < Date.now() ? 'red' : 'amber') : ''}">${t.status}</span></div>`).join('') || '<p class="small muted">Nenhuma.</p>'}
         <h3 style="margin-top:12px">Follow-ups</h3>
@@ -848,6 +858,12 @@ async function openContact(id, onChange) {
       <ul class="feed">${c.activities.map((a) => `<li><span class="small muted">${fmt(a.created_at)}</span> — ${esc(a.description)}</li>`).join('')}</ul>
     </div>`, { drawer: true });
   const refresh = () => { box.close(); onChange?.(); openContact(id, onChange); };
+  if ($('#c-legal', box)) {
+    api(`/api/legal/cases?contact_id=${id}`).then((list) => {
+      $('#c-legal', box).innerHTML = list.map((k) => `<div class="small row" style="padding:4px 0"><a href="#/processos/${k.id}">⚖️ ${esc(k.label || k.cnj_masked)}</a><span class="muted">· ${esc(k.court)}</span>${k.unread ? ` <span class="badge red">${k.unread}</span>` : ''}</div>`).join('') || '<p class="small muted">Nenhum.</p>';
+      $$('#c-legal a', box).forEach((a) => a.addEventListener('click', () => box.close()));
+    }).catch(() => { $('#c-legal', box).innerHTML = ''; });
+  }
   $('#c-stage', box).onchange = async (e) => {
     try { await api(`/api/contacts/${id}/stage`, { method: 'POST', body: { stage: e.target.value } }); toast('Etapa atualizada'); refresh(); } catch (err) { fail(err); }
   };
@@ -2273,6 +2289,195 @@ async function chargeForm(defaults, onSaved) {
 }
 
 // ---------------------------------------------------------------------------
+// Processos (advocacia): intimações do DJEN e movimentações do DataJud
+// ---------------------------------------------------------------------------
+const SEVERITY = { alta: ['red', 'Alta'], media: ['amber', 'Média'], baixa: ['', 'Baixa'] };
+const sevBadge = (s) => `<span class="badge ${SEVERITY[s]?.[0] ?? ''}">${SEVERITY[s]?.[1] || s}</span>`;
+const SOURCE = { djen: 'Diário (DJEN)', datajud: 'Tribunal (DataJud)' };
+const OAB_UFS = ['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SE', 'SP', 'TO'];
+const checkedAgo = (iso) => (iso ? `há ${ago(iso).replace(/^agora$/, 'instantes')}` : 'ainda não');
+const PRAZO_AVISO = 'Confira sempre a contagem: a publicação no DJEN considera-se feita no 1º dia útil após a disponibilização, e o prazo começa no dia útil seguinte. O Conversa CRM não calcula o prazo final.';
+
+async function renderProcesses(el, [sub]) {
+  if (sub?.startsWith('intimacao-')) return renderLegalEvent(el, Number(sub.slice(10)));
+  if (sub && /^\d+$/.test(sub)) return renderLegalCase(el, Number(sub));
+  const view = sessionGet('legal-view') || 'novidades';
+  const o = await api('/api/legal/overview');
+  const unreadNews = o.news.filter((n) => !n.read_at).length;
+  const views = [['novidades', `Novidades${unreadNews ? ` (${unreadNews})` : ''}`], ['processos', `Processos (${o.cases.length})`], ['sem-processo', `Intimações sem processo${o.unlinked.length ? ` (${o.unlinked.length})` : ''}`], ['oabs', 'Advogados (OAB)']];
+  const limitText = o.limit.max == null ? `${o.limit.used} processos acompanhados` : `${o.limit.used} de ${o.limit.max} processos do plano`;
+  el.innerHTML = `
+    <div class="page-head"><div><h1>Processos</h1><p class="muted">Intimações do Diário de Justiça (DJEN) e movimentações dos tribunais (DataJud), com aviso no WhatsApp</p></div>
+      <span class="spacer"></span><button class="primary" id="new-case">+ Cadastrar processo</button></div>
+    ${!o.oabs.length ? `<div class="banner">Cadastre a <strong>OAB dos advogados</strong> para receber as intimações publicadas em nome deles, inclusive de processos que ainda não estão aqui. ${isOwner() ? '<a href="#" id="go-oab">Cadastrar OAB</a>' : 'Peça ao dono da conta para cadastrar.'}</div>` : ''}
+    <div class="card">
+      <div class="row wrap" style="margin-bottom:12px"><div class="segmented" id="legal-views" style="flex-wrap:wrap">${views.map(([k, v]) => `<button type="button" data-v="${k}" class="${k === view ? 'active' : ''}">${v}</button>`).join('')}</div>
+        <span class="spacer"></span><span class="small muted">${limitText}${o.limit.max != null && o.limit.used >= o.limit.max ? ' · <a href="#/assinar">mais processos</a>' : ''}</span></div>
+      <div id="legal-body"></div>
+    </div>`;
+  const body = $('#legal-body');
+  const caseName = (x) => esc(x.case_label || x.label || x.cnj_masked || '');
+  const draw = (v) => {
+    sessionSet('legal-view', v);
+    $$('#legal-views button').forEach((b) => b.classList.toggle('active', b.dataset.v === v));
+    if (v === 'novidades') {
+      body.innerHTML = o.news.length ? `
+        <div class="row" style="margin-bottom:8px"><span class="small muted">Só o que chegou depois do cadastro. O histórico antigo fica na página de cada processo.</span><span class="spacer"></span>${unreadNews ? '<button class="sm" id="read-all">Marcar tudo como lido</button>' : ''}</div>
+        <ul class="feed">${o.news.map((n) => `<li class="clickable" data-go="${n.case_id || `intimacao-${n.id}`}" style="cursor:pointer${n.read_at ? '' : ';font-weight:500'}">
+          <div class="row wrap" style="gap:6px">${sevBadge(n.severity)}<strong>${esc(n.title)}</strong><span class="muted">· ${n.case_id ? caseName(n) : `${esc(n.cnj_masked || '')} <span class="badge outline">sem processo cadastrado</span>`}</span><span class="spacer"></span><span class="small muted">${fmtDay(n.occurred_at.slice(0, 10))} · ${esc(n.court || '')}</span></div>
+          ${n.summary ? `<div class="small" style="margin-top:4px">${esc(n.summary)}</div>` : ''}
+          ${n.deadline_hint ? `<div class="small" style="margin-top:4px">⏰ Prazo mencionado: <strong>${esc(n.deadline_hint)}</strong> (confira a contagem)</div>` : ''}</li>`).join('')}</ul>`
+        : `<div class="empty">Nenhuma novidade ainda.<br>${o.cases.length || o.oabs.length ? 'O Conversa CRM verifica o Diário várias vezes ao dia e avisa aqui e no WhatsApp.' : 'Cadastre um processo ou a OAB de um advogado para começar.'}</div>`;
+      $('#read-all')?.addEventListener('click', async () => { await api('/api/legal/read', { method: 'POST', body: {} }).catch(fail); route(); });
+    } else if (v === 'processos') {
+      body.innerHTML = o.cases.length ? `<div class="table-wrap"><table>
+        <tr><th>Processo</th><th>Cliente</th><th>Tribunal</th><th>Última novidade</th><th>Verificado</th></tr>
+        ${o.cases.map((c) => `<tr class="clickable" data-go="${c.id}"><td><strong>${esc(c.label || c.cnj_masked)}</strong>${c.label ? `<div class="small muted">${esc(c.cnj_masked)}</div>` : ''}${c.unread ? ` <span class="badge red">${c.unread} nova${c.unread > 1 ? 's' : ''}</span>` : ''}</td>
+          <td>${esc(c.contact_name || '-')}</td><td>${esc(c.court)}${c.court_unit ? `<div class="small muted">${esc(c.court_unit)}</div>` : ''}</td>
+          <td class="small">${c.last_event_at ? fmtDay(c.last_event_at.slice(0, 10)) : '-'}</td>
+          <td class="small">${c.baseline_done ? checkedAgo(c.djen_checked_at) : '⏳ buscando o histórico…'}</td></tr>`).join('')}
+      </table></div>` : '<div class="empty">Nenhum processo cadastrado.<br>Clique em "+ Cadastrar processo" e informe o número CNJ.</div>';
+    } else if (v === 'sem-processo') {
+      body.innerHTML = o.unlinked.length ? `<p class="small muted" style="margin-top:0">Intimações publicadas na OAB dos seus advogados, de processos que ainda não estão cadastrados aqui.</p>
+        <div class="table-wrap"><table><tr><th>Processo</th><th>Tribunal</th><th>Última publicação</th><th></th></tr>
+        ${o.unlinked.map((u) => `<tr><td><a href="#/processos/intimacao-${u.last_id}">${esc(u.cnj_masked)}</a><div class="small muted">${u.total} publicaç${u.total > 1 ? 'ões' : 'ão'}</div></td><td>${esc(u.court || '')}${u.court_unit ? `<div class="small muted">${esc(u.court_unit)}</div>` : ''}</td>
+          <td class="small">${fmtDay(u.last_at)}</td><td><button class="sm" data-add="${u.cnj}">Cadastrar processo</button></td></tr>`).join('')}</table></div>`
+        : '<div class="empty">Nenhuma intimação de processo fora da lista.</div>';
+      $$('[data-add]', body).forEach((b) => { b.onclick = () => legalCaseForm({ cnj: b.dataset.add }, o); });
+    } else {
+      body.innerHTML = `<p class="small muted" style="margin-top:0">O Conversa CRM consulta o Diário de Justiça Eletrônico Nacional (DJEN) pela OAB de cada advogado várias vezes ao dia. O aviso vai para o WhatsApp informado aqui (ou para o celular da equipe, nas Configurações).</p>
+        ${o.oabs.length ? `<div class="table-wrap"><table><tr><th>Advogado</th><th>OAB</th><th>WhatsApp para avisos</th><th>Verificado</th></tr>
+        ${o.oabs.map((x) => `<tr class="${isOwner() ? 'clickable' : ''}" data-oab="${x.id}"><td><strong>${esc(x.name)}</strong>${x.active ? '' : ' <span class="badge">pausada</span>'}</td><td>${esc(x.oab_number)}/${esc(x.oab_uf)}</td><td>${x.phone ? phoneFmt(x.phone) : '<span class="muted">celular da equipe</span>'}</td>
+          <td class="small">${checkedAgo(x.checked_at)}${x.error ? `<div class="small" style="color:var(--danger)">${esc(x.error)}</div>` : ''}</td></tr>`).join('')}</table></div>` : '<div class="empty">Nenhuma OAB cadastrada.</div>'}
+        ${isOwner() ? '<button class="sm" id="new-oab" style="margin-top:12px">+ Cadastrar OAB</button>' : ''}`;
+      $('#new-oab')?.addEventListener('click', () => legalOabForm());
+      if (isOwner()) $$('[data-oab]', body).forEach((r) => { r.onclick = () => legalOabForm(o.oabs.find((x) => x.id === Number(r.dataset.oab))); });
+    }
+    $$('[data-go]', body).forEach((r) => { r.onclick = () => { location.hash = `#/processos/${r.dataset.go}`; }; });
+  };
+  $$('#legal-views button').forEach((b) => { b.onclick = () => draw(b.dataset.v); });
+  $('#new-case').onclick = () => legalCaseForm({}, o);
+  $('#go-oab')?.addEventListener('click', (e) => { e.preventDefault(); draw('oabs'); legalOabForm(); });
+  draw(view);
+  const pre = new URLSearchParams(location.hash.split('?')[1] || '');
+  if (pre.get('novo')) { history.replaceState(null, '', '#/processos'); legalCaseForm({ contact_id: Number(pre.get('cliente')) || null }, o); }
+}
+
+async function legalCaseForm(initial = {}, overview = null, existing = null) {
+  const [contacts, oabs] = await Promise.all([api('/api/contacts'), overview ? overview.oabs : api('/api/legal/oabs')]);
+  const v = existing || initial;
+  const box = openModal(`${modalHead(existing ? 'Editar processo' : 'Cadastrar processo')}
+    <form id="case-form">
+      ${existing ? `<p class="muted" style="margin-top:0">${esc(existing.cnj_masked)} · ${esc(existing.court)}</p>` : `<div class="field"><label>Número do processo (CNJ)</label><input name="cnj" value="${esc(v.cnj ? v.cnj.replace(/^(\d{7})(\d{2})(\d{4})(\d)(\d{2})(\d{4})$/, '$1-$2.$3.$4.$5.$6') : '')}" placeholder="0001234-56.2024.8.26.0100" inputmode="numeric" required autofocus>
+        <div class="hint" id="cnj-hint">Os 20 dígitos, com ou sem pontos. O tribunal é identificado pelo número.</div></div>`}
+      <div class="field"><label>Como chamar este processo (opcional)</label><input name="label" value="${esc(v.label || '')}" placeholder="Ex.: Ação de alimentos — Maria"></div>
+      <div class="field"><label>Cliente</label><select name="contact_id"><option value="">Sem cliente</option>${contacts.map((c) => `<option value="${c.id}" ${c.id === v.contact_id ? 'selected' : ''}>${esc(c.name || phoneFmt(c.phone))}</option>`).join('')}</select></div>
+      <div class="field"><label>Advogado responsável</label><select name="oab_id"><option value="">Nenhum (avisa o celular da equipe)</option>${oabs.map((x) => `<option value="${x.id}" ${x.id === v.oab_id ? 'selected' : ''}>${esc(x.name)} · OAB ${esc(x.oab_number)}/${esc(x.oab_uf)}</option>`).join('')}</select>
+        <div class="hint">Recebe no WhatsApp os avisos deste processo.</div></div>
+      ${existing ? '' : '<p class="small muted">Ao cadastrar, o Conversa CRM traz o histórico do processo sem enviar alerta. A partir daí, avisa cada novidade.</p>'}
+      <div class="modal-foot"><button type="button" data-close>Cancelar</button><button class="primary">${existing ? 'Salvar' : 'Cadastrar e acompanhar'}</button></div>
+    </form>`);
+  const cnjInput = $('[name=cnj]', box);
+  if (cnjInput) cnjInput.addEventListener('blur', async () => {
+    if (!cnjInput.value.trim()) return;
+    try { const r = await api('/api/legal/check-cnj', { method: 'POST', body: { cnj: cnjInput.value } }); cnjInput.value = r.masked; $('#cnj-hint', box).textContent = `✓ ${r.court}`; $('#cnj-hint', box).style.color = ''; } catch (err) { $('#cnj-hint', box).textContent = err.message; $('#cnj-hint', box).style.color = 'var(--danger)'; }
+  });
+  $('#case-form', box).onsubmit = async (e) => {
+    e.preventDefault();
+    const data = formData(e.target);
+    try {
+      const c = existing ? await api(`/api/legal/cases/${existing.id}`, { method: 'PUT', body: data }) : await api('/api/legal/cases', { method: 'POST', body: data });
+      box.close();
+      toast(existing ? 'Processo atualizado' : 'Processo cadastrado. Buscando o histórico…');
+      if (location.hash === `#/processos/${c.id}`) route(); else location.hash = `#/processos/${c.id}`;
+    } catch (err) { fail(err); }
+  };
+}
+
+function legalOabForm(existing = null) {
+  const box = openModal(`${modalHead(existing ? 'Editar OAB' : 'Cadastrar OAB')}
+    <form id="oab-form">
+      <div class="field"><label>Nome do advogado</label><input name="name" value="${esc(existing?.name || '')}" required></div>
+      <div class="fields"><div class="field"><label>Número da OAB</label><input name="oab_number" value="${esc(existing?.oab_number || '')}" inputmode="numeric" placeholder="123456" required></div>
+        <div class="field"><label>UF</label><select name="oab_uf" required><option value="">Escolha</option>${OAB_UFS.map((u) => `<option ${existing?.oab_uf === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div></div>
+      <div class="field"><label>WhatsApp para os avisos (opcional)</label><input name="phone" value="${esc(existing?.phone ? phoneFmt(existing.phone) : '')}" placeholder="(11) 99999-9999"><div class="hint">Vazio: os avisos vão para o celular da equipe (Configurações → Empresa).</div></div>
+      ${existing ? `<label class="check field"><input type="checkbox" name="active" ${existing.active ? 'checked' : ''}> Acompanhando esta OAB</label>` : '<p class="small muted">Ao cadastrar, o Conversa CRM traz as intimações do último mês sem enviar alerta.</p>'}
+      <div class="modal-foot">${existing ? '<button type="button" class="danger" id="oab-del">Remover</button><span class="spacer"></span>' : ''}<button type="button" data-close>Cancelar</button><button class="primary">Salvar</button></div>
+    </form>`);
+  $('#oab-form', box).onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api(existing ? `/api/legal/oabs/${existing.id}` : '/api/legal/oabs', { method: existing ? 'PUT' : 'POST', body: formData(e.target) });
+      box.close(); sessionSet('legal-view', 'oabs'); toast('OAB salva'); route();
+    } catch (err) { fail(err); }
+  };
+  $('#oab-del', box)?.addEventListener('click', async () => {
+    if (!window.confirm(`Remover a OAB de ${existing.name}? As intimações já recebidas continuam no sistema.`)) return;
+    try { await api(`/api/legal/oabs/${existing.id}`, { method: 'DELETE' }); box.close(); toast('OAB removida'); route(); } catch (err) { fail(err); }
+  });
+}
+
+function legalEventHtml(e) {
+  const pub = e.kind === 'publication';
+  return `<li${e.baseline ? '' : e.read_at ? '' : ' style="font-weight:500"'}>
+    <div class="row wrap" style="gap:6px"><span class="small muted" style="min-width:76px">${fmtDay(e.occurred_at.slice(0, 10))}</span>${pub || e.severity === 'alta' ? sevBadge(e.severity) : ''}<strong>${esc(e.title)}</strong>
+      <span class="spacer"></span><span class="badge outline">${SOURCE[e.provider] || esc(e.provider)}</span>${e.baseline ? '' : '<span class="badge green">novo</span>'}</div>
+    ${pub && e.court_unit ? `<div class="small muted" style="margin-top:2px">${esc(e.court_unit)}</div>` : ''}
+    ${pub && e.summary ? `<div class="small" style="margin-top:4px">${esc(e.summary)}</div>` : ''}
+    ${e.deadline_hint ? `<div class="small" style="margin-top:4px">⏰ Prazo mencionado: <strong>${esc(e.deadline_hint)}</strong>. ${PRAZO_AVISO}</div>` : ''}
+    ${pub && e.body ? `<details style="margin-top:6px"><summary class="small">Ver texto completo da publicação</summary><div class="small" style="white-space:pre-wrap;margin-top:6px">${esc(e.body)}</div>${e.link ? `<a class="small" href="${esc(e.link)}" target="_blank" rel="noopener">Abrir no site do tribunal</a>` : ''}</details>` : ''}
+  </li>`;
+}
+
+async function renderLegalCase(el, id) {
+  const c = await api(`/api/legal/cases/${id}`);
+  const pubs = c.events.filter((e) => e.kind === 'publication').length;
+  el.innerHTML = `
+    <div class="page-head"><div><a href="#/processos" class="small">← Processos</a><h1>${esc(c.label || c.cnj_masked)}</h1><p class="muted">${esc(c.cnj_masked)} · ${esc(c.court)}${c.court_unit ? ` · ${esc(c.court_unit)}` : ''}</p></div>
+      <span class="spacer"></span><button id="case-refresh">Verificar agora</button><button id="case-edit">Editar</button><button class="danger" id="case-del">Remover</button></div>
+    <div class="grid two">
+      <div class="card"><h3>Dados do processo</h3><table class="small">
+        <tr><td class="muted">Classe</td><td>${esc(c.class_name || '-')}</td></tr>
+        <tr><td class="muted">Assuntos</td><td>${esc(c.subjects || '-')}</td></tr>
+        <tr><td class="muted">Cliente</td><td>${c.contact_id ? `<a href="#" id="case-client">${esc(c.contact_name)}</a>` : '-'}</td></tr>
+        <tr><td class="muted">Advogado</td><td>${esc(c.oab_name || '-')}</td></tr>
+        <tr><td class="muted">Diário (DJEN)</td><td>verificado ${checkedAgo(c.djen_checked_at)}</td></tr>
+        <tr><td class="muted">Tribunal (DataJud)</td><td>verificado ${checkedAgo(c.datajud_checked_at)}${c.datajud_updated_at ? ` · dados do CNJ de ${fmt(c.datajud_updated_at, { dateStyle: 'short' })}` : ''}</td></tr>
+      </table>
+      ${c.error ? `<p class="small muted" style="margin-bottom:0">ℹ️ ${esc(c.error)}</p>` : ''}
+      <p class="small muted" style="margin-bottom:0">As intimações do Diário chegam no mesmo dia. As movimentações do DataJud costumam ter semanas de atraso, e processos em segredo de justiça não aparecem.</p></div>
+      <div class="card"><h3>Resumo</h3><p class="small" style="margin:0">${pubs} publicaç${pubs === 1 ? 'ão' : 'ões'} no Diário · ${c.events.length - pubs} movimentaç${c.events.length - pubs === 1 ? 'ão' : 'ões'} no tribunal${c.unread ? ` · <strong>${c.unread} nova${c.unread > 1 ? 's' : ''}</strong>` : ''}</p>
+        <p class="small muted">${PRAZO_AVISO}</p></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>Linha do tempo</h3>
+      ${c.baseline_done ? '' : '<p class="small muted">⏳ Buscando o histórico no Diário e no DataJud. Pode levar um minuto; esta página atualiza sozinha.</p>'}
+      <ul class="feed">${c.events.map(legalEventHtml).join('') || (c.baseline_done ? '<li class="muted">Nada encontrado ainda nas fontes públicas.</li>' : '')}</ul></div>`;
+  if (c.unread) api('/api/legal/read', { method: 'POST', body: { case_id: id } }).then(refreshUnread).catch(() => {});
+  if (!c.baseline_done) every(5000, async () => { const x = await api(`/api/legal/cases/${id}`).catch(() => null); if (x?.baseline_done) route(); });
+  $('#case-client')?.addEventListener('click', (e) => { e.preventDefault(); openContact(c.contact_id); });
+  $('#case-edit').onclick = () => legalCaseForm({}, null, c);
+  $('#case-refresh').onclick = async (e) => {
+    e.target.disabled = true;
+    try { await api(`/api/legal/cases/${id}/refresh`, { method: 'POST' }); toast('Verificando o Diário. As novidades aparecem aqui em instantes.'); setTimeout(route, 8000); } catch (err) { fail(err); e.target.disabled = false; }
+  };
+  $('#case-del').onclick = async () => {
+    if (!window.confirm('Parar de acompanhar e remover este processo? As intimações da OAB continuam em "Intimações sem processo".')) return;
+    try { await api(`/api/legal/cases/${id}`, { method: 'DELETE' }); toast('Processo removido'); location.hash = '#/processos'; } catch (err) { fail(err); }
+  };
+}
+
+async function renderLegalEvent(el, id) {
+  const e = await api(`/api/legal/events/${id}`);
+  if (e.case_id) { location.hash = `#/processos/${e.case_id}`; return; }
+  el.innerHTML = `
+    <div class="page-head"><div><a href="#/processos" class="small">← Processos</a><h1>${esc(e.title)}</h1><p class="muted">${esc(e.cnj_masked || '')} · ${esc(e.court || '')}${e.court_unit ? ` · ${esc(e.court_unit)}` : ''}</p></div>
+      <span class="spacer"></span>${e.cnj ? '<button class="primary" id="ev-add">Cadastrar este processo</button>' : ''}</div>
+    <div class="card"><ul class="feed">${legalEventHtml({ ...e, read_at: e.read_at || 'x' })}</ul></div>`;
+  if (!e.read_at && !e.baseline) api('/api/legal/read', { method: 'POST', body: { ids: [id] } }).then(refreshUnread).catch(() => {});
+  $('#ev-add')?.addEventListener('click', () => legalCaseForm({ cnj: e.cnj }));
+}
+
+// ---------------------------------------------------------------------------
 // Prospecção Google Maps
 // ---------------------------------------------------------------------------
 async function renderProspecting(el, [searchId]) {
@@ -2403,6 +2608,7 @@ async function renderSettings(el, [tab = 'empresa']) {
   const panels = {
     empresa: `
       <div class="field"><label>Nome da empresa</label><input name="name" value="${esc(data.name)}"></div>
+      <label class="check field"><input type="checkbox" name="modules.processes" ${meta.processes_enabled ? 'checked' : ''}> Módulo de Processos (escritórios de advocacia): acompanhar intimações e movimentações dos processos</label>
       <h2 style="margin:8px 0 4px">Sobre a sua empresa</h2>
       <p class="hint" style="margin-bottom:10px">É com isso que a atendente responde os seus clientes no WhatsApp.${aiLocked() ? ' Pode preencher já: a IA passa a usar quando você assinar.' : ''}</p>
       <div class="field"><label>O que você faz, endereço, formas de pagamento, diferenciais e políticas</label><textarea name="ai.business_description" rows="6" placeholder="Ex.: Barbearia no centro de Campinas (Rua das Flores, 123). Corte, barba e sobrancelha. Aceitamos Pix e cartão em até 3x. Atendemos com hora marcada; tolerância de 10 minutos.">${esc(s.ai.business_description)}</textarea></div>
@@ -2545,6 +2751,7 @@ async function renderSettings(el, [tab = 'empresa']) {
       state.me = await api('/api/auth/me');
       state.meta = await api('/api/meta');
       toast('Configurações salvas');
+      renderLayout();
       route();
     } catch (err) { fail(err); }
   };
