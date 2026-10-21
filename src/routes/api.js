@@ -80,6 +80,9 @@ const visible = (req, contactId) => proScope(req) === null || ownContacts(req).h
 const EXPIRED_ALLOWED = [/^\/api\/auth\//, /^\/api\/upgrade/, /^\/api\/referral/, /^\/api\/mei/, /^\/api\/t$/];
 export const EXPIRED_MESSAGE = 'Seu teste grátis terminou. Você continua vendo tudo, mas para editar, alterar ou cadastrar é preciso assinar um plano.';
 
+// Pix do Stripe recusado (não ativado na conta): por uma hora, nem tenta; vai direto para o Pix manual.
+let stripePixBlockedUntil = 0;
+
 export function registerApi(router) {
   const auth = (req) => {
     requireAuth(req);
@@ -835,6 +838,7 @@ export function registerApi(router) {
     return {
       plans, current_plan: company.plan, ai_locked: !aiAllowed(company), expired: accessExpired(company), txid, requested_plan: company.upgrade_plan || null,
       card_enabled: stripeEnabled(),
+      stripe_pix: stripePixBlockedUntil <= Date.now(),
       subscription: {
         method: company.billing_method, status: company.subscription_status, paid_until: company.paid_until,
         cancel_at_period_end: Boolean(company.cancel_at_period_end), has_card: Boolean(company.stripe_customer_id), ...subscriptionState(company),
@@ -846,8 +850,18 @@ export function registerApi(router) {
   router.post('/api/upgrade/card', auth, ownerOnly, async (req, res, { body }) => {
     try { return await createCheckout(getCompany(req.companyId), req.user, body.plan); } catch (e) { throw new HttpError(400, e.message); }
   });
+  // Pix pelo Stripe. Se a conta do Stripe ainda não tem o Pix ativado, a tela usa o Pix pela chave da
+  // plataforma (copia e cola + comprovante), em vez de mostrar o erro do Stripe ao cliente.
   router.post('/api/upgrade/pix', auth, ownerOnly, async (req, res, { body }) => {
-    try { return await createPixCheckout(getCompany(req.companyId), req.user, body.plan); } catch (e) { throw new HttpError(400, e.message); }
+    if (stripePixBlockedUntil > Date.now()) return { manual: true };
+    try { return await createPixCheckout(getCompany(req.companyId), req.user, body.plan); } catch (e) {
+      if (/pix/i.test(e.message) && /invalid|activated|not enabled|not available/i.test(e.message)) {
+        if (!stripePixBlockedUntil) console.error('[assinatura] O Stripe recusou o Pix (não ativado na conta). Usando o Pix pela chave da plataforma. Detalhe:', e.message);
+        stripePixBlockedUntil = Date.now() + 3600000;
+        return { manual: true };
+      }
+      throw new HttpError(400, e.message);
+    }
   });
   router.post('/api/upgrade/change', auth, ownerOnly, async (req, res, { body }) => {
     try { return await changeCardPlan(getCompany(req.companyId), body.plan); } catch (e) { throw new HttpError(400, e.message); }

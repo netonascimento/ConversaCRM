@@ -1660,3 +1660,32 @@ test('processos: Diário recusando (fora do Brasil) vira mensagem amigável; com
     legal.setLegalFetch((...a) => fetch(...a));
   }
 });
+
+test('Stripe sem Pix ativado: o cliente cai no Pix pela chave da plataforma, sem ver o erro do Stripe', async () => {
+  const { config } = await import('../src/config.js');
+  const { setStripeFetch } = await import('../src/services/stripe.js');
+  let calls = 0;
+  setStripeFetch(async () => {
+    calls++;
+    return { ok: false, status: 400, json: async () => ({ error: { message: 'The payment method type provided: pix is invalid. Please ensure the provided type is activated in your dashboard (https://dashboard.stripe.com/account/payments/settings)' } }) };
+  });
+  config.stripeSecretKey = 'sk_test_123';
+  config.platformPixKey = '123e4567-e89b-42d3-a456-426614174000';
+  try {
+    resetLoginAttempts();
+    const u = browser();
+    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Pix Manual', name: 'Pim', email: 'pim@pix.test', password: 'senhaforte1' } });
+    const r = await u('/api/upgrade/pix', { method: 'POST', body: { plan: 'basico' } });
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.data, { manual: true });
+    const up = (await u('/api/upgrade')).data;
+    assert.equal(up.stripe_pix, false);
+    assert.ok(up.plans.find((p) => p.id === 'basico').pix_code.includes('540549.90'), 'Pix copia e cola da plataforma pronto');
+    // Na próxima tentativa nem chama o Stripe.
+    assert.deepEqual((await u('/api/upgrade/pix', { method: 'POST', body: { plan: 'basico' } })).data, { manual: true });
+    assert.equal(calls, 1);
+  } finally {
+    config.stripeSecretKey = '';
+    config.platformPixKey = '';
+  }
+});

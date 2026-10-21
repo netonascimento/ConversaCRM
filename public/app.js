@@ -1338,8 +1338,15 @@ async function renderPaywall(el, [planId] = []) {
   }; });
   // Pix pelo Stripe: página com QR Code e copia e cola; a confirmação chega sozinha.
   $$('[data-pix]', el).forEach((b) => { b.onclick = async () => {
+    const plan = info.plans.find((p) => p.id === b.dataset.pix);
+    // Pix do Stripe indisponível: Pix pela chave da plataforma (copia e cola + comprovante).
+    if (info.stripe_pix === false) { checkout(info, plan); return; }
     b.disabled = true;
-    try { location.href = (await api('/api/upgrade/pix', { method: 'POST', body: { plan: b.dataset.pix } })).url; } catch (err) { fail(err); b.disabled = false; }
+    try {
+      const r = await api('/api/upgrade/pix', { method: 'POST', body: { plan: b.dataset.pix } });
+      if (r.manual) { info.stripe_pix = false; b.disabled = false; checkout(info, plan); return; }
+      location.href = r.url;
+    } catch (err) { fail(err); b.disabled = false; }
   }; });
   $('#portal')?.addEventListener('click', async (e) => {
     e.target.disabled = true;
