@@ -1335,7 +1335,11 @@ async function renderPaywall(el, [planId] = []) {
   $$('[data-buy]', el).forEach((b) => { b.onclick = () => checkout(info, info.plans.find((p) => p.id === b.dataset.buy)); });
   $$('[data-card]', el).forEach((b) => { b.onclick = async () => {
     b.disabled = true;
-    try { location.href = (await api('/api/upgrade/card', { method: 'POST', body: { plan: b.dataset.card } })).url; } catch (err) { fail(err); b.disabled = false; }
+    try {
+      const { url } = await api('/api/upgrade/card', { method: 'POST', body: { plan: b.dataset.card } });
+      await trackCheckout(info.plans.find((p) => p.id === b.dataset.card), 'cartao');
+      location.href = url;
+    } catch (err) { fail(err); b.disabled = false; }
   }; });
   $$('[data-change]', el).forEach((b) => { b.onclick = async () => {
     const target = info.plans.find((p) => p.id === b.dataset.change);
@@ -1355,6 +1359,7 @@ async function renderPaywall(el, [planId] = []) {
     try {
       const r = await api('/api/upgrade/pix', { method: 'POST', body: { plan: b.dataset.pix } });
       if (r.manual) { info.stripe_pix = false; b.disabled = false; checkout(info, plan); return; }
+      await trackCheckout(plan, 'pix');
       location.href = r.url;
     } catch (err) { fail(err); b.disabled = false; }
   }; });
@@ -1375,6 +1380,9 @@ async function renderPaywall(el, [planId] = []) {
       const m = await api('/api/meta').catch(() => null);
       if (m && (m.plan.id !== info.current_plan || m.subscription.paid_until !== before)) {
         state.meta = m;
+        // Medição de anúncios: assinatura paga e confirmada pelo Stripe.
+        const paid = info.plans.find((p) => p.id === m.plan.id);
+        window.cvTrack?.('purchase', { plan: m.plan.id, label: m.plan.label, value: (paid?.price_cents || 0) / 100, method: qs.get('cartao') ? 'cartao' : 'pix', id: `${state.me.company.id}-${m.subscription.paid_until || Date.now()}` });
         toast(`Plano ${m.plan.label} ativo${m.subscription.paid_until ? ` até ${m.subscription.paid_until.split('-').reverse().join('/')}` : ''}.`);
         renderLayout();
         return route();
@@ -1418,8 +1426,16 @@ function subscriptionCard(info) {
   </div>`;
 }
 
+// Medição de anúncios: início do pagamento (antes de ir para o Stripe, espera o envio sair).
+function trackCheckout(plan, method) {
+  if (!plan || !window.cvTrack) return Promise.resolve();
+  window.cvTrack('begin_checkout', { plan: plan.id, label: plan.label, value: plan.price_cents / 100, method });
+  return new Promise((r) => setTimeout(r, 300));
+}
+
 function checkout(info, plan) {
   const box = $('#checkout');
+  if (plan.pix_code) trackCheckout(plan, 'pix_manual');
   if (!plan.pix_code) {
     box.innerHTML = `<div class="card"><h3>Pagamento por Pix indisponível no momento</h3>
       <p class="muted">Fale com a gente${info.sales_whatsapp ? ` pelo <a href="https://wa.me/${esc(info.sales_whatsapp)}" target="_blank" rel="noopener">WhatsApp</a> ou` : ''} pelo e-mail <a href="mailto:${esc(info.email)}">${esc(info.email)}</a> para assinar.</p></div>`;

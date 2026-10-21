@@ -1,7 +1,8 @@
 /* Medição de anúncios: Google Analytics 4, Google Ads e Pixel da Meta.
    Só carrega no site publicado (não em localhost) e só depois que a pessoa aceita os cookies (LGPD).
    Os IDs vêm de /api/public/info (variáveis GA4_ID, GOOGLE_ADS_ID, GOOGLE_ADS_SIGNUP_LABEL e META_PIXEL_ID).
-   Eventos: window.cvTrack('signup', { plan }) no cadastro do teste; cliques em WhatsApp de vendas viram 'lead' sozinhos. */
+   Eventos: window.cvTrack('signup', { plan }) no cadastro do teste; 'begin_checkout' e 'purchase' na assinatura
+   (app.js, tela Assinatura); cliques em WhatsApp de vendas viram 'lead' sozinhos. */
 (function(){
   var KEY = 'cv_consent';
   var ids = null, ready = false, queue = [];
@@ -53,6 +54,17 @@
     } else if (name === 'lead'){
       if (gt) gt('event', 'generate_lead', { source: p.source || '' });
       if (fb) fb('track', 'Lead');
+    } else if (name === 'begin_checkout' || name === 'purchase'){
+      /* assinatura: início do pagamento (botão do plano) e pagamento confirmado pelo Stripe */
+      var item = { item_id: p.plan || '', item_name: p.label || p.plan || '', price: p.value || 0, quantity: 1 };
+      var money = { currency: 'BRL', value: p.value || 0 };
+      if (name === 'begin_checkout'){
+        if (gt) gt('event', 'begin_checkout', { currency: 'BRL', value: money.value, payment_type: p.method || '', items: [item] });
+        if (fb) fb('track', 'InitiateCheckout', { currency: 'BRL', value: money.value, content_ids: [item.item_id], content_name: item.item_name });
+      } else {
+        if (gt) gt('event', 'purchase', { transaction_id: p.id || '', currency: 'BRL', value: money.value, payment_type: p.method || '', items: [item] });
+        if (fb) fb('track', 'Subscribe', { currency: 'BRL', value: money.value, predicted_ltv: Math.round(money.value * 1200) / 100, content_name: item.item_name }, p.id ? { eventID: 'sub-' + p.id } : undefined);
+      }
     }
   }
 
