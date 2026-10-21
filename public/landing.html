@@ -6,6 +6,45 @@
 <title>Conversa CRM · Toda conversa vira cliente.</title>
 <meta name="description" content="Conversa CRM: do primeiro 'oi' ao Pix pago. WhatsApp com IA, agenda, CRM, follow-up e cobrança num lugar só.">
 <meta name="theme-color" content="#14532d">
+<link rel="canonical" href="https://conversacrm.online/">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="pt_BR">
+<meta property="og:site_name" content="Conversa CRM">
+<meta property="og:url" content="https://conversacrm.online/">
+<meta property="og:title" content="Conversa CRM · Do primeiro “oi” ao Pix pago">
+<meta property="og:description" content="WhatsApp com IA 24h, agenda, CRM, follow-up e cobrança num lugar só. Teste 7 dias grátis, sem cartão.">
+<meta property="og:image" content="https://conversacrm.online/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="628">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "name": "Conversa CRM",
+      "url": "https://conversacrm.online/",
+      "logo": "https://conversacrm.online/og.png",
+      "email": "contato@conversacrm.online"
+    },
+    {
+      "@type": "SoftwareApplication",
+      "name": "Conversa CRM",
+      "url": "https://conversacrm.online/",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "inLanguage": "pt-BR",
+      "description": "CRM para WhatsApp com atendimento por IA 24h, agenda por profissional, funil de vendas, follow-up automático e cobrança via Pix.",
+      "offers": [
+        { "@type": "Offer", "name": "Básico", "price": "49.90", "priceCurrency": "BRL" },
+        { "@type": "Offer", "name": "Essencial", "price": "99.90", "priceCurrency": "BRL" },
+        { "@type": "Offer", "name": "Profissional", "price": "249.90", "priceCurrency": "BRL" }
+      ]
+    }
+  ]
+}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -436,6 +475,11 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
   .seq{flex-wrap:wrap;row-gap:16px}
   .seq .s{flex:1 1 45%}
 }
+/* vídeo de 15 s logo depois do topo (sem som, em loop) */
+.film-sec{padding:72px 0 0}
+.film{margin:0;aspect-ratio:16/9;border-radius:var(--r-lg);overflow:hidden;border:1px solid var(--line);box-shadow:var(--shadow);background:var(--paper-2)}
+.film video{display:block;width:100%;height:100%;object-fit:cover}
+@media (max-width:640px){.film-sec{padding-top:40px}.film{border-radius:var(--r)}}
 /* faixa de indicação (?ref=CÓDIGO) */
 .ref-strip{background:var(--green-800);color:#fff;text-align:center;padding:10px 16px;font-size:14px}
 .ref-strip b{font-weight:600}
@@ -535,6 +579,16 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
         <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.5"/></svg><div><b>Cobra sem constranger</b><span>Pix e lembretes educados no tempo certo</span></div></li>
       </ul>
     </div>
+  </div>
+</section>
+
+<section class="film-sec" id="video" aria-label="Vídeo de 15 segundos">
+  <div class="wrap">
+    <figure class="film reveal">
+      <video data-film autoplay muted loop playsinline preload="metadata" poster="/videos/inicio.jpg" aria-label="Vídeo sem som: o Conversa CRM junta atendimento com IA no WhatsApp, agenda, funil, follow-up e cobrança por Pix, a partir de R$ 49,90 por mês.">
+        <source src="/videos/inicio.mp4" type="video/mp4">
+      </video>
+    </figure>
   </div>
 </section>
 
@@ -804,10 +858,14 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
 
 <footer>
   <div class="wrap foot">
-    <span>© <span id="year">2026</span> Conversa CRM · Toda conversa vira cliente. · <a href="mailto:contato@conversacrm.online">contato@conversacrm.online</a><br><small>Medimos as visitas desta página com ferramenta própria, sem cookies de terceiros e sem guardar o seu IP.</small></span>
+    <span>© <span id="year">2026</span> Conversa CRM · Toda conversa vira cliente. · <a href="mailto:contato@conversacrm.online">contato@conversacrm.online</a><br><small>Medimos as visitas com ferramenta própria (sem guardar o seu IP) e, se você aceitar os cookies, com Google Analytics, Google Ads e Pixel da Meta.</small></span>
     <nav aria-label="Rodapé">
       <a href="#recursos">Recursos</a>
       <a href="#planos">Planos</a>
+      <a href="/mei">MEI grátis</a>
+      <a href="/advogados">Advogados</a>
+      <a href="/crm">CRM e funil</a>
+      <a href="/blog">Blog</a>
       <a href="/app">Entrar</a>
     </nav>
   </div>
@@ -931,6 +989,23 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
     /* safety net: never leave content hidden (e.g. print, anchors, odd viewports) */
     window.addEventListener('beforeprint', function(){ els.forEach(function(el){ el.classList.remove('pending'); }); });
   }
+
+  /* vídeo de 15 s: só toca quando aparece na tela; com "reduzir movimento" fica parado, com controles;
+     se o arquivo não carregar (ex.: demonstração offline), a seção some */
+  document.querySelectorAll('video[data-film]').forEach(function(v){
+    var sec = v.closest('section');
+    var source = v.querySelector('source');
+    if (source) source.addEventListener('error', function(){ if (sec) sec.hidden = true; });
+    if (reduce){ v.removeAttribute('autoplay'); v.pause(); v.controls = true; return; }
+    if ('IntersectionObserver' in window){
+      new IntersectionObserver(function(entries){
+        entries.forEach(function(e){
+          if (e.isIntersecting){ var p = v.play(); if (p && p.catch) p.catch(function(){}); }
+          else v.pause();
+        });
+      }, {threshold:0.25}).observe(v);
+    }
+  });
 })();
 </script>
 <script>
@@ -975,7 +1050,7 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
 
   /* atenção por seção: tempo com a seção ocupando boa parte da tela */
   var secMs = {}, secSince = {};
-  var ids = ['inicio', 'recursos', 'para-quem', 'como-funciona', 'planos', 'duvidas', 'final'];
+  var ids = ['inicio', 'video', 'recursos', 'para-quem', 'como-funciona', 'planos', 'duvidas', 'final'];
   if ('IntersectionObserver' in window){
     var so = new IntersectionObserver(function(entries){
       entries.forEach(function(e){
@@ -1024,5 +1099,6 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
   setTimeout(function(){ flush(false); }, 1500);
 })();
 </script>
+<script src="/track.js" defer></script>
 </body>
 </html>

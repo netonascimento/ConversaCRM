@@ -46,6 +46,8 @@ export function createServer() {
         const page = pages[url.pathname.replace(/\/$/, '') || '/'];
         if (page && serveStatic(PUBLIC, req, res, page)) return;
         if (serveStatic(PUBLIC, req, res, url.pathname)) return;
+        // Endereços sem extensão (/blog, /blog/funil-de-vendas…) abrem o .html de mesmo nome.
+        if (!path.extname(url.pathname) && serveStatic(PUBLIC, req, res, url.pathname.replace(/\/$/, '') + '.html')) return;
       }
       return send(res, 404, { error: 'Rota não encontrada' });
     }

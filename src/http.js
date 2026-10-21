@@ -93,6 +93,8 @@ export function withVersions(root, text, kind) {
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.json': 'application/json',
+  '.xml': 'application/xml; charset=utf-8', '.txt': 'text/plain; charset=utf-8', '.jpg': 'image/jpeg',
+  '.mp4': 'video/mp4', '.webm': 'video/webm',
 };
 
 export function serveStatic(root, req, res, pathname) {
@@ -115,7 +117,22 @@ export function serveStatic(root, req, res, pathname) {
     res.end(withVersions(root, fs.readFileSync(file, 'utf8'), 'js'));
     return true;
   }
-  res.writeHead(200, { 'Content-Type': type, 'Cache-Control': cache });
+  // Vídeos das páginas: o navegador pede por partes (Range); o Safari não toca sem isso.
+  const size = fs.statSync(file).size;
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
+  if (range && (range[1] || range[2])) {
+    const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start >= size || start > end) {
+      res.writeHead(416, { 'Content-Range': `bytes */${size}` });
+      res.end();
+      return true;
+    }
+    res.writeHead(206, { 'Content-Type': type, 'Cache-Control': cache, 'Accept-Ranges': 'bytes', 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
+    fs.createReadStream(file, { start, end }).pipe(res);
+    return true;
+  }
+  res.writeHead(200, { 'Content-Type': type, 'Cache-Control': cache, 'Accept-Ranges': 'bytes', 'Content-Length': size });
   fs.createReadStream(file).pipe(res);
   return true;
 }

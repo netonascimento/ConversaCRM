@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import stream from 'node:stream';
 import { makeCompany } from './setup.js';
 
 const { all, get, run } = await import('../src/db.js');
@@ -167,4 +168,30 @@ test('valores em reais no formato brasileiro', async () => {
   assert.equal(cents('250.5'), 25050);
   assert.equal(cents('R$ 99,90'), 9990);
   assert.equal(cents(12.3), 1230);
+});
+
+test('arquivos estáticos: vídeo entregue por partes (Range), como o Safari exige', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { serveStatic } = await import('../src/http.js');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'static-'));
+  fs.writeFileSync(path.join(root, 'v.mp4'), Buffer.from('0123456789'));
+  const call = (range) => new Promise((resolve) => {
+    const chunks = [];
+    const res = new stream.Writable({ write(c, e, cb) { chunks.push(c); cb(); } });
+    res.writeHead = (status, headers) => { res.status = status; res.headers = headers; };
+    res.on('finish', () => resolve({ status: res.status, headers: res.headers, body: Buffer.concat(chunks).toString() }));
+    serveStatic(root, { url: '/v.mp4', headers: range ? { range } : {} }, res, '/v.mp4');
+  });
+  const whole = await call();
+  assert.equal(whole.status, 200);
+  assert.equal(whole.headers['Content-Type'], 'video/mp4');
+  assert.equal(whole.headers['Accept-Ranges'], 'bytes');
+  const part = await call('bytes=2-5');
+  assert.equal(part.status, 206);
+  assert.equal(part.headers['Content-Range'], 'bytes 2-5/10');
+  assert.equal(part.body, '2345');
+  assert.equal((await call('bytes=-3')).body, '789');
+  assert.equal((await call('bytes=20-')).status, 416);
 });

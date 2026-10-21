@@ -96,7 +96,7 @@ const FEATURES = {
   'POST /api/mei': 'Enviou certificado MEI',
   'POST /api/insights': 'Gerou recomendações',
 };
-const SECTION = { inicio: 'Topo (início)', recursos: 'Recursos', 'para-quem': 'Para quem é', 'como-funciona': 'Como funciona', planos: 'Planos', duvidas: 'Dúvidas (FAQ)', final: 'Chamada final' };
+const SECTION = { inicio: 'Topo (início)', video: 'Vídeo', recursos: 'Recursos', 'para-quem': 'Para quem é', 'como-funciona': 'Como funciona', planos: 'Planos', duvidas: 'Dúvidas (FAQ)', final: 'Chamada final' };
 const MENU = { dashboard: 'Dashboard', inbox: 'Atendimento', tarefas: 'Tarefas', crm: 'CRM / Funil', clientes: 'Clientes', processos: 'Processos', agenda: 'Agenda', followup: 'Follow-up', cobranca: 'Cobrança', prospeccao: 'Prospecção', produtos: 'Produtos', config: 'Configurações', assinar: 'Assinatura', promocoes: 'Descontos e promoções', comecar: 'Primeiros passos' };
 
 const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
@@ -122,18 +122,19 @@ export function intelligence(days = 30) {
     trial: fin.plans.reduce((n, p) => n + (p.trial || 0), 0),
   };
 
-  // ---- Página inicial
-  const views = ev('pageview').filter((e) => (e.path || '/') === '/');
+  // ---- Página inicial (as páginas por público, como /mei, ficam no bloco audience_pages)
+  const home = (kind) => ev(kind).filter((e) => (e.path || '/') === '/');
+  const views = home('pageview');
   const visitors = new Set(views.map((e) => e.visitor_id)).size;
   const sessions = new Set(views.map((e) => e.session_id)).size;
   const timeBySession = new Map();
-  for (const e of ev('time')) timeBySession.set(e.session_id, Math.max(timeBySession.get(e.session_id) || 0, e.value || 0));
+  for (const e of home('time')) timeBySession.set(e.session_id, Math.max(timeBySession.get(e.session_id) || 0, e.value || 0));
   const reading = [...timeBySession.values()].filter((v) => v > 0);
   const scrollBySession = new Map();
-  for (const e of ev('scroll')) scrollBySession.set(e.session_id, Math.max(scrollBySession.get(e.session_id) || 0, e.value || 0));
+  for (const e of home('scroll')) scrollBySession.set(e.session_id, Math.max(scrollBySession.get(e.session_id) || 0, e.value || 0));
   const scrolls = [...scrollBySession.values()];
   const sectionStats = new Map();
-  for (const e of ev('section')) {
+  for (const e of home('section')) {
     const s = sectionStats.get(e.name) || { sessions: new Set(), ms: 0 };
     if ((e.value || 0) >= 1500) s.sessions.add(e.session_id);
     s.ms += e.value || 0;
@@ -154,7 +155,7 @@ export function intelligence(days = 30) {
     avg_seconds: reading.length ? Math.round(reading.reduce((a, b) => a + b, 0) / reading.length / 1000) : 0,
     median_seconds: Math.round(median(reading) / 1000),
     scroll: { half: pct(scrolls.filter((v) => v >= 50).length, scrolls.length), full: pct(scrolls.filter((v) => v >= 90).length, scrolls.length) },
-    sections, faq: countBy(ev('faq')).slice(0, 10), cta: countBy(ev('cta')).slice(0, 10), plans: countBy(ev('plan')).slice(0, 10),
+    sections, faq: countBy(home('faq')).slice(0, 10), cta: countBy(home('cta')).slice(0, 10), plans: countBy(home('plan')).slice(0, 10),
     sources, devices,
   };
 
@@ -168,7 +169,7 @@ export function intelligence(days = 30) {
   ).length;
   const paid = main.all(`SELECT DISTINCT company_id FROM subscription_payments WHERE status = 'pago' AND company_id IN ${inList}`).length;
   const sawPlans = sectionStats.get('planos')?.sessions.size || 0;
-  const signupClicks = new Set(ev('cta').filter((e) => /cadastro|grátis|gratis|assinar|começar|comecar/i.test(e.name || '')).map((e) => e.session_id)).size;
+  const signupClicks = new Set(home('cta').filter((e) => /cadastro|grátis|gratis|assinar|começar|comecar/i.test(e.name || '')).map((e) => e.session_id)).size;
   const funnel = [
     { step: 'Visitaram a página', count: sessions },
     { step: 'Chegaram aos planos', count: sawPlans },
@@ -178,6 +179,23 @@ export function intelligence(days = 30) {
     { step: 'Pagaram', count: paid },
   ].map((s, i, a) => ({ ...s, from_previous: i ? pct(s.count, a[i - 1].count) : 100 }));
   const signupSources = countBy(signups.map((c) => ({ name: c.referred_by ? 'indicação' : c.signup_source || 'direto' })));
+
+  // ---- Páginas por público (/mei, /advogados, /crm): visitas, cliques para começar e cadastros de quem passou por elas
+  const byPath = new Map();
+  for (const e of ev('pageview')) {
+    if (!e.path || e.path === '/') continue;
+    const pg = byPath.get(e.path) || { visitors: new Set(), sessions: new Set() };
+    pg.visitors.add(e.visitor_id); pg.sessions.add(e.session_id);
+    byPath.set(e.path, pg);
+  }
+  const ctas = ev('cta').filter((e) => /grátis|gratis|criar conta|começar|comecar/i.test(e.name || ''));
+  const audience_pages = [...byPath.entries()].map(([path, pg]) => ({
+    path,
+    visitors: pg.visitors.size,
+    sessions: pg.sessions.size,
+    signup_clicks: new Set(ctas.filter((e) => pg.sessions.has(e.session_id) && e.path === path).map((e) => e.session_id)).size,
+    signups: signups.filter((c) => c.signup_visitor && pg.visitors.has(c.signup_visitor)).length,
+  })).sort((a, b) => b.sessions - a.sessions);
 
   // ---- Uso do sistema
   const pages = ev('app_page');
@@ -239,5 +257,5 @@ export function intelligence(days = 30) {
   if (referral.sharers === 0 && paying > 0) tips.push('Ninguém compartilhou o código de indicação ainda: mostre o "Indique e ganhe" depois de cada resposta boa da IA ou de um agendamento.');
   if (menus[0]?.minutes >= 5) tips.push(`O menu onde passam mais tempo é ${menus[0].label} (${menus[0].minutes} min no período).`);
 
-  return { days, goal, funnel, signup_sources: signupSources, landing, menus, features, companies: companies.slice(0, 50), ending_trials: endingTrials, cooling: cooling.slice(0, 20), referral, tips };
+  return { days, goal, funnel, signup_sources: signupSources, landing, audience_pages, menus, features, companies: companies.slice(0, 50), ending_trials: endingTrials, cooling: cooling.slice(0, 20), referral, tips };
 }

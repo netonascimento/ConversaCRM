@@ -1,6 +1,6 @@
 # Conversa CRM Design System
 
-One design system covers the landing page, the app and the admin. The source of truth is `public/ds.css`. `public/app.css` builds on it and adds only app layout and patterns. `public/landing.html` inlines a copy of the tokens so it can render as a standalone file. If you change a token, change it in both places.
+One design system covers the landing page, the app and the admin. The source of truth is `public/ds.css`. `public/app.css` builds on it and adds only app layout and patterns. `public/landing.html` inlines a copy of the tokens so it can render as a standalone file. The audience pages (`/mei`, `/advogados`, `/crm`) share `public/lp.css`, a copy of the landing styles plus their own blocks, and `public/lp.js`. If you change a token, change it in all three places (`ds.css`, `landing.html`, `lp.css`).
 
 **Direction:** clean, editorial, calm. Deep brand green on warm off-white paper. A display serif for titles and big numbers, a precise grotesk for everything else. Borders do the work that heavy shadows usually do. One quiet accent (brass), used rarely.
 

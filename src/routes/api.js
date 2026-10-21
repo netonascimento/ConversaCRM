@@ -131,7 +131,7 @@ export function registerApi(router) {
     const r = ownerOfCode(params.code);
     return r && r.status === 'ativa' ? { valid: true, code: r.code, by: String(r.user_name).split(' ')[0] } : { valid: false };
   });
-  router.get('/api/public/info', () => ({ plans: publicPlans(), sales_whatsapp: config.salesWhatsapp, allow_signup: config.allowSignup }));
+  router.get('/api/public/info', () => ({ plans: publicPlans(), sales_whatsapp: config.salesWhatsapp, allow_signup: config.allowSignup, tracking: config.tracking }));
   router.get('/api/auth/me', auth, (req) => {
     const company = getCompany(req.companyId);
     return {

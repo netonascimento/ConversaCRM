@@ -298,6 +298,12 @@ async function renderIntelligence(el) {
         ${i.referral.channels.length ? `<p class="small muted" style="margin:0">Por canal: ${i.referral.channels.map((c) => `${esc(c.name)} ${num(c.count)}`).join(' · ')}</p>` : ''}
         <a class="small" href="#/indicacoes">Ver quem indicou quem →</a></div>
     </div>
+    <div class="card" style="margin-top:14px"><h3>Páginas por público</h3>
+      ${(i.audience_pages || []).length ? `<div class="table-wrap"><table><tr><th>Página</th><th>Visitantes</th><th>Clicaram para começar</th><th>Cadastros</th></tr>
+        ${i.audience_pages.map((p) => `<tr><td><a href="${esc(p.path)}" target="_blank" rel="noopener">${esc(p.path)}</a></td><td>${num(p.visitors)}</td><td>${num(p.signup_clicks)}${p.sessions ? ` <span class="muted">· ${Math.round((p.signup_clicks / p.sessions) * 100)}%</span>` : ''}</td><td>${num(p.signups)}</td></tr>`).join('')}</table></div>
+        <p class="hint">Cadastros = contas criadas por quem passou pela página (pode ter visto outras páginas também).</p>`
+        : '<p class="small muted">Sem visitas ainda em /mei, /advogados ou /crm.</p>'}
+    </div>
     <div class="grid halves" style="margin-top:14px">
       <div class="card"><h3>Tempo em cada menu do sistema</h3>
         ${i.menus.length ? `<div class="table-wrap"><table class="small"><tr><th>Menu</th><th class="right">Minutos</th><th class="right">Usuários</th><th class="right">Por visita</th></tr>

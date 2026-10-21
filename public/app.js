@@ -184,6 +184,9 @@ function mediaHtml(m) {
 // ---------------------------------------------------------------------------
 // Plano escolhido na página inicial (/app#/assinar/essencial): depois do cadastro ou login, vai direto para o Pix.
 const buyingPlanId = () => (location.hash.match(/^#\/assinar\/([a-z]+)/) || [])[1] || null;
+// Páginas por público (/advogados, /mei): /app#cadastro?segmento=advocacia já escolhe o segmento;
+// ?mei=1 leva ao envio do CCMEI logo depois do cadastro.
+const signupHint = () => new URLSearchParams(location.hash.startsWith('#cadastro?') ? location.hash.slice('#cadastro?'.length) : '');
 
 async function renderAuth(mode = 'login') {
   clearTimers();
@@ -197,10 +200,14 @@ async function renderAuth(mode = 'login') {
   const urlRef = new URLSearchParams(location.search).get('ref');
   if (urlRef) localSet('cc_ref', urlRef.toUpperCase());
   const refCode = localGet('cc_ref') || '';
+  const hint = signupHint();
+  const mei = hint.get('mei') === '1';
   const title = buying ? `Assinar o ${buying.label}` : mode === 'login' ? 'Entrar' : refCode ? '1 mês grátis' : 'Teste grátis de 7 dias';
   const intro = buying
     ? `${money(buying.price_cents)}/mês, com IA. ${mode === 'login' ? 'Entre na sua conta' : 'Crie a conta da sua empresa'} e pague por Pix na próxima tela.`
-    : mode === 'login' ? 'Toda conversa vira cliente.' : `Crie a conta da sua empresa e use o plano Básico completo, com IA, por ${refCode ? '30 dias (código de indicação)' : '7 dias'}. Sem cartão.`;
+    : mode === 'login' ? 'Toda conversa vira cliente.'
+    : mei ? 'Crie a conta da sua empresa e, na próxima tela, envie o certificado de MEI (CCMEI): o plano Básico fica grátis, sem prazo. Enquanto conferimos, você já usa tudo por 7 dias. Sem cartão.'
+    : `Crie a conta da sua empresa e use o plano Básico completo, com IA, por ${refCode ? '30 dias (código de indicação)' : '7 dias'}. Sem cartão.`;
   $('#app').innerHTML = `
     <div class="auth"><div>
       <div class="card">
@@ -210,7 +217,7 @@ async function renderAuth(mode = 'login') {
         <form id="auth-form" class="stack" style="margin-top:16px">
           ${mode === 'register' ? `
             <div><label for="r-company">Nome da empresa</label><input id="r-company" name="companyName" required></div>
-            <div><label for="r-segment">Tipo de negócio</label><select id="r-segment" name="segment">${(cfg.segments || []).map((sg) => `<option value="${sg.id}">${esc(sg.label)}</option>`).join('')}</select><div class="hint">Já deixa a IA configurada para o seu segmento. Dá para ajustar depois.</div></div>
+            <div><label for="r-segment">Tipo de negócio</label><select id="r-segment" name="segment">${(cfg.segments || []).map((sg) => `<option value="${sg.id}" ${sg.id === hint.get('segmento') ? 'selected' : ''}>${esc(sg.label)}</option>`).join('')}</select><div class="hint">Já deixa a IA configurada para o seu segmento. Dá para ajustar depois.</div></div>
             <div><label for="r-name">Seu nome</label><input id="r-name" name="name" required></div>
             <div><label for="r-ref">Código de indicação (opcional)</label><input id="r-ref" name="ref" value="${esc(refCode)}" placeholder="Ex.: MARIA-7K3Q" autocapitalize="characters"><div class="hint">Com código, o teste vai de 7 para 30 dias.</div></div>` : ''}
           <div><label for="r-email">E-mail</label><input id="r-email" name="email" type="email" required autocomplete="username"></div>
@@ -231,6 +238,9 @@ async function renderAuth(mode = 'login') {
       // Cadastro: liga a conta nova à visita da página inicial (origem e campanha) para o funil do admin.
       const body = mode === 'register' ? { ...formData(e.target), vid: localGet('cc_vid'), src: localGet('cc_src') } : formData(e.target);
       await api(`/api/auth/${mode}`, { method: 'POST', body });
+      // Conversão dos anúncios (Google Ads / Meta), só se a pessoa aceitou os cookies (public/track.js).
+      if (mode === 'register') window.cvTrack?.('signup', { plan: mei ? 'mei' : (body.segment || '') });
+      if (mode === 'register' && mei) location.hash = '#/promocoes';
       await boot();
     } catch (err) { fail(err); }
   };
@@ -402,7 +412,7 @@ async function boot() {
     state.me = await api('/api/auth/me');
   } catch {
     // O botão "Teste grátis" da página inicial chega em /app#cadastro; o de um plano pago, em /app#/assinar/<plano>.
-    return renderAuth(location.hash === '#cadastro' || buyingPlanId() ? 'register' : 'login');
+    return renderAuth(location.hash.startsWith('#cadastro') || buyingPlanId() ? 'register' : 'login');
   }
   state.meta = await api('/api/meta');
   renderLayout();

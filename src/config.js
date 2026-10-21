@@ -24,6 +24,13 @@ export const config = {
     ? path.join(ROOT, 'data', 'fechou.db') : path.join(ROOT, 'data', 'falaki.db')),
   allowSignup: process.env.ALLOW_SIGNUP !== 'false',
   salesWhatsapp: (process.env.SALES_WHATSAPP || '').replace(/\D/g, ''),
+  // Medição de anúncios (public/track.js): só carrega no site publicado e depois do aceite de cookies.
+  tracking: {
+    ga4: /^G-[A-Z0-9]+$/.test(process.env.GA4_ID ?? '') ? process.env.GA4_ID : (process.env.GA4_ID === undefined ? 'G-E8T37F4V33' : ''),
+    google_ads: /^AW-\d+$/.test(process.env.GOOGLE_ADS_ID || '') ? process.env.GOOGLE_ADS_ID : '',
+    google_ads_signup_label: /^[\w-]+$/.test(process.env.GOOGLE_ADS_SIGNUP_LABEL || '') ? process.env.GOOGLE_ADS_SIGNUP_LABEL : '',
+    meta_pixel: /^\d+$/.test(process.env.META_PIXEL_ID || '') ? process.env.META_PIXEL_ID : '',
+  },
   // Pix da plataforma para a assinatura (botão Comprar do teste grátis) e e-mail para o comprovante.
   platformPixKey: (process.env.PLATFORM_PIX_KEY || '').trim(),
   platformPixName: process.env.PLATFORM_PIX_NAME || 'Conversa CRM',

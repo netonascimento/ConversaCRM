@@ -16,7 +16,7 @@ Plataforma SaaS (multiempresa) de atendimento com IA no WhatsApp, agenda, CRM, f
 - `src/routes/api.js` API do sistema (com controle por perfil: dono, atendente, profissional), `routes/admin.js` painel, `routes/webhooks.js` WhatsApp e pagamentos.
 - `src/services/` regras de negócio: `ai.js` (agente Claude com ferramentas e respostas automáticas sem chave), `scheduling.js`, `professionals.js`, `google.js` (Google Agenda), `billing.js`, `followup.js`, `tasks.js`, `crm.js`, `messaging.js`, `plans.js`, `presets.js`.
 - `src/db.js` esquema e migrações. Banco principal (empresas, usuários, sessões) + dados das empresas; empresas especiais podem ter banco separado (`storage = 'dedicated'`). Use `all/get/run` para dados da empresa (roteados pelo contexto `withCompanyDb`) e `main.*` para empresas/usuários/sessões.
-- `public/` front-end sem build: `app.js` (sistema), `admin.js`, `landing.html`, `import.js` (leitura de CSV/VCF).
+- `public/` front-end sem build: `app.js` (sistema), `admin.js`, `landing.html`, páginas por público (`mei.html`, `advogados.html`, `crm.html`, com `lp.css` e `lp.js`), `import.js` (leitura de CSV/VCF).
 - Design: `public/ds.css` + `DESIGN.md` são a fonte única de cores, tipografia, espaçamento e componentes. Não invente estilos fora do design system.
 
 ## Convenções

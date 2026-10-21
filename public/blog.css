@@ -1,0 +1,28 @@
+/* Blog: páginas de artigo. Usa só tokens do design system (ds.css). */
+body { background: var(--paper); color: var(--ink); font-size: 16.5px; }
+.blog-wrap { max-width: 760px; margin: 0 auto; padding: 0 var(--s-4); }
+.blog-top { border-bottom: 1px solid var(--line); background: var(--surface); }
+.blog-top .blog-wrap { height: 64px; gap: var(--s-4); }
+.blog-top .brand { font-family: var(--font-display); font-size: var(--fs-24, 24px); color: var(--green-800); }
+.blog-top .brand:hover { text-decoration: none; }
+.post { padding: var(--s-12) 0 var(--s-8); line-height: 1.7; }
+.post h1 { font-size: clamp(34px, 6vw, 48px); margin: var(--s-3) 0 var(--s-6); }
+.post h2 { font-size: 22px; margin: var(--s-10) 0 var(--s-3); }
+.post h3 { font-size: 17px; margin: var(--s-6) 0 var(--s-2); }
+.post p { margin: 0 0 var(--s-4); color: var(--ink-2); }
+.post ul, .post ol { padding-left: var(--s-6); margin: 0 0 var(--s-4); color: var(--ink-2); }
+.post li { margin-bottom: var(--s-2); }
+.post a { text-decoration: underline; }
+.post .eyebrow a { text-decoration: none; }
+.post .table-wrap { overflow-x: auto; margin: var(--s-4) 0 var(--s-6); border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.post table { width: 100%; border-collapse: collapse; font-size: 15px; line-height: 1.5; }
+.post th, .post td { padding: var(--s-3); border-bottom: 1px solid var(--line-2); text-align: left; vertical-align: top; }
+.post th { background: var(--paper-2); font-weight: 600; }
+.post tr:last-child td { border-bottom: 0; }
+.post-list { list-style: none; padding: 0; margin: 0 0 var(--s-16); display: grid; gap: var(--s-4); }
+.post-list a { display: block; padding: var(--s-6); border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); color: var(--ink); }
+.post-list a:hover { text-decoration: none; border-color: var(--green-600); }
+.post-list h2 { font-family: var(--font-display); font-weight: 400; font-size: 26px; margin-bottom: var(--s-2); }
+.post-list p { color: var(--muted); margin: 0; }
+.blog-foot { border-top: 1px solid var(--line); padding: var(--s-8) 0; color: var(--muted); font-size: 14px; }
+@media (max-width: 600px) { .blog-top .blog-wrap > a:not(.brand):not(.btn) { display: none; } }
