@@ -293,8 +293,6 @@ function renderLayout() {
         <div id="page"></div>
       </main>
     </div>`;
-  // Voltar aos Primeiros passos pelo menu reabre o painel, mesmo se estava escondido.
-  $('#onboard-pill')?.addEventListener('click', () => { if (state.meta.onboarding?.dismissed) api('/api/onboarding/dismiss', { method: 'POST', body: { dismissed: false } }).then((o) => { state.meta.onboarding = o; route(); }).catch(() => {}); });
   $('#logout').onclick = async () => { await api('/api/auth/logout', { method: 'POST' }).catch(() => {}); renderAuth(); };
   $('#menu-btn').onclick = () => $('#sidebar').classList.toggle('open');
 }
@@ -445,7 +443,6 @@ function onboardingCard(o) {
           ${x.id === o.next ? `<p class="small muted" style="margin:4px 0 12px">${esc(x.text)}</p><a class="btn primary" href="#/comecar">${o.done_count ? 'Continuar configuração' : 'Começar a configuração'} →</a>` : ''}
         </div></div>`;
     }).join('')}
-    <div class="row" style="margin-top:10px"><span class="spacer"></span><button class="sm ghost" id="hide-onboarding">Esconder por enquanto</button></div>
   </div>`;
 }
 
@@ -503,12 +500,6 @@ async function renderDashboard(el) {
       <ul class="feed">${d.activities.map((a) => `<li><span class="muted small">${ago(a.created_at)}</span> · <strong>${esc(a.contact_name || '')}</strong> ${esc(a.description)}</li>`).join('') || '<li class="muted">Nada ainda.</li>'}</ul>
     </div>`;
   $('#days').onchange = (e) => { sessionStorage.setItem('dash-days', e.target.value); route(); };
-  $('#hide-onboarding')?.addEventListener('click', async () => {
-    await api('/api/onboarding/dismiss', { method: 'POST' }).catch(fail);
-    toast('Primeiros passos escondidos. Você pode voltar a eles pelo menu lateral.');
-    state.meta.onboarding = { ...state.meta.onboarding, dismissed: true };
-    renderLayout(); route();
-  });
   if ($('#insights')) $('#insights').onclick = async (e) => {
     e.target.disabled = true;
     $('#insights-box').innerHTML = 'Analisando seus números…';

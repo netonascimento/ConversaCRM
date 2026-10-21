@@ -906,9 +906,14 @@ test('primeiros passos: cada passo é marcado pelo que a empresa configurou de v
   o = (await u('/api/onboarding')).data;
   assert.deepEqual([o.done_count, o.percent, o.next, o.complete], [4, 80, 'whatsapp', false]);
 
-  // Esconder e voltar.
-  assert.equal((await u('/api/onboarding/dismiss', { method: 'POST' })).data.dismissed, true);
-  assert.equal((await u('/api/onboarding/dismiss', { method: 'POST', body: { dismissed: false } })).data.dismissed, false);
+  // Não dá para esconder os Primeiros passos: a rota não existe mais, a tela não tem o botão, e quem
+  // tinha escondido antes volta a ver até completar.
+  assert.equal((await u('/api/onboarding/dismiss', { method: 'POST' })).status, 404);
+  const appJs = await (await fetch(`${base}/app.js`)).text();
+  assert.ok(!appJs.includes('hide-onboarding') && !appJs.includes('Esconder por enquanto'));
+  const { markOnboarding } = await import('../src/services/onboarding.js');
+  markOnboarding((await u('/api/auth/me')).data.company.id, { dismissed: true });
+  assert.equal((await u('/api/onboarding')).data.dismissed, false);
 
   // Cliente cadastrado direto na tela Clientes.
   const c = (await u('/api/contacts', { method: 'POST', body: { name: 'Cliente Direto', phone: '11955550124', stage: 'ganho' } })).data;
@@ -1184,6 +1189,8 @@ test('mídias do WhatsApp: foto, áudio e documento aparecem na conversa; grande
     resetLoginAttempts();
     const u = browser();
     await u('/api/auth/register', { method: 'POST', body: { companyName: 'Foto Ltda', name: 'Fá', email: 'fa@foto.com', password: 'senhaforte1' } });
+    // O cadastro começa no teste do Básico, com IA: desliga a resposta automática para conferir só o que chegou.
+    await u('/api/settings', { method: 'PUT', body: { settings: { ai: { enabled: false } } } });
     await u('/api/whatsapp/connect', { method: 'POST' });
     const hook = new URL((await u('/api/meta')).data.webhooks.evolution);
     const post = (data) => fetch(base + hook.pathname + hook.search, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ event: 'messages.upsert', data }) });
@@ -1589,4 +1596,22 @@ test('fim do grátis antigo: contas no grátis ganham 30 dias do Básico, uma ve
   assert.deepEqual([sub.state, sub.courtesy_until], ['teste', addDays(todayIn('America/Sao_Paulo'), 30)]);
   mainDb.prepare("UPDATE companies SET plan = 'gratis', courtesy_until = NULL, courtesy_reason = NULL WHERE id = ?").run(id);
   assert.equal(migrateFreeAccounts(), 0, 'só roda uma vez');
+});
+
+test('telas sempre na versão nova: HTML sem cache e arquivos com versão no endereço', async () => {
+  for (const [page, script] of [['/app', 'app.js'], ['/admin', 'admin.js']]) {
+    const res = await fetch(base + page);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    const html = await res.text();
+    const m = html.match(new RegExp(`src="/${script.replace('.', '\\.')}\\?v=([0-9a-f]{10})"`));
+    assert.ok(m, `${page} aponta para /${script}?v=…`);
+    assert.match(html, /href="\/ds\.css\?v=[0-9a-f]{10}"/);
+    assert.match(html, /href="\/app\.css\?v=[0-9a-f]{10}"/);
+    const js = await fetch(`${base}/${script}?v=${m[1]}`);
+    assert.equal(js.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    if (script === 'app.js') assert.match(await js.text(), /from '\.\/import\.js\?v=[0-9a-f]{10}'/, 'o import interno também tem versão');
+    else await js.text();
+  }
+  // Sem versão no endereço (link antigo): não guarda.
+  assert.equal((await fetch(`${base}/app.js`)).headers.get('cache-control'), 'no-cache');
 });

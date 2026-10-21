@@ -48,7 +48,9 @@ export function onboarding(companyId) {
     steps, done_count: doneCount, total: steps.length,
     percent: Math.round((doneCount / steps.length) * 100),
     complete: doneCount === steps.length,
-    dismissed: Boolean(flags.dismissed),
+    // Não dá para esconder: os Primeiros passos ficam no Dashboard até a empresa completar todos
+    // (decisão do dono: ativar a conta é o que leva à assinatura). Contas que tinham escondido voltam a ver.
+    dismissed: false,
     next: steps.find((x) => !x.done)?.id || null,
   };
 }

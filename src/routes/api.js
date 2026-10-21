@@ -77,7 +77,7 @@ const visible = (req, contactId) => proScope(req) === null || ownContacts(req).h
 
 // Teste encerrado sem assinatura: a conta continua entrando e vendo tudo, mas não edita, altera
 // nem cadastra nada. Só passam a assinatura, as promoções (indicação e MEI), sair e a medição de uso.
-const EXPIRED_ALLOWED = [/^\/api\/auth\//, /^\/api\/upgrade/, /^\/api\/referral/, /^\/api\/mei/, /^\/api\/onboarding\/dismiss$/, /^\/api\/t$/];
+const EXPIRED_ALLOWED = [/^\/api\/auth\//, /^\/api\/upgrade/, /^\/api\/referral/, /^\/api\/mei/, /^\/api\/t$/];
 export const EXPIRED_MESSAGE = 'Seu teste grátis terminou. Você continua vendo tudo, mas para editar, alterar ou cadastrar é preciso assinar um plano.';
 
 export function registerApi(router) {
@@ -240,10 +240,6 @@ export function registerApi(router) {
   router.get('/api/whatsapp/numbers', auth, ownerOnly, (req) => numbersOverview(req.companyId));
   router.post('/api/whatsapp/numbers', auth, ownerOnly, (req, res, { body }) => { try { return addNumber(req.companyId, body.label); } catch (e) { throw new HttpError(400, e.message); } });
   router.delete('/api/whatsapp/numbers/:id', auth, ownerOnly, async (req, res, { params }) => ({ ok: await removeNumber(req.companyId, Number(params.id)) }));
-  router.post('/api/onboarding/dismiss', auth, ownerOnly, (req, res, { body }) => {
-    markOnboarding(req.companyId, { dismissed: body.dismissed !== false });
-    return onboarding(req.companyId);
-  });
 
   // ---- CRM -------------------------------------------------------------------
   router.get('/api/contacts', auth, (req, res, { query }) => {
