@@ -208,6 +208,9 @@ async function renderAuth(mode = 'login') {
     : mode === 'login' ? 'Toda conversa vira cliente.'
     : mei ? 'Crie a conta da sua empresa e, na próxima tela, envie o certificado de MEI (CCMEI): o plano Básico fica grátis, sem prazo. Enquanto conferimos, você já usa tudo por 7 dias. Sem cartão.'
     : `Crie a conta da sua empresa e use o plano Básico completo, com IA, por ${refCode ? '30 dias (código de indicação)' : '7 dias'}. Sem cartão.`;
+  // Abriu a tela de cadastro (teste A/B/C: entre "clicou para começar" e "concluiu o cadastro").
+  // Uma vez por sessão; sem login o envio periódico não roda, então vai na hora.
+  if (mode === 'register' && !sessionGet('cc_signup_view')) { sessionSet('cc_signup_view', '1'); trackEvent('signup_view', 'cadastro'); flushTrack(); }
   $('#app').innerHTML = `
     <div class="auth"><div>
       <div class="card">

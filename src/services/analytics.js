@@ -197,19 +197,31 @@ export function intelligence(days = 30) {
     signups: signups.filter((c) => c.signup_visitor && pg.visitors.has(c.signup_visitor)).length,
   })).sort((a, b) => b.sessions - a.sessions);
 
-  // ---- Teste A/B da chamada da página inicial: a visita guarda a versão vista (hero-a / hero-b)
+  // ---- Teste A/B/C da chamada da página inicial: a visita guarda a versão vista (hero-a / hero-b / hero-c).
+  // Cada degrau conta PESSOAS (visitantes), não visitas: quem volta outro dia não vira duas.
   const heroOf = new Map();
   for (const e of views) if (/^hero-[abc]$/.test(e.name || '') && !heroOf.has(e.visitor_id)) heroOf.set(e.visitor_id, e.name.slice(5).toUpperCase());
+  const visitorOfSession = new Map(views.map((e) => [e.session_id, e.visitor_id]));
+  const openedSignup = new Set(ev('signup_view').map((e) => e.visitor_id));
+  const activatedIds = new Set(main.all(
+    `SELECT DISTINCT company_id FROM analytics_events WHERE company_id IN ${inList} AND kind = 'feature'
+     AND name IN ('POST /api/contacts', 'POST /api/whatsapp/connect', 'POST /api/conversations/:id/messages', 'POST /api/appointments', 'POST /api/contacts/import')`,
+  ).map((r) => r.company_id));
   const hero_ab = ['A', 'B', 'C'].map((variant) => {
     const visitors = new Set([...heroOf].filter(([, v]) => v === variant).map(([id]) => id));
-    const sessions = new Set(views.filter((e) => visitors.has(e.visitor_id)).map((e) => e.session_id));
-    const companies = signups.filter((c) => c.signup_visitor && visitors.has(c.signup_visitor)).map((c) => c.id);
+    const peopleOf = (sessionIds) => new Set([...sessionIds].map((s) => visitorOfSession.get(s)).filter((v) => visitors.has(v))).size;
+    const concluded = signups.filter((c) => c.signup_visitor && visitors.has(c.signup_visitor));
+    const companies = concluded.map((c) => c.id);
     return {
       variant,
+      // Quem são (para conferir se é cliente de verdade ou conta de teste).
+      signup_companies: concluded.map((c) => ({ id: c.id, name: c.name, created_at: c.created_at, source: c.signup_source || 'direto' })),
       visitors: visitors.size,
-      saw_plans: [...(sectionStats.get('planos')?.sessions || [])].filter((s) => sessions.has(s)).length,
-      signup_clicks: new Set(home('cta').filter((e) => sessions.has(e.session_id) && /grátis|gratis|assinar|começar|comecar/i.test(e.name || '')).map((e) => e.session_id)).size,
+      saw_plans: peopleOf(sectionStats.get('planos')?.sessions || []),
+      signup_clicks: peopleOf(home('cta').filter((e) => /grátis|gratis|assinar|começar|comecar/i.test(e.name || '')).map((e) => e.session_id)),
+      opened_signup: [...visitors].filter((v) => openedSignup.has(v)).length,
       signups: companies.length,
+      activated: companies.filter((id) => activatedIds.has(id)).length,
       paid: companies.length ? main.all(`SELECT DISTINCT company_id FROM subscription_payments WHERE status = 'pago' AND company_id IN (${companies.join(',')})`).length : 0,
     };
   });

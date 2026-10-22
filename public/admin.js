@@ -300,12 +300,13 @@ async function renderIntelligence(el) {
     </div>
     <div class="card" style="margin-top:14px"><h3>Teste A/B/C da chamada da página inicial</h3>
       <p class="small muted" style="margin:4px 0 8px">A: "Do primeiro “oi” ao Pix pago." · B: "Seu WhatsApp atende, agenda e cobra sozinho." · C: "Recepcionista com IA para clínicas" (página voltada a clínicas, cadastro já como clínica). Conferir: <a href="/?v=a" target="_blank" rel="noopener">ver A</a> · <a href="/?v=b" target="_blank" rel="noopener">ver B</a> · <a href="/?v=c" target="_blank" rel="noopener">ver C</a></p>
-      <div class="table-wrap"><table><tr><th>Versão</th><th>Visitantes</th><th>Chegaram aos planos</th><th>Clicaram para começar</th><th>Cadastros</th><th>Pagaram</th></tr>
+      <div class="table-wrap"><table><tr><th>Versão</th><th>Visitantes</th><th>Chegaram aos planos</th><th>Clicaram para começar</th><th>Abriram o cadastro</th><th>Concluíram o cadastro</th><th>Usaram de verdade</th><th>Pagaram</th></tr>
         ${(i.hero_ab || []).map((h) => {
           const rate = (n) => (h.visitors ? ` <span class="muted">· ${Math.round((n / h.visitors) * 1000) / 10}%</span>` : '');
-          return `<tr><td><strong>${esc(h.variant)}</strong></td><td>${num(h.visitors)}</td><td>${num(h.saw_plans)}${rate(h.saw_plans)}</td><td>${num(h.signup_clicks)}${rate(h.signup_clicks)}</td><td>${num(h.signups)}${rate(h.signups)}</td><td>${num(h.paid)}</td></tr>`;
+          return `<tr><td><strong>${esc(h.variant)}</strong></td><td>${num(h.visitors)}</td><td>${num(h.saw_plans)}${rate(h.saw_plans)}</td><td>${num(h.signup_clicks)}${rate(h.signup_clicks)}</td><td>${num(h.opened_signup || 0)}${rate(h.opened_signup || 0)}</td><td>${num(h.signups)}${rate(h.signups)}</td><td>${num(h.activated || 0)}${rate(h.activated || 0)}</td><td>${num(h.paid)}</td></tr>`;
         }).join('')}</table></div>
-      <p class="hint">% sobre os visitantes de cada versão. Espere umas centenas de visitantes por versão antes de escolher a vencedora.</p>
+      ${(i.hero_ab || []).some((h) => (h.signup_companies || []).length) ? `<p class="small" style="margin:8px 0 0">Concluíram o cadastro: ${(i.hero_ab || []).filter((h) => (h.signup_companies || []).length).map((h) => `<strong>${esc(h.variant)}</strong> ${h.signup_companies.map((c) => `${esc(c.name)} <span class="muted">(#${num(c.id)}, ${esc(new Date(c.created_at).toLocaleDateString('pt-BR'))}, ${esc(c.source)})</span>`).join(', ')}`).join(' · ')}</p>` : ''}
+      <p class="hint">Cada coluna conta pessoas (quem volta outro dia não conta duas vezes); % sobre os visitantes de cada versão. "Abriram o cadastro" só existe a partir de 22/10. "Usaram de verdade" = cadastrou cliente, ligou o WhatsApp, respondeu ou agendou. Espere umas centenas de visitantes por versão antes de escolher a vencedora.</p>
     </div>
     <div class="card" style="margin-top:14px"><h3>Páginas por público</h3>
       ${(i.audience_pages || []).length ? `<div class="table-wrap"><table><tr><th>Página</th><th>Visitantes</th><th>Clicaram para começar</th><th>Cadastros</th></tr>

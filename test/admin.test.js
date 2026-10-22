@@ -1583,25 +1583,30 @@ test('medição: página inicial, cadastro e uso do sistema viram o relatório d
   assert.equal((await u('/api/admin/intelligence')).status, 401);
 });
 
-test('teste A/B/C da chamada: a versão vista na página inicial separa visitas, planos, cliques e cadastros', async () => {
+test('teste A/B/C da chamada: a versão vista na página inicial separa planos, cliques, cadastro aberto e concluído', async () => {
   resetLoginAttempts();
   const t = (body) => fetch(`${base}/api/t`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
   await t({ v: 'visitante-ab-a1', s: 'sessao-ab-a1', p: '/', e: [{ k: 'pageview', n: 'hero-a' }, { k: 'section', n: 'planos', val: 4000 }] });
   await t({ v: 'visitante-ab-a2', s: 'sessao-ab-a2', p: '/', e: [{ k: 'pageview', n: 'hero-a' }] });
   await t({ v: 'visitante-ab-b1', s: 'sessao-ab-b1', p: '/', e: [{ k: 'pageview', n: 'hero-b' }, { k: 'section', n: 'planos', val: 4000 }, { k: 'cta', n: 'Testar grátis (topo)' }] });
   // Volta de outro dia: continua contando para a versão que viu primeiro.
-  await t({ v: 'visitante-ab-b1', s: 'sessao-ab-b2', p: '/', e: [{ k: 'pageview', n: 'hero-b' }] });
+  await t({ v: 'visitante-ab-b1', s: 'sessao-ab-b2', p: '/', e: [{ k: 'pageview', n: 'hero-b' }, { k: 'section', n: 'planos', val: 3000 }] });
   await t({ v: 'visitante-ab-c1', s: 'sessao-ab-c1', p: '/', e: [{ k: 'pageview', n: 'hero-c' }, { k: 'cta', n: 'Testar grátis (final)' }] });
   // Conferência pelo ?v=c não entra na conta.
   await t({ v: 'visitante-ab-c2', s: 'sessao-ab-c2', p: '/', e: [{ k: 'pageview', n: 'preview-hero-c' }] });
+  // Abriu a tela de cadastro (vem de /app, mesmo visitante).
+  await t({ v: 'visitante-ab-b1', s: 'sessao-ab-b2', p: '/app', e: [{ k: 'signup_view', n: 'cadastro' }] });
+  await t({ v: 'visitante-ab-c1', s: 'sessao-ab-c1', p: '/app', e: [{ k: 'signup_view', n: 'cadastro' }] });
   const u = browser();
   await u('/api/auth/register', { method: 'POST', body: { companyName: 'Studio AB', name: 'Bia', email: 'bia@studioab.com', password: 'senhaforte1', vid: 'visitante-ab-b1', src: 'direto' } });
 
   const a = await adminSession();
   const ab = Object.fromEntries((await a('/api/admin/intelligence?days=30')).data.hero_ab.map((h) => [h.variant, h]));
   assert.deepEqual([ab.A.visitors, ab.A.saw_plans, ab.A.signup_clicks, ab.A.signups], [2, 1, 0, 0]);
-  assert.deepEqual([ab.B.visitors, ab.B.saw_plans, ab.B.signup_clicks, ab.B.signups, ab.B.paid], [1, 1, 1, 1, 0]);
-  assert.deepEqual([ab.C.visitors, ab.C.saw_plans, ab.C.signup_clicks, ab.C.signups], [1, 0, 1, 0]);
+  assert.deepEqual([ab.B.visitors, ab.B.saw_plans, ab.B.signup_clicks, ab.B.opened_signup, ab.B.signups, ab.B.activated, ab.B.paid], [1, 1, 1, 1, 1, 0, 0]);
+  assert.deepEqual(ab.B.signup_companies.map((c) => c.name), ['Studio AB']);
+  // C abriu o cadastro e não concluiu: os dois degraus ficam separados.
+  assert.deepEqual([ab.C.visitors, ab.C.saw_plans, ab.C.signup_clicks, ab.C.opened_signup, ab.C.signups], [1, 0, 1, 1, 0]);
 });
 
 test('fim do grátis antigo: contas no grátis ganham 30 dias do Básico, uma vez só', async () => {
