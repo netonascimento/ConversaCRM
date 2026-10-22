@@ -28,7 +28,9 @@ function lawFirm() {
 
 test('horários livres consideram serviço, horário próprio e agenda de cada profissional', () => {
   const { cid, trab, fam, ana, carlos, bia } = lawFirm();
-  const date = addDays(todayIn(TZ), 2);
+  // Dia útil daqui a 2+ dias: a Dra. Ana não atende no fim de semana (antes o teste quebrava às quintas e sextas).
+  let date = addDays(todayIn(TZ), 2);
+  while ([0, 6].includes(new Date(`${date}T12:00:00Z`).getUTCDay())) date = addDays(date, 1);
   const at10 = availableSlots(cid, date, trab).find((s) => s.time === '10:00');
   assert.deepEqual(at10.professionals.map((p) => p.name).sort(), ['Dra. Ana', 'Dra. Bia'], 'Carlos não atende trabalhista');
   const at15 = availableSlots(cid, date, trab).find((s) => s.time === '15:00');

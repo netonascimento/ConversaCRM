@@ -197,6 +197,23 @@ export function intelligence(days = 30) {
     signups: signups.filter((c) => c.signup_visitor && pg.visitors.has(c.signup_visitor)).length,
   })).sort((a, b) => b.sessions - a.sessions);
 
+  // ---- Teste A/B da chamada da página inicial: a visita guarda a versão vista (hero-a / hero-b)
+  const heroOf = new Map();
+  for (const e of views) if (/^hero-[ab]$/.test(e.name || '') && !heroOf.has(e.visitor_id)) heroOf.set(e.visitor_id, e.name.slice(5).toUpperCase());
+  const hero_ab = ['A', 'B'].map((variant) => {
+    const visitors = new Set([...heroOf].filter(([, v]) => v === variant).map(([id]) => id));
+    const sessions = new Set(views.filter((e) => visitors.has(e.visitor_id)).map((e) => e.session_id));
+    const companies = signups.filter((c) => c.signup_visitor && visitors.has(c.signup_visitor)).map((c) => c.id);
+    return {
+      variant,
+      visitors: visitors.size,
+      saw_plans: [...(sectionStats.get('planos')?.sessions || [])].filter((s) => sessions.has(s)).length,
+      signup_clicks: new Set(home('cta').filter((e) => sessions.has(e.session_id) && /grátis|gratis|assinar|começar|comecar/i.test(e.name || '')).map((e) => e.session_id)).size,
+      signups: companies.length,
+      paid: companies.length ? main.all(`SELECT DISTINCT company_id FROM subscription_payments WHERE status = 'pago' AND company_id IN (${companies.join(',')})`).length : 0,
+    };
+  });
+
   // ---- Uso do sistema
   const pages = ev('app_page');
   const menuMap = new Map();
@@ -257,5 +274,5 @@ export function intelligence(days = 30) {
   if (referral.sharers === 0 && paying > 0) tips.push('Ninguém compartilhou o código de indicação ainda: mostre o "Indique e ganhe" depois de cada resposta boa da IA ou de um agendamento.');
   if (menus[0]?.minutes >= 5) tips.push(`O menu onde passam mais tempo é ${menus[0].label} (${menus[0].minutes} min no período).`);
 
-  return { days, goal, funnel, signup_sources: signupSources, landing, audience_pages, menus, features, companies: companies.slice(0, 50), ending_trials: endingTrials, cooling: cooling.slice(0, 20), referral, tips };
+  return { days, goal, funnel, signup_sources: signupSources, landing, audience_pages, hero_ab, menus, features, companies: companies.slice(0, 50), ending_trials: endingTrials, cooling: cooling.slice(0, 20), referral, tips };
 }

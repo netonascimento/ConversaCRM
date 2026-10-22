@@ -3,6 +3,22 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+/* Teste A/B da chamada principal: cada visitante recebe A ou B (50/50) e mantém a mesma versão.
+   ?v=a ou ?v=b força uma versão sem guardar e sem entrar na contagem (para conferir). Sem JavaScript, fica a versão A. */
+(function(){
+  var v = 'a';
+  try {
+    var forced = new URLSearchParams(location.search).get('v');
+    if (forced === 'a' || forced === 'b') { v = forced; document.documentElement.setAttribute('data-hero-preview', ''); }
+    else {
+      v = localStorage.getItem('cc_ab_hero');
+      if (v !== 'a' && v !== 'b') { v = Math.random() < 0.5 ? 'a' : 'b'; localStorage.setItem('cc_ab_hero', v); }
+    }
+  } catch (e) { v = 'a'; }
+  document.documentElement.setAttribute('data-hero', v);
+})();
+</script>
 <title>CRM para WhatsApp com IA: agenda, funil e Pix | Conversa CRM</title>
 <meta name="description" content="CRM para WhatsApp com IA: atende 24h, agenda com o profissional certo, faz follow-up e cobra por Pix. Teste 7 dias grátis, sem cartão. Grátis para MEI.">
 <meta name="theme-color" content="#14532d">
@@ -164,6 +180,11 @@ h1,h2,h3,p{margin:0}
 .hero h1{font-size:clamp(46px,6.4vw,84px);margin:22px 0 24px;max-width:12ch}
 .hero .lede{font-size:19px}
 .hero-ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
+[data-hero="b"] .hero-a{display:none}
+:root:not([data-hero="b"]) .hero-b{display:none}
+.hero-offer{margin-top:18px;font-size:15.5px;color:var(--ink-2)}
+.hero-offer b{color:var(--ink);font-weight:600}
+.hero-offer a{color:var(--green-600);text-decoration:underline;text-underline-offset:3px}
 .hero-note{margin-top:22px;font-size:14px;color:var(--muted);display:flex;flex-wrap:wrap;gap:8px 20px}
 .hero-note span{display:inline-flex;align-items:center;gap:7px}
 .hero-note svg{width:15px;height:15px;color:var(--green-600)}
@@ -516,8 +537,9 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
   <div class="wrap hero-grid">
     <div>
       <span class="eyebrow">CRM de WhatsApp com IA</span>
-      <h1 id="hero-title" class="display">Do primeiro <em>“oi”</em> ao Pix pago.</h1>
-      <p class="lede">WhatsApp com IA, agenda, CRM, follow-up e cobrança num lugar só. A IA do Conversa CRM responde na hora, faz a triagem, agenda com o profissional certo e envia o Pix. O que precisa de gente vira tarefa para a sua equipe — o resto acontece sem você.</p>
+      <h1 id="hero-title" class="display"><span class="hero-a">Do primeiro <em>“oi”</em> ao Pix pago.</span><span class="hero-b">Seu WhatsApp atende, agenda e <em>cobra sozinho</em>.</span></h1>
+      <p class="lede"><span class="hero-a">WhatsApp com IA, agenda, CRM, follow-up e cobrança num lugar só. A IA do Conversa CRM responde na hora, faz a triagem, agenda com o profissional certo e envia o Pix. O que precisa de gente vira tarefa para a sua equipe — o resto acontece sem você.</span><span class="hero-b">A IA responde seus clientes na hora, marca com o profissional certo e envia o Pix, de dia, de noite e no fim de semana. Você só acompanha o que entrou.</span></p>
+      <p class="hero-offer">A partir de <b>R$ 49,90/mês</b> · 7 dias grátis · <a href="#planos" data-track="Ver planos (topo)">ver planos</a></p>
       <div class="hero-ctas">
         <a class="btn btn-primary" data-signup data-track="Testar grátis (topo)" href="/app#cadastro">Testar 7 dias grátis
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
@@ -526,6 +548,7 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
       <div class="hero-note">
         <span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Sem cartão de crédito</span>
         <span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Use o número que você já tem</span>
+        <span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Sem API oficial e sem custo por mensagem</span>
         <span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8.5l3 3 7-7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>Cancele quando quiser</span>
       </div>
     </div>
@@ -1026,7 +1049,7 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
   var src = qs.get('utm_source') || (ref ? 'indicação' : (host && host !== location.hostname ? host : 'direto'));
   if (!get('cc_src')) set('cc_src', src);
   var mobile = window.matchMedia && window.matchMedia('(max-width: 760px)').matches;
-  var queue = [{ k: 'pageview' }];
+  var queue = [{ k: 'pageview', n: (document.documentElement.hasAttribute('data-hero-preview') ? 'preview-' : '') + 'hero-' + (document.documentElement.getAttribute('data-hero') || 'a') }];
   function push(k, n, val){ queue.push({ k: k, n: n == null ? null : String(n).slice(0, 120), val: val == null ? null : Math.round(val) }); }
   function flush(leaving){
     if (!queue.length) return;
