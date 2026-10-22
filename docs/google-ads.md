@@ -52,6 +52,8 @@ Alternativa sem rótulos: vincular o GA4 ao Google Ads (**Ferramentas → Contas
 
 ## 2. Campanha de clínicas (Pesquisa)
 
+Atalho: `docs/google-ads-clinicas.csv` tem a campanha inteira (grupos, palavras-chave de frase e exata, negativas e o anúncio responsivo). No **Google Ads Editor**: Conta → Importar → Do arquivo, revise e clique em Postar. Depois confira no site as redes, os locais (presença) e a programação, que o arquivo não cobre.
+
 ### Configurações
 
 - **Tipo:** Pesquisa. Meta: Leads.
