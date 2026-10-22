@@ -131,8 +131,20 @@ async function route() {
   try { await def[2](el, rest); } catch (err) { el.innerHTML = `<div class="empty">Erro: ${esc(err.message)}</div>`; }
 }
 
+// Este navegador é do administrador: as visitas dele às páginas públicas não entram na medição
+// (nem no Google Analytics / Pixel, ver track.js). O uso do /app continua contando. Vale para cada aparelho em que o painel for aberto.
+function markInternal() {
+  try {
+    let vid = localStorage.getItem('cc_vid');
+    if (!vid) { vid = (crypto.randomUUID ? crypto.randomUUID().replace(/-/g, '') : Date.now().toString(36) + Math.random().toString(36).slice(2)).slice(0, 32); localStorage.setItem('cc_vid', vid); }
+    localStorage.setItem('cc_internal', '1');
+    api('/api/admin/internal-visitor', { method: 'POST', body: { vid } }).catch(() => {});
+  } catch { /* sem localStorage: segue sem marcar */ }
+}
+
 async function boot() {
   try { state.me = await api('/api/admin/me'); } catch { return renderLogin(); }
+  markInternal();
   renderLayout();
   route();
 }
@@ -267,6 +279,8 @@ async function renderIntelligence(el) {
     <div class="page-head"><div><h1>Inteligência</h1><p class="muted">O que os visitantes e clientes fazem, para crescer até a meta</p></div>
       <span class="spacer"></span><div class="segmented" id="intel-days">${[7, 30, 90].map((d) => `<button type="button" data-d="${d}" class="${d === days ? 'active' : ''}">${d} dias</button>`).join('')}</div></div>
     <div class="card" style="margin-bottom:14px">
+      <div class="row wrap"><div><div class="small muted">Empresas cadastradas</div><div style="font-size:var(--fs-30);font-weight:600">${num(g.companies_total)} <span class="small muted">+${num(g.companies_period)} em ${days} dias · +${num(g.companies_today)} nas últimas 24h</span></div></div></div>
+      <div style="border-top:1px solid var(--line-2);margin:12px 0"></div>
       <div class="row wrap"><div><div class="small muted">Meta: R$ 10 mil por mês</div><div style="font-size:var(--fs-30);font-weight:600">${money(g.mrr_cents)} <span class="small muted">de ${money(g.target_cents)} (${g.percent}%)</span></div></div>
         <span class="spacer"></span><div class="small" style="text-align:right">${num(g.paying)} assinantes pagantes · ticket médio ${money(g.avg_ticket_cents)}<br>${num(g.trial)} em teste agora · faltam <strong>~${num(g.missing_customers)} assinantes</strong></div></div>
       <div style="height:12px;border-radius:var(--r-pill);background:var(--line-2);overflow:hidden;margin-top:10px"><span style="display:block;height:100%;width:${Math.min(100, g.percent)}%;background:var(--green-700)"></span></div>

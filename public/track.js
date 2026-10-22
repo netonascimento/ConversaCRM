@@ -97,7 +97,9 @@
     document.body.appendChild(box);
   }
 
-  if (local || !window.fetch) return;
+  // Navegador do administrador (marcado ao abrir o /admin): nas páginas públicas não manda nada para Google e Meta.
+  var internal = false; try { internal = localStorage.getItem('cc_internal') === '1' && location.pathname.indexOf('/app') !== 0; } catch (e) {}
+  if (local || internal || !window.fetch) return;
   fetch('/api/public/info', { headers: { Accept: 'application/json' } })
     .then(function(r){ return r.json(); })
     .then(function(info){

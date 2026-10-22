@@ -1599,14 +1599,35 @@ test('teste A/B/C da chamada: a versão vista na página inicial separa planos, 
   await t({ v: 'visitante-ab-c1', s: 'sessao-ab-c1', p: '/app', e: [{ k: 'signup_view', n: 'cadastro' }] });
   const u = browser();
   await u('/api/auth/register', { method: 'POST', body: { companyName: 'Studio AB', name: 'Bia', email: 'bia@studioab.com', password: 'senhaforte1', vid: 'visitante-ab-b1', src: 'direto' } });
+  // Já tinha conta e só depois viu a versão A: o cadastro antigo não conta para A.
+  await browser()('/api/auth/register', { method: 'POST', body: { companyName: 'Conta Antiga', name: 'Leo', email: 'leo@antiga.com', password: 'senhaforte1', vid: 'visitante-ab-a3', src: 'direto' } });
+  await t({ v: 'visitante-ab-a3', s: 'sessao-ab-a3', p: '/', e: [{ k: 'pageview', n: 'hero-a' }] });
 
   const a = await adminSession();
   const ab = Object.fromEntries((await a('/api/admin/intelligence?days=30')).data.hero_ab.map((h) => [h.variant, h]));
-  assert.deepEqual([ab.A.visitors, ab.A.saw_plans, ab.A.signup_clicks, ab.A.signups], [2, 1, 0, 0]);
+  assert.deepEqual([ab.A.visitors, ab.A.saw_plans, ab.A.signup_clicks, ab.A.signups], [3, 1, 0, 0]);
   assert.deepEqual([ab.B.visitors, ab.B.saw_plans, ab.B.signup_clicks, ab.B.opened_signup, ab.B.signups, ab.B.activated, ab.B.paid], [1, 1, 1, 1, 1, 0, 0]);
   assert.deepEqual(ab.B.signup_companies.map((c) => c.name), ['Studio AB']);
   // C abriu o cadastro e não concluiu: os dois degraus ficam separados.
   assert.deepEqual([ab.C.visitors, ab.C.saw_plans, ab.C.signup_clicks, ab.C.opened_signup, ab.C.signups], [1, 0, 1, 1, 0]);
+});
+
+test('acessos do administrador saem da medição e o topo mostra as empresas cadastradas', async () => {
+  resetLoginAttempts();
+  const t = (body) => fetch(`${base}/api/t`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json());
+  assert.equal((await t({ v: 'navegador-do-dono', s: 'sessao-dono-1', p: '/', e: [{ k: 'pageview', n: 'hero-b' }] })).n, 1);
+  const a = await adminSession();
+  const before = (await a('/api/admin/intelligence?days=30')).data;
+  assert.ok(before.hero_ab.find((h) => h.variant === 'B').visitors >= 1);
+  const marked = await a('/api/admin/internal-visitor', { method: 'POST', body: { vid: 'navegador-do-dono' } });
+  assert.equal(marked.data.removed, 1, 'apaga o que já tinha contado');
+  assert.equal((await t({ v: 'navegador-do-dono', s: 'sessao-dono-2', p: '/', e: [{ k: 'pageview', n: 'hero-b' }] })).n, 0, 'as próximas visitas não contam');
+  assert.equal((await t({ v: 'navegador-do-dono', s: 'sessao-dono-2', p: '/advogados', e: [{ k: 'pageview' }] })).n, 0, 'páginas por público também não');
+  assert.equal((await t({ v: 'navegador-do-dono', s: 'sessao-dono-2', p: '/app', e: [{ k: 'app_page', n: 'inbox', val: 5000 }] })).n, 1, 'uso do sistema continua contando');
+  const after = (await a('/api/admin/intelligence?days=30')).data;
+  assert.equal(after.hero_ab.find((h) => h.variant === 'B').visitors, before.hero_ab.find((h) => h.variant === 'B').visitors - 1);
+  assert.ok(after.goal.companies_total >= after.goal.companies_period && after.goal.companies_period >= 1);
+  assert.equal((await browser()('/api/admin/internal-visitor', { method: 'POST', body: { vid: 'qualquer-um-123' } })).status, 401, 'só administrador');
 });
 
 test('fim do grátis antigo: contas no grátis ganham 30 dias do Básico, uma vez só', async () => {

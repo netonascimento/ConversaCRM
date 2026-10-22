@@ -9,7 +9,7 @@ import { PRESETS } from '../services/presets.js';
 import { publicPlans } from '../services/plans.js';
 import { releaseAssignments } from '../services/assignment.js';
 import { stripeMode } from '../services/stripe.js';
-import { intelligence } from '../services/analytics.js';
+import { intelligence, markInternalVisitor } from '../services/analytics.js';
 import { adminReferrals } from '../services/referrals.js';
 import { listMei, meiFile, decideMei } from '../services/mei.js';
 import {
@@ -48,6 +48,8 @@ export function registerAdmin(router) {
     return { ok: true };
   });
   // Inteligência: meta de receita, funil, página inicial, uso do sistema e indicações.
+  // O navegador de quem abre o painel deixa de contar nas visitas da página inicial.
+  router.post('/api/admin/internal-visitor', admin, (req, res, { body }) => markInternalVisitor(body?.vid));
   router.get('/api/admin/intelligence', admin, (req, res, { query }) => intelligence([7, 30, 90].includes(Number(query.days)) ? Number(query.days) : 30));
   router.get('/api/admin/referrals', admin, () => adminReferrals());
   // Plano Básico grátis para MEI: certificado enviado pela empresa, conferido aqui.

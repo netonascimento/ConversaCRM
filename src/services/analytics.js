@@ -25,9 +25,26 @@ function allowed(key, n) {
   return b.n <= 300;
 }
 
+// Navegadores do administrador (marcados ao abrir o /admin): as visitas dele às páginas públicas (/, /mei, /advogados...)
+// não entram na medição. O uso do sistema (/app), inclusive como empresa cliente, continua contando.
+let internal = null;
+const internalVisitors = () => internal || (internal = new Set(JSON.parse(main.get("SELECT value FROM platform_state WHERE key = 'internal_visitors'")?.value || '[]')));
+
+/** Marca o navegador do administrador como interno e apaga as visitas dele às páginas públicas. */
+export function markInternalVisitor(visitor) {
+  if (!ID.test(visitor || '')) return { ok: false };
+  const set = internalVisitors();
+  if (!set.has(visitor)) {
+    set.add(visitor);
+    main.run("INSERT INTO platform_state (key, value) VALUES ('internal_visitors', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')", JSON.stringify([...set].slice(-50)));
+  }
+  return { ok: true, removed: main.run("DELETE FROM analytics_events WHERE visitor_id = ? AND kind NOT IN ('feature', 'signup') AND COALESCE(path, '/') NOT LIKE '/app%'", visitor).changes };
+}
+
 /** Eventos enviados pela página inicial ou pelo sistema (POST /api/t). */
 export function track(body, { userId = null, companyId = null } = {}) {
   const visitor = ID.test(body?.v || '') ? body.v : null;
+  if (visitor && internalVisitors().has(visitor) && !String(body.p || '/').startsWith('/app')) return 0;
   const session = ID.test(body?.s || '') ? body.s : null;
   const events = Array.isArray(body?.e) ? body.e.slice(0, 60) : [];
   if (!events.length || (!visitor && !userId)) return 0;
@@ -120,6 +137,10 @@ export function intelligence(days = 30) {
     paying, avg_ticket_cents: avgTicket,
     missing_customers: Math.max(0, Math.ceil((GOAL_MRR_CENTS - fin.mrr_cents) / avgTicket)),
     trial: fin.plans.reduce((n, p) => n + (p.trial || 0), 0),
+    // Empresas cadastradas: tão importante quanto a receita nesta fase.
+    companies_total: main.get('SELECT COUNT(*) AS n FROM companies').n,
+    companies_period: main.get('SELECT COUNT(*) AS n FROM companies WHERE created_at >= ?', since).n,
+    companies_today: main.get('SELECT COUNT(*) AS n FROM companies WHERE created_at >= ?', new Date(Date.now() - 86400000).toISOString()).n,
   };
 
   // ---- Página inicial (as páginas por público, como /mei, ficam no bloco audience_pages)
@@ -199,10 +220,16 @@ export function intelligence(days = 30) {
 
   // ---- Teste A/B/C da chamada da página inicial: a visita guarda a versão vista (hero-a / hero-b / hero-c).
   // Cada degrau conta PESSOAS (visitantes), não visitas: quem volta outro dia não vira duas.
+  // Guarda também QUANDO a pessoa viu a versão pela primeira vez: cadastro feito antes disso não conta para ela
+  // (ex.: quem já tinha conta e voltou à página inicial depois que o teste começou).
   const heroOf = new Map();
-  for (const e of views) if (/^hero-[abc]$/.test(e.name || '') && !heroOf.has(e.visitor_id)) heroOf.set(e.visitor_id, e.name.slice(5).toUpperCase());
+  const heroAt = new Map();
+  for (const e of views) {
+    if (!/^hero-[abc]$/.test(e.name || '')) continue;
+    if (!heroAt.has(e.visitor_id) || e.at < heroAt.get(e.visitor_id)) { heroAt.set(e.visitor_id, e.at); heroOf.set(e.visitor_id, e.name.slice(5).toUpperCase()); }
+  }
   const visitorOfSession = new Map(views.map((e) => [e.session_id, e.visitor_id]));
-  const openedSignup = new Set(ev('signup_view').map((e) => e.visitor_id));
+  const openedSignup = new Set(ev('signup_view').filter((e) => heroAt.has(e.visitor_id) && e.at >= heroAt.get(e.visitor_id)).map((e) => e.visitor_id));
   const activatedIds = new Set(main.all(
     `SELECT DISTINCT company_id FROM analytics_events WHERE company_id IN ${inList} AND kind = 'feature'
      AND name IN ('POST /api/contacts', 'POST /api/whatsapp/connect', 'POST /api/conversations/:id/messages', 'POST /api/appointments', 'POST /api/contacts/import')`,
@@ -210,7 +237,7 @@ export function intelligence(days = 30) {
   const hero_ab = ['A', 'B', 'C'].map((variant) => {
     const visitors = new Set([...heroOf].filter(([, v]) => v === variant).map(([id]) => id));
     const peopleOf = (sessionIds) => new Set([...sessionIds].map((s) => visitorOfSession.get(s)).filter((v) => visitors.has(v))).size;
-    const concluded = signups.filter((c) => c.signup_visitor && visitors.has(c.signup_visitor));
+    const concluded = signups.filter((c) => c.signup_visitor && visitors.has(c.signup_visitor) && c.created_at >= heroAt.get(c.signup_visitor));
     const companies = concluded.map((c) => c.id);
     return {
       variant,
