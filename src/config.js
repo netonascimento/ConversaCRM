@@ -29,6 +29,8 @@ export const config = {
     ga4: /^G-[A-Z0-9]+$/.test(process.env.GA4_ID ?? '') ? process.env.GA4_ID : (process.env.GA4_ID === undefined ? 'G-E8T37F4V33' : ''),
     google_ads: /^AW-\d+$/.test(process.env.GOOGLE_ADS_ID || '') ? process.env.GOOGLE_ADS_ID : '',
     google_ads_signup_label: /^[\w-]+$/.test(process.env.GOOGLE_ADS_SIGNUP_LABEL || '') ? process.env.GOOGLE_ADS_SIGNUP_LABEL : '',
+    // Conversão secundária: clique em "Falar no WhatsApp" (vendas). Opcional.
+    google_ads_lead_label: /^[\w-]+$/.test(process.env.GOOGLE_ADS_LEAD_LABEL || '') ? process.env.GOOGLE_ADS_LEAD_LABEL : '',
     meta_pixel: /^\d+$/.test(process.env.META_PIXEL_ID || '') ? process.env.META_PIXEL_ID : '',
   },
   // Pix da plataforma para a assinatura (botão Comprar do teste grátis) e e-mail para o comprovante.

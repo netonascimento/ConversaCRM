@@ -132,7 +132,8 @@
   var vid = get('cc_vid') || id(); set('cc_vid', vid);
   var sid; try { sid = sessionStorage.getItem('cc_sid') || id(); sessionStorage.setItem('cc_sid', sid); } catch(e){ sid = id(); }
   var host = ''; try { host = document.referrer ? new URL(document.referrer).hostname.replace(/^www\./, '') : ''; } catch(e){}
-  var src = qs.get('utm_source') || (ref ? 'indicação' : (host && host !== location.hostname ? host : 'direto'));
+  /* gclid/gbraid/wbraid = clique de anúncio do Google (auto-tagging), mesmo sem utm */
+  var src = qs.get('utm_source') || (qs.get('gclid') || qs.get('gbraid') || qs.get('wbraid') ? 'google_ads' : '') || (ref ? 'indicação' : (host && host !== location.hostname ? host : 'direto'));
   if (!get('cc_src')) set('cc_src', src);
   var mobile = window.matchMedia && window.matchMedia('(max-width: 760px)').matches;
   var queue = [{ k: 'pageview' }];

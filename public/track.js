@@ -1,6 +1,6 @@
 /* Medição de anúncios: Google Analytics 4, Google Ads e Pixel da Meta.
    Só carrega no site publicado (não em localhost) e só depois que a pessoa aceita os cookies (LGPD).
-   Os IDs vêm de /api/public/info (variáveis GA4_ID, GOOGLE_ADS_ID, GOOGLE_ADS_SIGNUP_LABEL e META_PIXEL_ID).
+   Os IDs vêm de /api/public/info (variáveis GA4_ID, GOOGLE_ADS_ID, GOOGLE_ADS_SIGNUP_LABEL, GOOGLE_ADS_LEAD_LABEL e META_PIXEL_ID).
    Eventos: window.cvTrack('signup', { plan }) no cadastro do teste; 'begin_checkout' e 'purchase' na assinatura
    (app.js, tela Assinatura); cliques em WhatsApp de vendas viram 'lead' sozinhos. */
 (function(){
@@ -53,6 +53,7 @@
       if (fb) fb('track', 'CompleteRegistration', { content_name: p.plan || '' });
     } else if (name === 'lead'){
       if (gt) gt('event', 'generate_lead', { source: p.source || '' });
+      if (gt && ids.google_ads && ids.google_ads_lead_label) gt('event', 'conversion', { send_to: ids.google_ads + '/' + ids.google_ads_lead_label });
       if (fb) fb('track', 'Lead');
     } else if (name === 'begin_checkout' || name === 'purchase'){
       /* assinatura: início do pagamento (botão do plano) e pagamento confirmado pelo Stripe */
