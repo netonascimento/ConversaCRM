@@ -38,6 +38,15 @@ test('o modo da agenda define quais ferramentas a IA recebe', () => {
   assert.ok(names(set({ objective: 'orcamento' })).includes('solicitar_orcamento'));
 });
 
+test('sinal: com cobrança ligada a IA pede o sinal depois de agendar; sem cobrança ou com preço oculto, não', () => {
+  const cid = makeCompany();
+  const prompt = (ai) => { saveSettings(cid, { ai }); return stablePrompt(getCompany(cid)); };
+  assert.match(prompt({ scheduling_mode: 'auto', charge_mode: 'approval', price_mode: 'from', deposit_percent: 30 }), /sinal de 30%/);
+  assert.doesNotMatch(prompt({ deposit_percent: 0 }), /Sinal:/);
+  assert.doesNotMatch(prompt({ deposit_percent: 30, charge_mode: 'never' }), /Sinal:/);
+  assert.doesNotMatch(prompt({ charge_mode: 'auto', price_mode: 'hide' }), /Sinal:/);
+});
+
 test('compatibilidade: configuração antiga sem cobrança pela IA vira charge_mode "never"', () => {
   const cid = makeCompany();
   run("UPDATE companies SET settings = json_remove(json_set(settings, '$.ai.can_create_charges', json('false')), '$.ai.charge_mode') WHERE id = ?", cid);

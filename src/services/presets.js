@@ -9,7 +9,8 @@ export const PRESETS = {
     label: 'Clínica / consultório (dentista, estética, saúde)',
     settings: {
       ai: {
-        objective: 'agendar', scheduling_mode: 'auto', price_mode: 'from', charge_mode: 'never',
+        // Sinal de 30% para reduzir faltas; a equipe aprova cada cobrança antes de chegar ao paciente.
+        objective: 'agendar', scheduling_mode: 'auto', price_mode: 'from', charge_mode: 'approval', deposit_percent: 30,
         intake_questions: [{ key: 'queixa_principal', label: 'Queixa principal', question: 'O que você gostaria de tratar ou avaliar?' }],
         urgency_rules: 'Dor forte\nInchaço no rosto\nSangramento que não para',
         never_say: 'Dar diagnóstico\nIndicar medicamento',

@@ -17,6 +17,7 @@ export const DEFAULT_SETTINGS = {
     external_booking_link: '',
     price_mode: 'show', // show | from | describe | hide
     charge_mode: 'auto', // auto | approval | never
+    deposit_percent: 0, // sinal para garantir o horário (% do valor do serviço); 0 = sem sinal
     intake_questions: [], // [{ key, label, question }]
     urgency_rules: '',
     never_say: '',

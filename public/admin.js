@@ -298,8 +298,8 @@ async function renderIntelligence(el) {
         ${i.referral.channels.length ? `<p class="small muted" style="margin:0">Por canal: ${i.referral.channels.map((c) => `${esc(c.name)} ${num(c.count)}`).join(' · ')}</p>` : ''}
         <a class="small" href="#/indicacoes">Ver quem indicou quem →</a></div>
     </div>
-    <div class="card" style="margin-top:14px"><h3>Teste A/B da chamada da página inicial</h3>
-      <p class="small muted" style="margin:4px 0 8px">A: "Do primeiro “oi” ao Pix pago." · B: "Seu WhatsApp atende, agenda e cobra sozinho." Conferir: <a href="/?v=a" target="_blank" rel="noopener">ver A</a> · <a href="/?v=b" target="_blank" rel="noopener">ver B</a></p>
+    <div class="card" style="margin-top:14px"><h3>Teste A/B/C da chamada da página inicial</h3>
+      <p class="small muted" style="margin:4px 0 8px">A: "Do primeiro “oi” ao Pix pago." · B: "Seu WhatsApp atende, agenda e cobra sozinho." · C: "Recepcionista com IA para clínicas" (página voltada a clínicas, cadastro já como clínica). Conferir: <a href="/?v=a" target="_blank" rel="noopener">ver A</a> · <a href="/?v=b" target="_blank" rel="noopener">ver B</a> · <a href="/?v=c" target="_blank" rel="noopener">ver C</a></p>
       <div class="table-wrap"><table><tr><th>Versão</th><th>Visitantes</th><th>Chegaram aos planos</th><th>Clicaram para começar</th><th>Cadastros</th><th>Pagaram</th></tr>
         ${(i.hero_ab || []).map((h) => {
           const rate = (n) => (h.visitors ? ` <span class="muted">· ${Math.round((n / h.visitors) * 1000) / 10}%</span>` : '');

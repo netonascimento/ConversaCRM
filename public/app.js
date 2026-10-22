@@ -2859,6 +2859,7 @@ async function renderSettings(el, [tab = 'empresa']) {
         ${select('ai', 'scheduling_mode', 'Agenda', bo.scheduling_modes)}
         ${select('ai', 'price_mode', 'Preços', bo.price_modes)}
         ${select('ai', 'charge_mode', 'Cobrança', bo.charge_modes)}
+        ${input('ai', 'deposit_percent', 'Sinal para garantir o horário (% do serviço)', { type: 'number', hint: '0 = sem sinal. Com a cobrança ligada, a IA envia o Pix do sinal logo depois de agendar.' })}
       </div>
       ${input('ai', 'external_booking_link', 'Link de agendamento externo (modo "Link externo")', { placeholder: 'https://calendly.com/seu-escritorio', hint: 'Sem link cadastrado, a IA usa o modo "Sem agenda" e a equipe retorna com os horários.' })}
       <h2 style="margin:8px 0 6px">Perguntas de triagem</h2>

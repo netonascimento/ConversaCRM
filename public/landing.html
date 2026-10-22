@@ -4,16 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script>
-/* Teste A/B da chamada principal: cada visitante recebe A ou B (50/50) e mantém a mesma versão.
-   ?v=a ou ?v=b força uma versão sem guardar e sem entrar na contagem (para conferir). Sem JavaScript, fica a versão A. */
+/* Teste A/B/C da chamada principal: cada visitante novo recebe A, B ou C (1/3 cada) e mantém a mesma versão.
+   C = posicionamento para clínicas ("Recepcionista com IA para clínicas").
+   ?v=a, ?v=b ou ?v=c força uma versão sem guardar e sem entrar na contagem (para conferir). Sem JavaScript, fica a versão A. */
 (function(){
   var v = 'a';
   try {
     var forced = new URLSearchParams(location.search).get('v');
-    if (forced === 'a' || forced === 'b') { v = forced; document.documentElement.setAttribute('data-hero-preview', ''); }
+    if (forced === 'a' || forced === 'b' || forced === 'c') { v = forced; document.documentElement.setAttribute('data-hero-preview', ''); }
     else {
       v = localStorage.getItem('cc_ab_hero');
-      if (v !== 'a' && v !== 'b') { v = Math.random() < 0.5 ? 'a' : 'b'; localStorage.setItem('cc_ab_hero', v); }
+      if (v !== 'a' && v !== 'b' && v !== 'c') { v = 'abc'.charAt(Math.floor(Math.random() * 3)); localStorage.setItem('cc_ab_hero', v); }
     }
   } catch (e) { v = 'a'; }
   document.documentElement.setAttribute('data-hero', v);
@@ -181,8 +182,9 @@ h1,h2,h3,p{margin:0}
 .hero h1{font-size:clamp(46px,6.4vw,84px);margin:22px 0 24px;max-width:12ch}
 .hero .lede{font-size:19px}
 .hero-ctas{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
-[data-hero="b"] .hero-a{display:none}
+[data-hero="b"] .hero-a,[data-hero="c"] .hero-a,[data-hero="c"] .hero-not-c{display:none}
 :root:not([data-hero="b"]) .hero-b{display:none}
+:root:not([data-hero="c"]) .hero-c{display:none}
 .hero-offer{margin-top:18px;font-size:15.5px;color:var(--ink-2)}
 .hero-offer b{color:var(--ink);font-weight:600}
 .hero-offer a{color:var(--green-600);text-decoration:underline;text-underline-offset:3px}
@@ -537,9 +539,9 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
 <section class="hero" id="inicio" aria-labelledby="hero-title">
   <div class="wrap hero-grid">
     <div>
-      <span class="eyebrow">CRM de WhatsApp com IA</span>
-      <h1 id="hero-title" class="display"><span class="hero-a">Do primeiro <em>“oi”</em> ao Pix pago.</span><span class="hero-b">Seu WhatsApp atende, agenda e <em>cobra sozinho</em>.</span></h1>
-      <p class="lede"><span class="hero-a">WhatsApp com IA, agenda, CRM, follow-up e cobrança num lugar só. A IA do Conversa CRM responde na hora, faz a triagem, agenda com o profissional certo e envia o Pix. O que precisa de gente vira tarefa para a sua equipe — o resto acontece sem você.</span><span class="hero-b">A IA responde seus clientes na hora, marca com o profissional certo e envia o Pix, de dia, de noite e no fim de semana. Você só acompanha o que entrou.</span></p>
+      <span class="eyebrow"><span class="hero-not-c">CRM de WhatsApp com IA</span><span class="hero-c">Odontologia · Estética · Saúde</span></span>
+      <h1 id="hero-title" class="display"><span class="hero-a">Do primeiro <em>“oi”</em> ao Pix pago.</span><span class="hero-b">Seu WhatsApp atende, agenda e <em>cobra sozinho</em>.</span><span class="hero-c">Recepcionista com IA para <em>clínicas</em>.</span></h1>
+      <p class="lede"><span class="hero-a">WhatsApp com IA, agenda, CRM, follow-up e cobrança num lugar só. A IA do Conversa CRM responde na hora, faz a triagem, agenda com o profissional certo e envia o Pix. O que precisa de gente vira tarefa para a sua equipe — o resto acontece sem você.</span><span class="hero-b">A IA responde seus clientes na hora, marca com o profissional certo e envia o Pix, de dia, de noite e no fim de semana. Você só acompanha o que entrou.</span><span class="hero-c">Atende, agenda, confirma e cobra o sinal, direto no WhatsApp da clínica. <b>Menos falta, mais agenda cheia.</b> A IA responde o paciente na hora, inclusive às 22h e no fim de semana, marca com o profissional certo, envia o Pix do sinal e lembra na véspera.</span></p>
       <p class="hero-offer">A partir de <b>R$ 49,90/mês</b> · 7 dias grátis · <a href="#planos" data-track="Ver planos (topo)">ver planos</a></p>
       <div class="hero-ctas">
         <a class="btn btn-primary" data-signup data-track="Testar grátis (topo)" href="/app#cadastro">Testar 7 dias grátis
@@ -600,8 +602,8 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
       <ul>
         <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.5"/><path d="M12 7.5V12l3 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><div><b>Responde em segundos</b><span>24 horas, inclusive fim de semana</span></div></li>
         <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2" stroke="currentColor" stroke-width="1.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4M9 14.5l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Agenda sem conflito</b><span>Cada profissional com seus horários</span></div></li>
-        <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 16l5-5 4 4 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 8h5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b>Funil que anda sozinho</b><span>O lead avança quando responde ou paga</span></div></li>
-        <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.5"/></svg><div><b>Cobra sem constranger</b><span>Pix e lembretes educados no tempo certo</span></div></li>
+        <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 16l5-5 4 4 7-7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M15 8h5v5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><div><b class="hero-not-c">Funil que anda sozinho</b><span class="hero-not-c">O lead avança quando responde ou paga</span><b class="hero-c">Lembra na véspera</b><span class="hero-c">O paciente confirma ou remarca pelo WhatsApp</span></div></li>
+        <li><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2" stroke="currentColor" stroke-width="1.5"/><circle cx="12" cy="12" r="2.5" stroke="currentColor" stroke-width="1.5"/></svg><div><b class="hero-not-c">Cobra sem constranger</b><span class="hero-not-c">Pix e lembretes educados no tempo certo</span><b class="hero-c">Sinal por Pix</b><span class="hero-c">Quem reserva já deixa o sinal pago</span></div></li>
       </ul>
     </div>
   </div>
@@ -613,6 +615,14 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
       <video data-film autoplay muted loop playsinline preload="metadata" poster="/videos/inicio.jpg" aria-label="Vídeo sem som: o Conversa CRM junta atendimento com IA no WhatsApp, agenda, funil, follow-up e cobrança por Pix, a partir de R$ 49,90 por mês.">
         <source src="/videos/inicio.mp4" type="video/mp4">
       </video>
+      <script>
+      if (document.documentElement.getAttribute('data-hero') === 'c') (function(v){
+        v.poster = '/videos/clinicas.jpg';
+        v.setAttribute('aria-label', 'Vídeo sem som: o Conversa CRM lembra o paciente na véspera pelo WhatsApp, recebe a confirmação e remarca quem não pode ir.');
+        v.querySelector('source').src = '/videos/clinicas.mp4';
+        v.load();
+      })(document.currentScript.previousElementSibling);
+      </script>
     </figure>
   </div>
 </section>
@@ -757,11 +767,19 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
     <div class="sec-head reveal">
       <div>
         <span class="eyebrow">Para quem é</span>
-        <h2 id="pq-title" class="h2">Feito para quem vive do <em>WhatsApp</em>.</h2>
+        <h2 id="pq-title" class="h2"><span class="hero-not-c">Feito para quem vive do <em>WhatsApp</em>.</span><span class="hero-c">Feito para clínicas que vivem do <em>WhatsApp</em>.</span></h2>
       </div>
-      <p class="lede">A mesma plataforma, um comportamento diferente para cada negócio. Veja como a IA se porta em cada caso.</p>
+      <p class="lede"><span class="hero-not-c">A mesma plataforma, um comportamento diferente para cada negócio. Veja como a IA se porta em cada caso.</span><span class="hero-c">A IA já vem configurada para clínica: pergunta o motivo da consulta, nunca dá diagnóstico e chama a equipe quando é urgente.</span></p>
     </div>
-    <div class="segments">
+    <div class="segments hero-c">
+      <div class="segrow reveal"><span class="num">01</span><h3>Odontologia</h3><p>Identifica dor ou urgência, agenda a avaliação com o dentista certo e lembra o paciente na véspera.</p><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="segrow reveal"><span class="num">02</span><h3>Estética e harmonização</h3><p>Responde o lead do Instagram na hora, mostra o procedimento com preço “a partir de” e cobra o sinal por Pix para segurar o horário.</p><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="segrow reveal"><span class="num">03</span><h3>Dermatologia e clínicas médicas</h3><p>Faz a triagem com as perguntas que você definir, encaixa na agenda de cada médico e avisa a equipe se houver urgência.</p><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="segrow reveal"><span class="num">04</span><h3>Fisioterapia e pilates</h3><p>Marca a avaliação, organiza as sessões de cada profissional e cobra pacotes e mensalidades por Pix.</p><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="segrow reveal"><span class="num">05</span><h3>Psicologia e terapias</h3><p>Acolhe o primeiro contato com discrição, oferece os horários livres e confirma a sessão na véspera.</p><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="segrow reveal"><span class="num">06</span><h3>Nutrição</h3><p>Agenda a primeira consulta e o retorno, e faz o follow-up com quem pediu valores e não marcou.</p><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+    </div>
+    <div class="segments hero-not-c">
       <div class="segrow reveal"><span class="num">01</span><h3>Clínicas e dentistas</h3><p>Pergunta o motivo da consulta, identifica dor ou urgência e agenda com o profissional certo, com lembrete na véspera.</p><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <div class="segrow reveal"><span class="num">02</span><h3>Escritórios de advocacia</h3><p>Faz a triagem do caso por área, nunca fala de valores nem dá parecer, e marca a consulta com o advogado responsável.</p><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       <div class="segrow reveal"><span class="num">03</span><h3>Salões e barbearias</h3><p>Mostra serviços com preço “a partir de”, encaixa no horário livre de cada profissional e cobra o sinal por Pix.</p><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 10h12M11 5l5 5-5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
@@ -823,6 +841,18 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
       <p class="lede" style="margin-top:20px">Não encontrou o que procurava? <a href="#" data-sales style="text-decoration:underline;text-underline-offset:3px">Fale com a gente</a>.</p>
     </div>
     <div class="faq">
+      <details class="hero-c">
+        <summary>Funciona junto com o sistema de prontuário que eu já uso?<span class="pm" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span></summary>
+        <div class="ans"><p><b>Sim.</b> O Conversa CRM cuida da recepção no WhatsApp: atender, agendar, confirmar e cobrar o sinal. O prontuário continua no sistema que você já usa. A agenda pode ser ligada ao Google Agenda.</p></div>
+      </details>
+      <details class="hero-c">
+        <summary>A IA pode dar diagnóstico ou indicar remédio?<span class="pm" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span></summary>
+        <div class="ans"><p><b>Não.</b> Para clínicas ela vem configurada para nunca dar diagnóstico nem indicar medicamento. Se o paciente falar de dor forte, inchaço ou sangramento, ela para e chama a sua equipe na hora.</p></div>
+      </details>
+      <details class="hero-c">
+        <summary>Como o sistema ajuda a diminuir as faltas?<span class="pm" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span></summary>
+        <div class="ans"><p>De três jeitos: a IA pode cobrar um sinal por Pix na hora de reservar; manda um lembrete no WhatsApp na véspera pedindo confirmação; e, se o paciente não puder ir, ela mesma oferece outro horário e libera o antigo na agenda para outra pessoa. Tudo isso dá para ajustar no painel.</p></div>
+      </details>
       <details>
         <summary>Tem teste grátis? Preciso de cartão?<span class="pm" aria-hidden="true"><svg viewBox="0 0 12 12" fill="none"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></span></summary>
         <div class="ans"><p><b>Sim, 7 dias grátis do plano Básico, sem cartão.</b> Com o código de indicação de quem já usa, são 30 dias. Depois, você escolhe um plano; se não assinar, a conta continua aberta só para consulta.</p></div>
@@ -867,9 +897,9 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
 <section class="final" id="final" aria-labelledby="final-title">
   <div class="wrap">
     <div class="final-box reveal">
-      <h2 id="final-title">Deixe o WhatsApp trabalhar <em>enquanto você atende</em>.</h2>
+      <h2 id="final-title"><span class="hero-not-c">Deixe o WhatsApp trabalhar <em>enquanto você atende</em>.</span><span class="hero-c">A recepção no WhatsApp fica com a IA. <em>A agenda fica cheia.</em></span></h2>
       <div>
-        <p>7 dias grátis com seus próprios clientes, sem cartão. Configure em uma tarde e veja a primeira conversa virar agendamento.</p>
+        <p><span class="hero-not-c">7 dias grátis com seus próprios clientes, sem cartão. Configure em uma tarde e veja a primeira conversa virar agendamento.</span><span class="hero-c">7 dias grátis com os seus pacientes, sem cartão. A IA já vem pronta para clínica: você só cadastra os profissionais e os horários.</span></p>
         <div class="ctas">
           <a class="btn btn-primary" data-signup data-track="Testar grátis (final)" href="/app#cadastro">Testar 7 dias grátis
             <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
@@ -916,7 +946,9 @@ footer{border-top:1px solid var(--line);padding:36px 0 44px;font-size:14px;color
     sales_whatsapp: '',
     allow_signup: true
   };
-  var SIGNUP = '/app#cadastro';
+  // Versão C (clínicas): o cadastro já chega com o segmento clínica escolhido.
+  var SIGNUP = doc.getAttribute('data-hero') === 'c' ? '/app#cadastro?segmento=clinica' : '/app#cadastro';
+  if (SIGNUP !== '/app#cadastro') document.querySelectorAll('a[href="/app#cadastro"]').forEach(function(a){ a.setAttribute('href', SIGNUP); });
 
   function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function money(cents){

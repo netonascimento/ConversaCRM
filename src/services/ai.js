@@ -105,6 +105,7 @@ function behavior(company) {
     scheduling: effectiveScheduling,
     price: PRICE_RULES[ai.price_mode] ? ai.price_mode : 'show',
     charge: CHARGE_MODES.some((m) => m.id === ai.charge_mode) ? ai.charge_mode : 'auto',
+    deposit: Math.min(100, Math.max(0, Math.round(Number(ai.deposit_percent) || 0))),
     intake: (ai.intake_questions || []).filter((q) => q.key && q.question),
   };
 }
@@ -412,6 +413,10 @@ export function stablePrompt(company) {
   }
   if (b.charge === 'approval') sections.push('Cobrança: quando o cliente quiser pagar, use "gerar_cobranca"; ela vai para aprovação da equipe antes de chegar ao cliente.');
   if (b.charge === 'auto') sections.push('Cobrança: quando o cliente quiser pagar ou fechar, use "gerar_cobranca".');
+  // Sinal: só com cobrança ligada, agenda própria e preço que pode ser dito ao cliente.
+  if (b.deposit && b.charge !== 'never' && ['auto', 'confirm'].includes(b.scheduling) && b.price !== 'hide') {
+    sections.push(`Sinal: logo depois de agendar um serviço com preço no catálogo, explique que o horário fica garantido com um sinal de ${b.deposit}% do valor e use "gerar_cobranca" com descricao "Sinal - <nome do serviço>" e valor = ${b.deposit}% do preço (arredonde para centavos). O restante é pago no atendimento. Serviço sem preço no catálogo: não cobre sinal.`);
+  }
   if (ai.urgency_rules.trim()) sections.push(`Situações urgentes (use "transferir_para_humano" com urgente=true imediatamente):\n${ai.urgency_rules.trim()}`);
   if (ai.never_say.trim()) sections.push(`Nunca faça isto:\n${ai.never_say.trim()}`);
   sections.push(`Instruções do dono da empresa:\n${ai.instructions}`);

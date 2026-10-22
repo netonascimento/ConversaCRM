@@ -199,8 +199,8 @@ export function intelligence(days = 30) {
 
   // ---- Teste A/B da chamada da página inicial: a visita guarda a versão vista (hero-a / hero-b)
   const heroOf = new Map();
-  for (const e of views) if (/^hero-[ab]$/.test(e.name || '') && !heroOf.has(e.visitor_id)) heroOf.set(e.visitor_id, e.name.slice(5).toUpperCase());
-  const hero_ab = ['A', 'B'].map((variant) => {
+  for (const e of views) if (/^hero-[abc]$/.test(e.name || '') && !heroOf.has(e.visitor_id)) heroOf.set(e.visitor_id, e.name.slice(5).toUpperCase());
+  const hero_ab = ['A', 'B', 'C'].map((variant) => {
     const visitors = new Set([...heroOf].filter(([, v]) => v === variant).map(([id]) => id));
     const sessions = new Set(views.filter((e) => visitors.has(e.visitor_id)).map((e) => e.session_id));
     const companies = signups.filter((c) => c.signup_visitor && visitors.has(c.signup_visitor)).map((c) => c.id);
