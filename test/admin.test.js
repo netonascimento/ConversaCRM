@@ -138,7 +138,7 @@ test('cadastro pela página inicial: teste de 7 dias do Básico, limite de 50 le
   const { todayIn, addDays } = await import('../src/services/time.js');
   resetLoginAttempts();
   const u = browser();
-  assert.equal((await u('/api/auth/register', { method: 'POST', body: { companyName: 'Loja Free', name: 'Fê', email: 'fe@free.com', password: 'senhaforte1', segment: 'loja' } })).status, 200);
+  assert.equal((await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Loja Free', name: 'Fê', email: 'fe@free.com', password: 'senhaforte1', segment: 'loja' } })).status, 200);
   const meta = (await u('/api/meta')).data;
   assert.equal(meta.plan.id, 'basico');
   assert.equal(meta.plan.max_leads, 50);
@@ -159,7 +159,7 @@ test('cadastro pela página inicial: teste de 7 dias do Básico, limite de 50 le
 test('buscas no Google Maps: Básico 10, Essencial 30 e Profissional 50 por mês', async () => {
   resetLoginAttempts();
   const u = browser();
-  assert.equal((await u('/api/auth/register', { method: 'POST', body: { companyName: 'Busca Free', name: 'Bia', email: 'bia@free.com', password: 'senhaforte1', segment: 'loja' } })).status, 200);
+  assert.equal((await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Busca Free', name: 'Bia', email: 'bia@free.com', password: 'senhaforte1', segment: 'loja' } })).status, 200);
   const { config } = await import('../src/config.js');
   const platformKey = config.googlePlacesKey;
   config.googlePlacesKey = 'chave-places-da-plataforma';
@@ -545,7 +545,7 @@ test('teste encerrado: só leitura (vê tudo, não edita), IA e envios parados; 
   config.platformPixCity = 'SAO PAULO';
   try {
     const u = browser();
-    assert.equal((await u('/api/auth/register', { method: 'POST', body: { companyName: 'Iota', name: 'Ivo', email: 'ivo@iota.com', password: 'senhaforte1' } })).status, 200);
+    assert.equal((await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Iota', name: 'Ivo', email: 'ivo@iota.com', password: 'senhaforte1' } })).status, 200);
     const contact = (await u('/api/contacts', { method: 'POST', body: { name: 'Cliente Antigo', phone: '11933330009' } })).data;
     // Passaram os 7 dias: o agendador encerra o teste.
     const { id } = (await u('/api/auth/me')).data.company;
@@ -605,7 +605,7 @@ test('teste encerrado: só leitura (vê tudo, não edita), IA e envios parados; 
 
 test('pedido de assinatura: aparece como "aguardando Pix" e o admin ativa o plano com os limites dele', async () => {
   const u = browser();
-  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Kappa', name: 'Kai', email: 'kai@kappa.com', password: 'senhaforte1' } });
+  await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Kappa', name: 'Kai', email: 'kai@kappa.com', password: 'senhaforte1' } });
   await u('/api/upgrade/notify', { method: 'POST', body: { plan: 'profissional' } });
   assert.equal((await u('/api/upgrade')).data.requested_plan, 'profissional');
   const a = await adminSession();
@@ -644,7 +644,7 @@ test('Stripe: assinatura no cartão ativa, renova, recusa e encerra pelo webhook
   };
   try {
     const u = browser();
-    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Lambda', name: 'Lia', email: 'lia@lambda.com', password: 'senhaforte1' } });
+    await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Lambda', name: 'Lia', email: 'lia@lambda.com', password: 'senhaforte1' } });
     const up = (await u('/api/upgrade')).data;
     assert.equal(up.card_enabled, true);
     const companyId = (await u('/api/auth/me')).data.company.id;
@@ -715,7 +715,7 @@ test('Pix confirmado pelo admin soma um mês por pagamento e entra no financeiro
   const { today, addMonths } = await import('../src/services/subscriptions.js');
   const { addDays } = await import('../src/services/time.js');
   const u = browser();
-  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Mu', name: 'Mel', email: 'mel@mu.com', password: 'senhaforte1' } });
+  await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Mu', name: 'Mel', email: 'mel@mu.com', password: 'senhaforte1' } });
   const id = (await u('/api/auth/me')).data.company.id;
   const a = await adminSession();
   const before = (await a('/api/admin/finance')).data;
@@ -749,7 +749,7 @@ test('Stripe Pix: cada pagamento soma um mês, confirmado pelo webhook, sem dupl
   };
   try {
     const u = browser();
-    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Nu', name: 'Nina', email: 'nina@nu.com', password: 'senhaforte1' } });
+    await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Nu', name: 'Nina', email: 'nina@nu.com', password: 'senhaforte1' } });
     const id = (await u('/api/auth/me')).data.company.id;
     const r = (await u('/api/upgrade/pix', { method: 'POST', body: { plan: 'profissional' } })).data;
     assert.equal(r.url, 'https://checkout.stripe.com/c/pay/cs_pix');
@@ -785,7 +785,7 @@ test('Stripe Pix: cada pagamento soma um mês, confirmado pelo webhook, sem dupl
 test('Stripe: fatura no formato atual da API (parent.subscription_details) também ativa e registra', async () => {
   const { handleStripeEvent } = await import('../src/services/stripe.js');
   const u = browser();
-  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Xi', name: 'Xa', email: 'xa@xi.com', password: 'senhaforte1' } });
+  await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Xi', name: 'Xa', email: 'xa@xi.com', password: 'senhaforte1' } });
   const id = (await u('/api/auth/me')).data.company.id;
   const now = Math.floor(Date.now() / 1000);
   // Renovação chega sem o checkout (ex.: assinatura criada antes): só a fatura identifica a empresa.
@@ -816,7 +816,7 @@ test('Stripe: quem assina no cartão muda de plano na mesma assinatura, com dife
   config.stripeSecretKey = 'sk_test_123';
   try {
     const u = browser();
-    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Omicron', name: 'Oto', email: 'oto@omicron.com', password: 'senhaforte1' } });
+    await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Omicron', name: 'Oto', email: 'oto@omicron.com', password: 'senhaforte1' } });
     const id = (await u('/api/auth/me')).data.company.id;
     handleStripeEvent({ type: 'checkout.session.completed', data: { object: { object: 'checkout.session', customer: 'cus_m', subscription: 'sub_m', metadata: { company_id: String(id), plan: 'essencial' } } } });
     assert.equal((await u('/api/meta')).data.plan.id, 'essencial');
@@ -842,7 +842,7 @@ test('cortesia: admin libera plano pago de graça, com motivo e prazo; vence soz
   const { processCourtesies, today } = await import('../src/services/subscriptions.js');
   const { addDays } = await import('../src/services/time.js');
   const u = browser();
-  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Pi', name: 'Pia', email: 'pia@pi.com', password: 'senhaforte1' } });
+  await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Pi', name: 'Pia', email: 'pia@pi.com', password: 'senhaforte1' } });
   const id = (await u('/api/auth/me')).data.company.id;
   const a = await adminSession();
   const before = (await a('/api/admin/finance')).data;
@@ -888,7 +888,7 @@ test('cortesia: admin libera plano pago de graça, com motivo e prazo; vence soz
 
 test('primeiros passos: cada passo é marcado pelo que a empresa configurou de verdade', async () => {
   const u = browser();
-  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Rho', name: 'Rui', email: 'rui@rho.com', password: 'senhaforte1' } });
+  await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Rho', name: 'Rui', email: 'rui@rho.com', password: 'senhaforte1' } });
   let o = (await u('/api/onboarding')).data;
   assert.deepEqual([o.done_count, o.total, o.percent, o.next], [0, 5, 0, 'empresa']);
   assert.equal((await u('/api/meta')).data.onboarding.done_count, 0);
@@ -939,7 +939,7 @@ test('WhatsApp por QR Code gerenciado: conecta sem campos técnicos, recebe o av
   config.evolutionApiKey = 'chave-global';
   try {
     const u = browser();
-    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Sigma', name: 'Sil', email: 'sil@sigma.com', password: 'senhaforte1' } });
+    await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Sigma', name: 'Sil', email: 'sil@sigma.com', password: 'senhaforte1' } });
     const meta = (await u('/api/meta')).data;
     assert.equal(meta.whatsapp_managed, true);
 
@@ -1028,7 +1028,7 @@ test('ficha única com data de nascimento: aniversariantes do mês e parabéns a
   const today = todayIn('America/Sao_Paulo');
   const [ty, tm, td] = today.split('-');
   const u = browser();
-  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Tau', name: 'Teo', email: 'teo@tau.com', password: 'senhaforte1' } });
+  await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Tau', name: 'Teo', email: 'teo@tau.com', password: 'senhaforte1' } });
 
   // Formatos aceitos: dd/mm/aaaa, dd/mm (sem ano) e AAAA-MM-DD; inválida é recusada.
   const lead = (await u('/api/contacts', { method: 'POST', body: { name: 'Lia Lead', phone: '11955551001', birth_date: `${td}/${tm}/1990` } })).data;
@@ -1088,7 +1088,7 @@ test('vários números de WhatsApp: limite por plano, resposta pelo número da c
     const a = await adminSession();
     // Essencial: 1 número só.
     const ess = browser();
-    await ess('/api/auth/register', { method: 'POST', body: { companyName: 'Upsilon', name: 'Uli', email: 'uli@upsilon.com', password: 'senhaforte1' } });
+    await ess('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Upsilon', name: 'Uli', email: 'uli@upsilon.com', password: 'senhaforte1' } });
     const essId = (await ess('/api/auth/me')).data.company.id;
     await a(`/api/admin/companies/${essId}/courtesy`, { method: 'POST', body: { plan: 'essencial', reason: 'teste' } });
     assert.equal((await ess('/api/whatsapp/numbers')).data.limit, 1);
@@ -1099,7 +1099,7 @@ test('vários números de WhatsApp: limite por plano, resposta pelo número da c
 
     // Profissional: principal + 2 extras.
     const u = browser();
-    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Phi', name: 'Fi', email: 'fi@phi.com', password: 'senhaforte1' } });
+    await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Phi', name: 'Fi', email: 'fi@phi.com', password: 'senhaforte1' } });
     const id = (await u('/api/auth/me')).data.company.id;
     await a(`/api/admin/companies/${id}/courtesy`, { method: 'POST', body: { plan: 'profissional', reason: 'teste' } });
     await u('/api/whatsapp/connect', { method: 'POST' });
@@ -1188,7 +1188,7 @@ test('mídias do WhatsApp: foto, áudio e documento aparecem na conversa; grande
   try {
     resetLoginAttempts();
     const u = browser();
-    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Foto Ltda', name: 'Fá', email: 'fa@foto.com', password: 'senhaforte1' } });
+    await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Foto Ltda', name: 'Fá', email: 'fa@foto.com', password: 'senhaforte1' } });
     // O cadastro começa no teste do Básico, com IA: desliga a resposta automática para conferir só o que chegou.
     await u('/api/settings', { method: 'PUT', body: { settings: { ai: { enabled: false } } } });
     await u('/api/whatsapp/connect', { method: 'POST' });
@@ -1237,7 +1237,7 @@ test('mídias do WhatsApp: foto, áudio e documento aparecem na conversa; grande
 
     // Outra empresa não abre o arquivo desta.
     const other = browser();
-    await other('/api/auth/register', { method: 'POST', body: { companyName: 'Outra Foto', name: 'Ou', email: 'ou@foto.com', password: 'senhaforte1' } });
+    await other('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Outra Foto', name: 'Ou', email: 'ou@foto.com', password: 'senhaforte1' } });
     assert.equal((await other(`/api/messages/${by('img1').id}/media`)).status, 404);
     assert.equal((await other(`/api/messages/${by('img1').id}/media/retry`, { method: 'POST' })).status, 404);
 
@@ -1309,10 +1309,10 @@ test('processos (advocacia): OAB e número CNJ, histórico sem alerta, intimaç�
     resetLoginAttempts();
     // Advocacia: o módulo aparece sozinho. Outro segmento: escondido até ligar.
     const u = browser();
-    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Silva Advogados', name: 'Dra. Ana', email: 'ana@silva.adv', password: 'senhaforte1', segment: 'advocacia' } });
+    await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Silva Advogados', name: 'Dra. Ana', email: 'ana@silva.adv', password: 'senhaforte1', segment: 'advocacia' } });
     assert.equal((await u('/api/meta')).data.processes_enabled, true);
     const loja = browser();
-    await loja('/api/auth/register', { method: 'POST', body: { companyName: 'Loja Sem Processo', name: 'Lu', email: 'lu@loja.com', password: 'senhaforte1', segment: 'loja' } });
+    await loja('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Loja Sem Processo', name: 'Lu', email: 'lu@loja.com', password: 'senhaforte1', segment: 'loja' } });
     assert.equal((await loja('/api/meta')).data.processes_enabled, false);
     assert.equal((await loja('/api/legal/overview')).status, 404);
 
@@ -1417,7 +1417,7 @@ test('indique e ganhe: código por usuário, 30 dias para quem chega, +1 mês pa
   const a = await adminSession();
   // Empresa que indica, com dois usuários: cada um tem o próprio código.
   const dona = browser();
-  await dona('/api/auth/register', { method: 'POST', body: { companyName: 'Clínica Sorriso', name: 'Marina Dona', email: 'marina@sorriso.com', password: 'senhaforte1' } });
+  await dona('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Clínica Sorriso', name: 'Marina Dona', email: 'marina@sorriso.com', password: 'senhaforte1' } });
   const sorrisoId = (await dona('/api/auth/me')).data.company.id;
   await a(`/api/admin/companies/${sorrisoId}/activate-plan`, { method: 'POST', body: { plan: 'essencial' } });
   await dona('/api/users', { method: 'POST', body: { name: 'Bruno Atendente', email: 'bruno@sorriso.com', password: 'senhaforte1', role: 'agent' } });
@@ -1437,7 +1437,7 @@ test('indique e ganhe: código por usuário, 30 dias para quem chega, +1 mês pa
 
   // Cadastro com o código do Bruno: 30 dias de teste, ligado ao Bruno e à Clínica Sorriso.
   const novo = browser();
-  await novo('/api/auth/register', { method: 'POST', body: { companyName: 'Pet Feliz', name: 'Paula', email: 'paula@pet.com', password: 'senhaforte1', ref: ref.code.replace('-', '') } });
+  await novo('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Pet Feliz', name: 'Paula', email: 'paula@pet.com', password: 'senhaforte1', ref: ref.code.replace('-', '') } });
   const sub = (await novo('/api/meta')).data.subscription;
   assert.deepEqual([sub.state, sub.courtesy_until, sub.referral], ['teste', addDays(today, 30), true]);
   const petId = (await novo('/api/auth/me')).data.company.id;
@@ -1445,7 +1445,7 @@ test('indique e ganhe: código por usuário, 30 dias para quem chega, +1 mês pa
 
   // Sem código no cadastro, dá para usar um depois (ainda no teste): vira 30 dias do cadastro.
   const tardio = browser();
-  await tardio('/api/auth/register', { method: 'POST', body: { companyName: 'Loja Tardia', name: 'Téo', email: 'teo@tardia.com', password: 'senhaforte1' } });
+  await tardio('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Loja Tardia', name: 'Téo', email: 'teo@tardia.com', password: 'senhaforte1' } });
   assert.equal((await tardio('/api/meta')).data.subscription.courtesy_until, addDays(today, 7));
   assert.match((await tardio('/api/referral/redeem', { method: 'POST', body: { code: (await tardio('/api/referral')).data.code } })).data.error, /própria empresa/);
   assert.equal((await tardio('/api/referral/redeem', { method: 'POST', body: { code: codeA } })).status, 200);
@@ -1478,7 +1478,7 @@ test('indique e ganhe: código por usuário, 30 dias para quem chega, +1 mês pa
 
   // Quem indicou ainda está no teste: ganha +30 dias no teste.
   const t2 = browser();
-  await t2('/api/auth/register', { method: 'POST', body: { companyName: 'Indicada da Tardia', name: 'Ana', email: 'ana@indicada.com', password: 'senhaforte1', ref: (await tardio('/api/referral')).data.code } });
+  await t2('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Indicada da Tardia', name: 'Ana', email: 'ana@indicada.com', password: 'senhaforte1', ref: (await tardio('/api/referral')).data.code } });
   const t2Id = (await t2('/api/auth/me')).data.company.id;
   await a(`/api/admin/companies/${t2Id}/activate-plan`, { method: 'POST', body: { plan: 'basico' } });
   assert.equal((await tardio('/api/meta')).data.subscription.courtesy_until, addDays(addDays(today, 30), 30));
@@ -1495,9 +1495,9 @@ test('MEI: envia o certificado, cai no admin (e no WhatsApp), admin aprova e o B
     const a = await adminSession();
     // A conta do próprio administrador no Conversa CRM (mesmo e-mail) é quem envia o aviso.
     const plataforma = browser();
-    await plataforma('/api/auth/register', { method: 'POST', body: { companyName: 'Conversa CRM (plataforma)', name: 'Neto', email: 'admin@plataforma.com', password: 'senhaforte1' } });
+    await plataforma('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Conversa CRM (plataforma)', name: 'Neto', email: 'admin@plataforma.com', password: 'senhaforte1' } });
     const u = browser();
-    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Doces da Lu', name: 'Lu', email: 'lu@doces.com', password: 'senhaforte1' } });
+    await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Doces da Lu', name: 'Lu', email: 'lu@doces.com', password: 'senhaforte1' } });
     const pdf = Buffer.from('%PDF-1.4 certificado MEI').toString('base64');
     assert.match((await u('/api/mei', { method: 'POST', body: { cnpj: '11.222.333/0001-80', file_name: 'ccmei.pdf', mime: 'application/pdf', data_base64: pdf } })).data.error, /CNPJ inválido/);
     assert.match((await u('/api/mei', { method: 'POST', body: { cnpj: '11.222.333/0001-81', file_name: 'x.exe', mime: 'application/x-msdownload', data_base64: pdf } })).data.error, /PDF, JPG ou PNG/);
@@ -1528,7 +1528,7 @@ test('MEI: envia o certificado, cai no admin (e no WhatsApp), admin aprova e o B
 
     // Recusa exige motivo, que a empresa vê.
     const v = browser();
-    await v('/api/auth/register', { method: 'POST', body: { companyName: 'Não é MEI', name: 'Vi', email: 'vi@ltda.com', password: 'senhaforte1' } });
+    await v('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Não é MEI', name: 'Vi', email: 'vi@ltda.com', password: 'senhaforte1' } });
     await v('/api/mei', { method: 'POST', body: { cnpj: '11.222.333/0001-81', file_name: 'c.png', mime: 'image/png', data_base64: pdf } });
     const r2 = (await a('/api/admin/mei')).data.find((x) => x.company_name === 'Não é MEI');
     assert.equal((await a(`/api/admin/mei/${r2.id}/decide`, { method: 'POST', body: { approve: false } })).status, 400);
@@ -1553,7 +1553,7 @@ test('medição: página inicial, cadastro e uso do sistema viram o relatório d
   assert.equal((await t({ v: 'x', e: [{ k: 'pageview' }] })).n, 0, 'identificador inválido');
   // Cadastro do mesmo visitante: a empresa fica ligada à origem.
   const u = browser();
-  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Studio Medido', name: 'Mel', email: 'mel@studio.com', password: 'senhaforte1', vid, src: 'instagram' } });
+  await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Studio Medido', name: 'Mel', email: 'mel@studio.com', password: 'senhaforte1', vid, src: 'instagram' } });
   const id = (await u('/api/auth/me')).data.company.id;
   assert.deepEqual(Object.values(mainDb.prepare('SELECT signup_visitor, signup_source FROM companies WHERE id = ?').get(id)), [vid, 'instagram']);
   // No sistema: tempo em cada menu (enviado pela tela) e ações (registradas no servidor, com usuário e empresa).
@@ -1598,9 +1598,9 @@ test('teste A/B/C da chamada: a versão vista na página inicial separa planos, 
   await t({ v: 'visitante-ab-b1', s: 'sessao-ab-b2', p: '/app', e: [{ k: 'signup_view', n: 'cadastro' }] });
   await t({ v: 'visitante-ab-c1', s: 'sessao-ab-c1', p: '/app', e: [{ k: 'signup_view', n: 'cadastro' }] });
   const u = browser();
-  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Studio AB', name: 'Bia', email: 'bia@studioab.com', password: 'senhaforte1', vid: 'visitante-ab-b1', src: 'direto' } });
+  await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Studio AB', name: 'Bia', email: 'bia@studioab.com', password: 'senhaforte1', vid: 'visitante-ab-b1', src: 'direto' } });
   // Já tinha conta e só depois viu a versão A: o cadastro antigo não conta para A.
-  await browser()('/api/auth/register', { method: 'POST', body: { companyName: 'Conta Antiga', name: 'Leo', email: 'leo@antiga.com', password: 'senhaforte1', vid: 'visitante-ab-a3', src: 'direto' } });
+  await browser()('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Conta Antiga', name: 'Leo', email: 'leo@antiga.com', password: 'senhaforte1', vid: 'visitante-ab-a3', src: 'direto' } });
   await t({ v: 'visitante-ab-a3', s: 'sessao-ab-a3', p: '/', e: [{ k: 'pageview', n: 'hero-a' }] });
 
   const a = await adminSession();
@@ -1635,7 +1635,7 @@ test('fim do grátis antigo: contas no grátis ganham 30 dias do Básico, uma ve
   const { todayIn, addDays } = await import('../src/services/time.js');
   mainDb.prepare('DELETE FROM platform_state').run();
   const u = browser();
-  await u('/api/auth/register', { method: 'POST', body: { companyName: 'Grátis Antigo', name: 'Gil', email: 'gil@antigo.com', password: 'senhaforte1' } });
+  await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Grátis Antigo', name: 'Gil', email: 'gil@antigo.com', password: 'senhaforte1' } });
   const id = (await u('/api/auth/me')).data.company.id;
   mainDb.prepare("UPDATE companies SET plan = 'gratis', courtesy_until = NULL, courtesy_reason = NULL WHERE id = ?").run(id);
   assert.ok(migrateFreeAccounts() >= 1);
@@ -1677,7 +1677,7 @@ test('processos: Diário recusando (fora do Brasil) vira mensagem amigável; com
   try {
     resetLoginAttempts();
     const u = browser();
-    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Adv Proxy', name: 'Pri', email: 'pri@adv.test', password: 'senhaforte1', segment: 'advocacia' } });
+    await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Adv Proxy', name: 'Pri', email: 'pri@adv.test', password: 'senhaforte1', segment: 'advocacia' } });
     const c = (await u('/api/legal/cases', { method: 'POST', body: { cnj: '4075574-44.2026.8.26.0100' } })).data;
     // Cada rodada verifica poucos processos (os de outros testes podem estar na frente).
     const until = async (ok) => { for (let i = 0; i < 10 && !(await ok()); i++) await legal.monitorOnce(); };
@@ -1721,7 +1721,7 @@ test('Stripe sem Pix ativado: o cliente cai no Pix pela chave da plataforma, sem
   try {
     resetLoginAttempts();
     const u = browser();
-    await u('/api/auth/register', { method: 'POST', body: { companyName: 'Pix Manual', name: 'Pim', email: 'pim@pix.test', password: 'senhaforte1' } });
+    await u('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: 'Pix Manual', name: 'Pim', email: 'pim@pix.test', password: 'senhaforte1' } });
     const r = await u('/api/upgrade/pix', { method: 'POST', body: { plan: 'basico' } });
     assert.equal(r.status, 200);
     assert.deepEqual(r.data, { manual: true });

@@ -1,4 +1,5 @@
 import { main } from '../db.js';
+import { config } from '../config.js';
 import { aiKeySource } from './company.js';
 import { zonedParts } from './time.js';
 
@@ -23,6 +24,21 @@ export function recordUsage(company, response, requestedModel) {
     company.id, month, response.model || requestedModel, source,
     u.input_tokens || 0, u.output_tokens || 0, u.cache_read_input_tokens || 0, u.cache_creation_input_tokens || 0,
   );
+}
+
+/** Tokens (entrada + saída) que a empresa gastou neste mês na chave da plataforma. */
+export function platformTokensThisMonth(company) {
+  const month = zonedParts(new Date(), company.timezone).date.slice(0, 7);
+  return main.get(
+    "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) AS n FROM ai_usage WHERE company_id = ? AND month = ? AND key_source = 'platform'",
+    company.id, month,
+  ).n;
+}
+
+/** Passou do teto mensal da chave da plataforma (AI_PLATFORM_MONTHLY_TOKENS)? A chave própria não tem teto. */
+export function platformQuotaReached(company) {
+  const cap = config.aiPlatformMonthlyTokens;
+  return Boolean(cap > 0 && aiKeySource(company) === 'platform' && platformTokensThisMonth(company) >= cap);
 }
 
 /** Consumo mês a mês (mais recente primeiro), separado por modelo e origem da chave. */

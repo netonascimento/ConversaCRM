@@ -4,6 +4,8 @@ process.env.AI_DEBOUNCE_MS = '10';
 process.env.ANTHROPIC_API_KEY = '';
 process.env.GOOGLE_PLACES_API_KEY = '';
 process.env.ALLOW_SIGNUP = 'true';
+process.env.API_RESEND = '';
+process.env.SIGNUP_IP_LIMIT = '1000';
 // Processos: sem espera entre as consultas ao CNJ.
 process.env.DJEN_GAP_MS = '0';
 process.env.DATAJUD_GAP_MS = '0';

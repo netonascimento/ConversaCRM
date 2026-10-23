@@ -76,6 +76,7 @@ export function registerAdmin(router) {
     plans: publicPlans(),
     roles: ROLES,
     platform_ai_key: Boolean(config.anthropicKey),
+    ai_platform_monthly_tokens: config.aiPlatformMonthlyTokens,
   }));
 
   router.get('/api/admin/overview', admin, () => platformOverview());

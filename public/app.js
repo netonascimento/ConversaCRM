@@ -222,6 +222,8 @@ async function renderAuth(mode = 'login') {
             <div><label for="r-company">Nome da empresa</label><input id="r-company" name="companyName" required></div>
             <div><label for="r-segment">Tipo de negócio</label><select id="r-segment" name="segment">${(cfg.segments || []).map((sg) => `<option value="${sg.id}" ${sg.id === hint.get('segmento') ? 'selected' : ''}>${esc(sg.label)}</option>`).join('')}</select><div class="hint">Já deixa a IA configurada para o seu segmento. Dá para ajustar depois.</div></div>
             <div><label for="r-name">Seu nome</label><input id="r-name" name="name" required></div>
+            <div><label for="r-phone">Seu WhatsApp</label><input id="r-phone" name="phone" type="tel" required inputmode="tel" autocomplete="tel" placeholder="(11) 99999-9999"></div>
+            <div aria-hidden="true" style="position:absolute;left:-9999px"><label for="r-site">Site</label><input id="r-site" name="website" tabindex="-1" autocomplete="off"></div>
             <div><label for="r-ref">Código de indicação (opcional)</label><input id="r-ref" name="ref" value="${esc(refCode)}" placeholder="Ex.: MARIA-7K3Q" autocapitalize="characters"><div class="hint">Com código, o teste vai de 7 para 30 dias.</div></div>` : ''}
           <div><label for="r-email">E-mail</label><input id="r-email" name="email" type="email" required autocomplete="username"></div>
           <div><label for="r-pass">Senha</label><input id="r-pass" name="password" type="password" required minlength="${mode === 'login' ? 1 : 8}" autocomplete="${mode === 'login' ? 'current-password' : 'new-password'}">${mode === 'register' ? '<div class="hint">Mínimo de 8 caracteres.</div>' : ''}</div>
@@ -240,12 +242,49 @@ async function renderAuth(mode = 'login') {
     try {
       // Cadastro: liga a conta nova à visita da página inicial (origem e campanha) para o funil do admin.
       const body = mode === 'register' ? { ...formData(e.target), vid: localGet('cc_vid'), src: localGet('cc_src') } : formData(e.target);
-      await api(`/api/auth/${mode}`, { method: 'POST', body });
+      const r = await api(`/api/auth/${mode}`, { method: 'POST', body });
       // Conversão dos anúncios (Google Ads / Meta), só se a pessoa aceitou os cookies (public/track.js).
       if (mode === 'register') window.cvTrack?.('signup', { plan: mei ? 'mei' : (body.segment || '') });
       if (mode === 'register' && mei) location.hash = '#/promocoes';
+      if (r.verify_email) return renderVerifyEmail(body.email);
       await boot();
     } catch (err) { fail(err); }
+  };
+}
+
+// Cadastro novo: digita o código de 6 dígitos que chegou por e-mail antes de entrar no sistema.
+function renderVerifyEmail(email) {
+  clearTimers();
+  closeAllModals();
+  $('#app').innerHTML = `
+    <div class="auth"><div>
+      <div class="card">
+        <div class="brand" style="color:var(--green-dark);padding:0 0 12px"><div class="brand-logo">${icon('agenda').replace('currentColor', '#fff')}</div>Conversa CRM</div>
+        <h1>Confirme o seu e-mail</h1>
+        <p class="muted">Enviamos um código de 6 dígitos para <strong>${esc(email)}</strong>. Se não aparecer em alguns minutos, olhe o spam.</p>
+        <form id="verify-form" class="stack" style="margin-top:16px">
+          <div><label for="v-code">Código</label><input id="v-code" name="code" required inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="000000"></div>
+          <button class="primary" style="width:100%;justify-content:center">Confirmar e entrar</button>
+        </form>
+        <p class="small muted" style="margin-top:14px;text-align:center"><a href="#" id="v-resend">Reenviar código</a> · <a href="#" id="v-logout">Usar outro e-mail</a></p>
+      </div>
+    </div></div>`;
+  $('#v-code').focus();
+  $('#verify-form').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api('/api/auth/verify-email', { method: 'POST', body: formData(e.target) });
+      await boot();
+    } catch (err) { fail(err); }
+  };
+  $('#v-resend').onclick = async (e) => {
+    e.preventDefault();
+    try { await api('/api/auth/resend-code', { method: 'POST' }); toast('Enviamos um código novo.'); } catch (err) { fail(err); }
+  };
+  $('#v-logout').onclick = async (e) => {
+    e.preventDefault();
+    await api('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    renderAuth('register');
   };
 }
 
@@ -417,6 +456,7 @@ async function boot() {
     // O botão "Teste grátis" da página inicial chega em /app#cadastro; o de um plano pago, em /app#/assinar/<plano>.
     return renderAuth(location.hash.startsWith('#cadastro') || buyingPlanId() ? 'register' : 'login');
   }
+  if (state.me.email_pending) return renderVerifyEmail(state.me.user.email);
   state.meta = await api('/api/meta');
   renderLayout();
   route();

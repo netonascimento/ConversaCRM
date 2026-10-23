@@ -68,7 +68,7 @@ export function companyDetail(companyId) {
     payments: main.all('SELECT * FROM subscription_payments WHERE company_id = ? ORDER BY COALESCE(paid_at, created_at) DESC LIMIT 24', companyId),
     ai_usage: usageByMonth(companyId),
     usage: companyUsage(companyId),
-    users: main.all('SELECT id, name, email, role, active, professional_id, last_login_at, created_at FROM users WHERE company_id = ? ORDER BY active DESC, name', companyId),
+    users: main.all('SELECT id, name, email, phone, email_verified, role, active, professional_id, last_login_at, created_at FROM users WHERE company_id = ? ORDER BY active DESC, name', companyId),
     professionals: withCompanyDb(companyId, () => all('SELECT id, name FROM professionals WHERE company_id = ? AND active = 1 ORDER BY name', companyId)),
   };
 }

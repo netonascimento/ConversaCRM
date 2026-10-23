@@ -2,7 +2,7 @@ import { all, get, run, now, main, transaction } from '../db.js';
 import { config } from '../config.js';
 import { HttpError } from '../http.js';
 import {
-  registerCompany, login, createSession, sessionCookie, requireAuth, requireRole, ownerOnly, ROLES, listUsers, createUser, updateUser, userFromRequest,
+  registerCompany, guardSignup, clientIp, issueVerificationCode, verifyEmailCode, login, createSession, sessionCookie, requireAuth, requireRole, ownerOnly, ROLES, listUsers, createUser, updateUser, userFromRequest,
 } from '../auth.js';
 import { getCompany, saveSettings, maskSettings, anthropicKeyFor, aiKeySource, placesKeyFor } from '../services/company.js';
 import {
@@ -50,6 +50,7 @@ import {
   googleConfigured, startConnect, consumeState, finishConnect, listConnections, disconnect, refreshBusy, removeAppointmentEvent, GoogleError,
 } from '../services/google.js';
 import { withCompanyDb } from '../db.js';
+import { emailEnabled, sendVerificationCode } from '../services/email.js';
 
 const int = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
 // Aceita valores no formato brasileiro ("1.500", "1.500,90", "250,00") ou com ponto decimal ("250.5").
@@ -86,6 +87,8 @@ let stripePixBlockedUntil = 0;
 export function registerApi(router) {
   const auth = (req) => {
     requireAuth(req);
+    // Cadastro novo só usa o sistema depois de confirmar o e-mail (o admin entra mesmo assim para dar suporte).
+    if (!req.user.email_verified && !req.user.impersonated_by) throw new HttpError(403, 'Confirme o seu e-mail para continuar.');
     if (req.method === 'GET' || req.user.impersonated_by) return;
     const path = String(req.url || '').split('?')[0];
     if (EXPIRED_ALLOWED.some((r) => r.test(path))) return;
@@ -97,13 +100,35 @@ export function registerApi(router) {
   };
 
   // ---- Autenticação ----------------------------------------------------------
-  router.post('/api/auth/register', (req, res, { body }) => {
+  router.post('/api/auth/register', async (req, res, { body }) => {
     if (!config.allowSignup) throw new HttpError(403, 'Cadastro desativado');
+    guardSignup(clientIp(req), body);
+    const phone = normalizePhone(body.phone);
+    if (!phone || phone.length < 12 || phone.length > 13) throw new HttpError(400, 'Informe o seu WhatsApp com DDD');
+    // Com o envio de e-mail configurado, a conta nasce pendente até a pessoa digitar o código.
+    const confirm = emailEnabled();
     // Cadastro pela página inicial: teste do Básico (7 dias; 30 com código de indicação).
-    const { userId, companyId } = registerCompany({ ...body, plan: 'basico', maxUsers: undefined, maxLeads: undefined });
+    const { userId, companyId } = registerCompany({ ...body, phone, emailVerified: !confirm, plan: 'basico', maxUsers: undefined, maxLeads: undefined });
     startSignupTrial(companyId, body.ref);
     recordSignup(companyId, { visitor: body.vid, source: body.ref ? 'indicação' : body.src });
     res.setHeader('Set-Cookie', sessionCookie(createSession(userId), req));
+    if (confirm) {
+      // Falhou o envio: a conta fica criada e a pessoa pede outro código na tela de confirmação.
+      try { await sendVerificationCode(body.email.trim().toLowerCase(), body.name, issueVerificationCode(userId)); } catch (e) { console.error('[email] código do cadastro:', e.message); }
+    }
+    return { ok: true, verify_email: confirm };
+  });
+  router.post('/api/auth/verify-email', requireAuth, (req, res, { body }) => {
+    verifyEmailCode(req.user.id, body.code);
+    return { ok: true };
+  });
+  router.post('/api/auth/resend-code', requireAuth, async (req) => {
+    if (req.user.email_verified) return { ok: true };
+    try { await sendVerificationCode(req.user.email, req.user.name, issueVerificationCode(req.user.id)); } catch (e) {
+      if (e instanceof HttpError) throw e;
+      console.error('[email] reenvio do código:', e.message);
+      throw new HttpError(502, 'Não conseguimos enviar o e-mail agora. Tente de novo em instantes.');
+    }
     return { ok: true };
   });
   router.post('/api/auth/login', (req, res, { body }) => {
@@ -111,7 +136,7 @@ export function registerApi(router) {
     res.setHeader('Set-Cookie', sessionCookie(createSession(user.id), req));
     return { ok: true };
   });
-  router.post('/api/auth/logout', auth, (req, res) => {
+  router.post('/api/auth/logout', requireAuth, (req, res) => {
     main.run('DELETE FROM sessions WHERE token = ?', req.user.token);
     res.setHeader('Set-Cookie', sessionCookie('', req));
     return { ok: true };
@@ -132,10 +157,11 @@ export function registerApi(router) {
     return r && r.status === 'ativa' ? { valid: true, code: r.code, by: String(r.user_name).split(' ')[0] } : { valid: false };
   });
   router.get('/api/public/info', () => ({ plans: publicPlans(), sales_whatsapp: config.salesWhatsapp, allow_signup: config.allowSignup, tracking: config.tracking }));
-  router.get('/api/auth/me', auth, (req) => {
+  router.get('/api/auth/me', requireAuth, (req) => {
     const company = getCompany(req.companyId);
     return {
       user: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role, professional_id: req.user.professional_id },
+      email_pending: !req.user.email_verified && !req.user.impersonated_by,
       company: { id: company.id, name: company.name, timezone: company.timezone, status: company.status },
       impersonated: Boolean(req.user.impersonated_by),
       allow_signup: config.allowSignup,

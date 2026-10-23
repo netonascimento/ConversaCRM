@@ -431,7 +431,7 @@ function companiesTable(list) {
       const nearLeads = c.max_leads !== null && c.usage.contacts >= c.max_leads;
       return `<tr class="clickable" data-id="${c.id}">
         <td><strong>${esc(c.name)}</strong><div class="small muted">${esc(state.me.presets.find((p) => p.id === c.segment)?.label || c.segment)}</div></td>
-        <td>${esc(planLabel(c.plan))} ${c.subscription && !['gratis'].includes(c.subscription.state) ? subBadge(c.subscription) : ''}${UPGRADE_BADGE(c)}${c.ai_platform_key ? `<div><span class="badge brass">IA da plataforma</span></div><div class="small muted">${num(tokensOf(c.ai_platform_month))} tokens no mês</div>` : ''}</td>
+        <td>${esc(planLabel(c.plan))} ${c.subscription && !['gratis'].includes(c.subscription.state) ? subBadge(c.subscription) : ''}${UPGRADE_BADGE(c)}${c.ai_platform_key ? `<div><span class="badge brass">IA da plataforma</span></div><div class="small muted">${num(tokensOf(c.ai_platform_month))} tokens no mês${state.me.ai_platform_monthly_tokens ? ` (teto ${num(state.me.ai_platform_monthly_tokens)} de entrada + saída)` : ''}</div>` : ''}</td>
         <td class="nowrap">${num(c.usage.active_users)} / ${num(c.max_users)} ${nearUsers ? '<span class="badge amber">no limite</span>' : ''}</td>
         <td class="nowrap">${num(c.usage.contacts)}${c.max_leads !== null ? ` / ${num(c.max_leads)}` : ''} ${nearLeads ? '<span class="badge amber">no limite</span>' : ''}</td>
         <td>${num(c.usage.messages_30d)}<div class="small muted">${num(c.usage.ai_messages_30d)} da IA</div></td>
@@ -608,7 +608,7 @@ async function openCompany(id) {
       <div class="table-wrap"><table>
         <tr><th>Nome</th><th>Perfil</th><th>Último acesso</th><th>Situação</th><th></th></tr>
         ${c.users.map((x) => `<tr>
-          <td><strong>${esc(x.name)}</strong><div class="small muted">${esc(x.email)}</div></td>
+          <td><strong>${esc(x.name)}</strong><div class="small muted">${esc(x.email)}${x.email_verified ? '' : ' <span class="badge amber">e-mail não confirmado</span>'}</div>${x.phone ? `<div class="small"><a href="https://wa.me/${esc(x.phone)}" target="_blank" rel="noopener">WhatsApp ${esc(x.phone)}</a></div>` : ''}</td>
           <td>${esc(roleLabel(x.role))}${x.professional_id ? `<div class="small muted">${esc(c.professionals.find((p) => p.id === x.professional_id)?.name || '')}</div>` : ''}</td>
           <td class="small">${fmt(x.last_login_at)}</td>
           <td><span class="badge ${x.active ? 'green' : ''}">${x.active ? 'ativo' : 'desativado'}</span></td>

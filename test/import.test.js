@@ -48,7 +48,7 @@ test('importação pela API: cria, evita duplicados, completa existentes e respe
     if (set) cookie = set.split(';')[0];
     return { status: res.status, data: await res.json() };
   };
-  await call('/api/auth/register', { companyName: 'Loja Import', name: 'Ivo', email: 'ivo@import.com', password: 'senhaforte1' });
+  await call('/api/auth/register', { phone: '11999990000', companyName: 'Loja Import', name: 'Ivo', email: 'ivo@import.com', password: 'senhaforte1' });
   await call('/api/contacts', { name: 'Já Existe', phone: '11911112222' });
   const r = (await call('/api/contacts/import', {
     contacts: [

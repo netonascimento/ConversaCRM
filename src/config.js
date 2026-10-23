@@ -47,8 +47,15 @@ export const config = {
   // Servidor Evolution API da plataforma: com ele, cada empresa conecta o WhatsApp só lendo um QR Code.
   evolutionUrl: (process.env.EVOLUTION_URL || '').trim(),
   evolutionApiKey: (process.env.EVOLUTION_API_KEY || '').trim(),
+  // E-mails da plataforma (código de confirmação do cadastro) pelo Resend. Sem chave, o cadastro
+  // não pede confirmação (útil rodando local e nos testes).
+  resendKey: (process.env.API_RESEND || process.env.RESEND_API_KEY || '').trim(),
+  emailFrom: process.env.EMAIL_FROM || 'Conversa CRM <nao-responda@conversacrm.online>',
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   aiModel: process.env.AI_MODEL || 'claude-opus-5-5',
+  // Teto mensal de tokens (entrada + saída) por empresa liberada na chave da plataforma.
+  // Passou do teto, a IA para até o mês virar e entram as respostas automáticas. 0 = sem teto.
+  aiPlatformMonthlyTokens: Number(process.env.AI_PLATFORM_MONTHLY_TOKENS ?? 2_000_000),
   googlePlacesKey: process.env.GOOGLE_PLACES_API_KEY || '',
   // DataJud (CNJ): chave pública divulgada na wiki do CNJ (datajud-wiki.cnj.jus.br/api-publica/acesso).
   // O CNJ pode trocar; quando isso acontecer, basta definir DATAJUD_API_KEY com a nova.

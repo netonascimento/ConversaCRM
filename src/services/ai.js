@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { all, get, run, now } from '../db.js';
 import { getCompany, anthropicKeyFor, aiModelFor } from './company.js';
-import { recordUsage } from './ai-usage.js';
+import { recordUsage, platformQuotaReached } from './ai-usage.js';
 import { aiAllowed } from './plans.js';
 import { handToHuman } from './assignment.js';
 import { getContact, updateContact, changeStage, logActivity, formatMoney, firstName, saveCustomFields } from './crm.js';
@@ -19,7 +19,8 @@ export function setClientFactory(fn) { clientFactory = fn; clients.clear(); }
 
 function clientFor(company) {
   const key = anthropicKeyFor(company);
-  if (!key) return null;
+  // Sem chave ou com o teto do mês estourado: segue com as respostas automáticas, sem IA.
+  if (!key || platformQuotaReached(company)) return null;
   if (!clients.has(key)) clients.set(key, clientFactory(key));
   return clients.get(key);
 }

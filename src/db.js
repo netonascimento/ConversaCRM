@@ -483,6 +483,13 @@ const COLUMNS = [
   ['users', 'active', 'INTEGER NOT NULL DEFAULT 1'],
   ['users', 'professional_id', 'INTEGER'],
   ['users', 'last_login_at', 'TEXT'],
+  // Confirmação de e-mail do cadastro: quem já existia (e quem o dono ou o admin cria) entra confirmado.
+  ['users', 'phone', 'TEXT'],
+  ['users', 'email_verified', 'INTEGER NOT NULL DEFAULT 1'],
+  ['users', 'verify_code_hash', 'TEXT'],
+  ['users', 'verify_expires_at', 'TEXT'],
+  ['users', 'verify_attempts', 'INTEGER NOT NULL DEFAULT 0'],
+  ['users', 'verify_sent_at', 'TEXT'],
   ['sessions', 'impersonated_by', 'INTEGER'],
 ];
 

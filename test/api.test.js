@@ -25,7 +25,7 @@ async function client(email) {
     if (set) cookie = set.split(';')[0];
     return { status: res.status, data: await res.json().catch(() => null) };
   };
-  const r = await call('/api/auth/register', { method: 'POST', body: { companyName: `Loja ${email}`, name: 'Dono', email, password: 'senha123' } });
+  const r = await call('/api/auth/register', { method: 'POST', body: { phone: '11999990000', companyName: `Loja ${email}`, name: 'Dono', email, password: 'senha123' } });
   assert.equal(r.status, 200);
   return call;
 }
@@ -83,4 +83,109 @@ test('webhook da Meta: verificação e recebimento', async () => {
   const convs = (await a('/api/conversations')).data;
   assert.equal(convs.length, 1);
   assert.equal(convs[0].name, 'Rita');
+});
+
+// Cliente sem cadastro automático, para testar o próprio cadastro.
+function anon(ip = '10.0.0.1') {
+  let cookie = '';
+  return async (path, { method = 'GET', body } = {}) => {
+    const res = await fetch(base + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', cookie, 'x-forwarded-for': ip },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const set = res.headers.get('set-cookie');
+    if (set) cookie = set.split(';')[0];
+    return { status: res.status, data: await res.json().catch(() => null) };
+  };
+}
+
+test('cadastro: pede WhatsApp, barra links, campo-isca e excesso por IP', async () => {
+  const { resetLoginAttempts } = await import('../src/auth.js');
+  const reg = (u, extra) => u('/api/auth/register', { method: 'POST', body: { companyName: 'Padaria Sol', name: 'Ana', email: `ana${Math.random()}@sol.com`, password: 'senhaforte1', phone: '11988887777', ...extra } });
+  assert.equal((await reg(anon(), { phone: '' })).status, 400, 'sem WhatsApp');
+  assert.equal((await reg(anon(), { phone: '1234' })).status, 400, 'WhatsApp inválido');
+  assert.equal((await reg(anon(), { companyName: 'https://www.tiktok.com/@alguem' })).status, 400, 'link no nome');
+  assert.equal((await reg(anon(), { website: 'http://spam' })).status, 400, 'campo-isca preenchido');
+  assert.equal((await reg(anon(), { companyName: 'Padaria.com' })).status, 200, 'domínio sem link passa');
+
+  process.env.SIGNUP_IP_LIMIT = '2';
+  resetLoginAttempts();
+  try {
+    assert.equal((await reg(anon('10.9.9.9'))).status, 200);
+    assert.equal((await reg(anon('10.9.9.9'))).status, 200);
+    assert.equal((await reg(anon('10.9.9.9'))).status, 429, 'terceiro cadastro do mesmo IP na hora');
+    assert.equal((await reg(anon('10.9.9.8'))).status, 200, 'outro IP segue');
+  } finally {
+    process.env.SIGNUP_IP_LIMIT = '1000';
+    resetLoginAttempts();
+  }
+});
+
+test('cadastro: confirmação de e-mail por código', async () => {
+  const { config } = await import('../src/config.js');
+  const { setEmailSender } = await import('../src/services/email.js');
+  const { main } = await import('../src/db.js');
+  const sent = [];
+  setEmailSender(async (msg) => { sent.push(msg); return { id: 'x' }; });
+  config.resendKey = 're_teste';
+  try {
+    const u = anon('10.1.1.1');
+    const r = await u('/api/auth/register', { method: 'POST', body: { companyName: 'Clínica Lua', name: 'Bia Souza', email: 'bia@lua.com', password: 'senhaforte1', phone: '(21) 98888-7777' } });
+    assert.equal(r.status, 200);
+    assert.equal(r.data.verify_email, true);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].to, 'bia@lua.com');
+    const code = sent[0].text.match(/\b(\d{6})\b/)[1];
+
+    const me = (await u('/api/auth/me')).data;
+    assert.equal(me.email_pending, true);
+    assert.equal((await u('/api/contacts')).status, 403, 'sem confirmar não usa o sistema');
+    assert.equal((await u('/api/auth/resend-code', { method: 'POST' })).status, 429, 'reenvio só depois de 1 minuto');
+
+    const wrong = code === '000000' ? '111111' : '000000';
+    assert.equal((await u('/api/auth/verify-email', { method: 'POST', body: { code: wrong } })).status, 400);
+    assert.equal((await u('/api/auth/verify-email', { method: 'POST', body: { code } })).status, 200);
+    assert.equal((await u('/api/auth/me')).data.email_pending, false);
+    assert.equal((await u('/api/contacts')).status, 200);
+    const user = main.get("SELECT phone, verify_code_hash FROM users WHERE email = 'bia@lua.com'");
+    assert.equal(user.phone, '5521988887777');
+    assert.equal(user.verify_code_hash, null);
+
+    // Tentativas erradas demais travam o código.
+    const v = anon('10.1.1.2');
+    await v('/api/auth/register', { method: 'POST', body: { companyName: 'Clínica Sol', name: 'Caio', email: 'caio@sol.com', password: 'senhaforte1', phone: '21988887776' } });
+    const right = sent.at(-1).text.match(/\b(\d{6})\b/)[1];
+    const bad = right === '000000' ? '111111' : '000000';
+    for (let i = 0; i < 5; i++) await v('/api/auth/verify-email', { method: 'POST', body: { code: bad } });
+    assert.equal((await v('/api/auth/verify-email', { method: 'POST', body: { code: right } })).status, 429);
+  } finally {
+    config.resendKey = '';
+  }
+});
+
+test('IA: teto mensal de tokens na chave da plataforma', async () => {
+  const { config } = await import('../src/config.js');
+  const { main } = await import('../src/db.js');
+  const { getCompany } = await import('../src/services/company.js');
+  const { platformQuotaReached } = await import('../src/services/ai-usage.js');
+  const { zonedParts } = await import('../src/services/time.js');
+  const { makeCompany } = await import('./setup.js');
+  const id = makeCompany();
+  main.run('UPDATE companies SET ai_platform_key = 1 WHERE id = ?', id);
+  const before = { key: config.anthropicKey, cap: config.aiPlatformMonthlyTokens };
+  config.anthropicKey = 'sk-teste';
+  config.aiPlatformMonthlyTokens = 1000;
+  try {
+    const company = getCompany(id);
+    assert.equal(platformQuotaReached(company), false);
+    const month = zonedParts(new Date(), company.timezone).date.slice(0, 7);
+    main.run("INSERT INTO ai_usage (company_id, month, model, key_source, requests, input_tokens, output_tokens) VALUES (?, ?, 'm', 'platform', 1, 800, 300)", id, month);
+    assert.equal(platformQuotaReached(company), true);
+    config.aiPlatformMonthlyTokens = 0;
+    assert.equal(platformQuotaReached(company), false, '0 = sem teto');
+  } finally {
+    config.anthropicKey = before.key;
+    config.aiPlatformMonthlyTokens = before.cap;
+  }
 });

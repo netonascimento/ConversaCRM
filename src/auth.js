@@ -51,7 +51,66 @@ function failLogin(key) {
   if (!a || Date.now() - a.first > WINDOW_MS) attempts.set(key, { count: 1, first: Date.now() });
   else a.count++;
 }
-export const resetLoginAttempts = () => attempts.clear();
+export const resetLoginAttempts = () => { attempts.clear(); signups.clear(); };
+
+// ---- Proteção do cadastro público contra robôs ---------------------------------------
+
+const signups = new Map();
+const SIGNUP_WINDOW_MS = 3600000;
+// Robô de spam costuma pôr link no nome (a primeira empresa cadastrada veio com um link do TikTok).
+const LINK_RE = /(https?:|www\.|:\/\/|\.[a-z]{2,}\/)/i;
+
+/** IP de quem fez a requisição (atrás do proxy, o primeiro do X-Forwarded-For). */
+export const clientIp = (req) => String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+
+/** Barra cadastro em massa (por IP), o campo-isca preenchido e links nos nomes. */
+export function guardSignup(ip, body) {
+  // Campo escondido no formulário: pessoa não vê, robô preenche.
+  if (body.website) throw new HttpError(400, 'Não foi possível criar a conta.');
+  if (LINK_RE.test(body.companyName || '') || LINK_RE.test(body.name || '')) {
+    throw new HttpError(400, 'Use o nome da empresa e o seu nome, sem links.');
+  }
+  const limit = Number(process.env.SIGNUP_IP_LIMIT || 5);
+  const a = signups.get(ip);
+  if (!a || Date.now() - a.first > SIGNUP_WINDOW_MS) signups.set(ip, { count: 1, first: Date.now() });
+  else if (a.count >= limit) throw new HttpError(429, 'Muitos cadastros feitos daqui. Tente de novo mais tarde.');
+  else a.count++;
+}
+
+// ---- Confirmação de e-mail do cadastro ---------------------------------------------
+
+const CODE_MINUTES = 30;
+const CODE_ATTEMPTS = 5;
+const RESEND_SECONDS = 60;
+const hashCode = (code) => crypto.createHash('sha256').update(String(code)).digest('hex');
+
+/** Gera um código novo de 6 dígitos para o usuário (vale 30 min) e devolve para enviar por e-mail. */
+export function issueVerificationCode(userId) {
+  const user = get('SELECT verify_sent_at FROM users WHERE id = ?', userId);
+  if (user?.verify_sent_at && Date.now() - Date.parse(user.verify_sent_at) < RESEND_SECONDS * 1000) {
+    throw new HttpError(429, 'Aguarde um minuto para pedir outro código.');
+  }
+  const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  run('UPDATE users SET verify_code_hash = ?, verify_expires_at = ?, verify_attempts = 0, verify_sent_at = ? WHERE id = ?',
+    hashCode(code), new Date(Date.now() + CODE_MINUTES * 60000).toISOString(), new Date().toISOString(), userId);
+  return code;
+}
+
+export function verifyEmailCode(userId, code) {
+  const user = get('SELECT email_verified, verify_code_hash, verify_expires_at, verify_attempts FROM users WHERE id = ?', userId);
+  if (!user) throw new HttpError(404, 'Usuário não encontrado');
+  if (user.email_verified) return;
+  if (!user.verify_code_hash || user.verify_expires_at < new Date().toISOString()) {
+    throw new HttpError(400, 'O código expirou. Peça um novo.');
+  }
+  if (user.verify_attempts >= CODE_ATTEMPTS) throw new HttpError(429, 'Muitas tentativas erradas. Peça um novo código.');
+  const given = String(code || '').replace(/\D/g, '');
+  if (hashCode(given) !== user.verify_code_hash) {
+    run('UPDATE users SET verify_attempts = verify_attempts + 1 WHERE id = ?', userId);
+    throw new HttpError(400, 'Código incorreto.');
+  }
+  run('UPDATE users SET email_verified = 1, verify_code_hash = NULL, verify_expires_at = NULL WHERE id = ?', userId);
+}
 
 // ---- Sessões de usuários das empresas -------------------------------------------------
 
@@ -69,7 +128,7 @@ export function sessionCookie(token, req) {
 }
 
 /** Cria uma empresa com o primeiro usuário (dono). Usado pelo cadastro público e pelo painel do administrador. */
-export function registerCompany({ companyName, name, email, password, timezone, segment = 'generico', plan = DEFAULT_PLAN, maxUsers, maxLeads, notes = '' }) {
+export function registerCompany({ companyName, name, email, password, phone = null, emailVerified = true, timezone, segment = 'generico', plan = DEFAULT_PLAN, maxUsers, maxLeads, notes = '' }) {
   if (!companyName || !name || !email || !password) throw new HttpError(400, 'Preencha empresa, nome, e-mail e senha');
   checkPassword(password);
   const normalized = email.trim().toLowerCase();
@@ -85,8 +144,8 @@ export function registerCompany({ companyName, name, email, password, timezone, 
       companyName.trim(), timezone || 'America/Sao_Paulo', JSON.stringify(DEFAULT_SETTINGS), preset, planId, users, leads, notes, randomId(), randomId(18),
     );
     const { id: userId } = run(
-      'INSERT INTO users (company_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)',
-      companyId, name.trim(), normalized, hashPassword(password), 'owner',
+      'INSERT INTO users (company_id, name, email, password_hash, role, phone, email_verified) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      companyId, name.trim(), normalized, hashPassword(password), 'owner', phone, emailVerified ? 1 : 0,
     );
     return { companyId, userId };
   });
@@ -113,7 +172,7 @@ export function userFromRequest(req) {
   const token = parseCookies(req).vf_session || (req.headers.authorization || '').replace(/^Bearer /, '');
   if (!token) return null;
   const row = get(
-    `SELECT u.id, u.company_id, u.name, u.email, u.role, u.active, u.professional_id, s.expires_at, s.impersonated_by,
+    `SELECT u.id, u.company_id, u.name, u.email, u.role, u.active, u.professional_id, u.email_verified, s.expires_at, s.impersonated_by,
             c.status AS company_status
      FROM sessions s JOIN users u ON u.id = s.user_id JOIN companies c ON c.id = u.company_id WHERE s.token = ?`, token,
   );
